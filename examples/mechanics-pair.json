@@ -1,0 +1,48 @@
+{
+  "format": "mechanics10",
+  "version": 1,
+  "catalogVersion": "mechanics10-spur-1",
+  "name": "Stirnradpaar entlang Y",
+  "targetRatio": 2.1,
+  "components": [
+    {
+      "id": "input",
+      "catalogId": "spur-m2-z20",
+      "position": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "output",
+      "catalogId": "spur-m2-z40",
+      "position": [
+        0,
+        60,
+        0
+      ]
+    }
+  ],
+  "input": {
+    "component": "input",
+    "port": "shaft"
+  },
+  "output": {
+    "component": "output",
+    "port": "shaft"
+  },
+  "connections": [
+    {
+      "kind": "external-spur-mesh",
+      "a": {
+        "component": "input",
+        "port": "teeth"
+      },
+      "b": {
+        "component": "output",
+        "port": "teeth"
+      }
+    }
+  ]
+}

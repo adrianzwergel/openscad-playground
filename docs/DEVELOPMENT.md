@@ -1,4 +1,4 @@
-# Lokaler Start – Etappe A
+# Lokaler Start – Etappe B
 
 Node.js >=22, npm und Git. Keine native OpenSCAD-/Prolog-Installation erforderlich.
 
@@ -36,3 +36,8 @@ Der Test verwendet Chrome unter dem Windows-Standardpfad; alternativ `CHROME_PAT
 Er prüft Soll 2,1 → Ist 2 mit 20/40 Zähnen, geladenes GLB, STL-Dreiecke,
 Abbruch während Prolog und OpenSCAD sowie Neustart mit 20/30 für Soll 1,5.
 WASM-Größenwarnungen beim Build sind erwartbar. Keine mechanische Validierung durch diesen Test.
+
+Für Etappe B zusätzlich `node scripts/check-model.mjs` und
+`node scripts/check-project-browser.mjs` (gleicher statischer Server auf Port 4001).
+Die Modelltests verwenden Node Type Stripping; getestet mit Node 24.19.
+Projektformat und Speicherverhalten: [COMPONENT-MODEL.md](COMPONENT-MODEL.md).

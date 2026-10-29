@@ -3,6 +3,12 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+Etappe B abgeschlossen: versionierter Katalog, Komponenteninstanzen, Wellen-/Verzahnungsports,
+explizite Paarungsbeziehungen, manuelle XYZ-Positionierung bei parallelen +Z-Achsen,
+gemeinsame Geometrieauflösung und Paarungsprüfung. Projekte werden lokal gespeichert und
+als validierte JSON-Dateien importiert/exportiert. Siehe COMPONENT-MODEL.md.
+Modelltests, TypeScript, Produktionsbuild und Browser-Tests bestanden.
+
 Etappe A abgeschlossen: Prolog/WASM (Laufzeit 10.1.19, einschließlich CLP(FD)) sucht ein
 Zahnradpaar, OpenSCAD/WASM erzeugt BOSL2-Geometrie, GLB-Vorschau und STL im Browser.
 Produktionsbuild, TypeScript und Chrome-Browsertest bestanden. Abbruch beider Worker und
