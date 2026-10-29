@@ -22,6 +22,7 @@
     "primereact": "^10.8.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "swipl-wasm": "8.2.5",
     "thumbhash": "^0.1.1",
     "uuid": "^14.0.1",
     "uzip": "^0.20201231.0"
@@ -37,7 +38,10 @@
     "build:libs:clean": "LIBS_BUILD_MODE=clean webpack --config webpack.libs.config.js",
     "build:libs:wasm": "LIBS_BUILD_MODE=wasm webpack --config webpack.libs.config.js",
     "build:libs:fonts": "LIBS_BUILD_MODE=fonts webpack --config webpack.libs.config.js",
-    "build:all": "npm run build:libs && npm run build"
+    "build:all": "npm run build:libs && npm run build",
+    "prepare:mechanics": "node scripts/prepare-mechanics.mjs",
+    "dev:mechanics": "webpack serve --config webpack.mechanics.config.js --mode=development",
+    "build:mechanics": "webpack --config webpack.mechanics.config.js --mode=production"
   },
   "eslintConfig": {
     "extends": [

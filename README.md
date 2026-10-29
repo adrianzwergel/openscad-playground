@@ -1,5 +1,18 @@
 # OpenSCAD Playground
 
+## Mechanics-10 – Etappe A
+
+This fork adds a browser-local Prolog → OpenSCAD proof of concept.
+See [the project plan](docs/PLAN.md) and [development instructions](docs/DEVELOPMENT.md).
+
+```sh
+npm ci
+npm run prepare:mechanics
+npm run dev:mechanics
+```
+
+Open http://localhost:4000/mechanics.html. The upstream playground is preserved below.
+
 [Open the Demo](https://ochafik.com/openscad2)
 
 <a href="https://ochafik.com/openscad2" target="_blank">

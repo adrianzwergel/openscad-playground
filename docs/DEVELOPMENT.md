@@ -1,0 +1,38 @@
+# Lokaler Start – Etappe A
+
+Node.js >=22, npm und Git. Keine native OpenSCAD-/Prolog-Installation erforderlich.
+
+```sh
+npm ci
+npm run prepare:mechanics
+npm run dev:mechanics
+```
+
+Öffnen: http://localhost:4000/mechanics.html
+
+`npm run build:mechanics` erzeugt `dist/`. Statisch per HTTP ausliefern, nicht per file:// öffnen.
+Der ursprüngliche Playground und seine Build-Konfiguration bleiben erhalten. Die schlanke
+Etappe-A-Vorbereitung lädt nur OpenSCAD und BOSL2; für den Original-Playground sind dessen
+zusätzliche Bibliotheksarchive nötig. Unter Windows umgeht der neue Setup-Pfad die Unix-
+Werkzeuge und Symlinks des ursprünglichen Library-Builds.
+
+## Abhängigkeiten
+- Playground-Basis: siehe PLAN.md.
+- OpenSCAD-Binary: feste URL in libs-config.json (2025.03.25).
+- BOSL2: 9eb555a08f38cabb8a6c9761d18ec7517c36321c.
+- swipl-wasm npm-Paket: 8.2.5; Paketversion ist nicht die SWI-Prolog-Laufzeitversion.
+  Die tatsächliche Laufzeitversion zeigt die Oberfläche nach einer Suche.
+- npm-Abhängigkeiten: package-lock.json.
+
+Vorbereitung braucht Netzwerk; danach werden die Laufzeiten und BOSL2 vom lokalen Server geladen.
+BOSL2-Lizenz ist im erzeugten Asset enthalten, SWI-Lizenzen in dessen kopierter Distribution.
+Siehe zusätzlich LICENSE.md im Repository.
+
+## Verifikation
+`npx tsc --noEmit` prüft TypeScript. Für den Browser-Smoke-Test:
+`npm run build:mechanics`, in einem zweiten Terminal `npx serve dist -l 4001`,
+dann `node scripts/check-browser.mjs`.
+Der Test verwendet Chrome unter dem Windows-Standardpfad; alternativ `CHROME_PATH` setzen.
+Er prüft Soll 2,1 → Ist 2 mit 20/40 Zähnen, geladenes GLB, STL-Dreiecke,
+Abbruch während Prolog und OpenSCAD sowie Neustart mit 20/30 für Soll 1,5.
+WASM-Größenwarnungen beim Build sind erwartbar. Keine mechanische Validierung durch diesen Test.
