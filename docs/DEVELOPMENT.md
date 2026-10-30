@@ -58,3 +58,7 @@ Katalog, Lagerung und Grenzen: [SPATIAL-PAIRS.md](SPATIAL-PAIRS.md).
 
 Etappe G: `node scripts/check-workbench.mjs` und `node scripts/check-workbench-browser.mjs`.
 Der Browsertest benötigt ebenfalls den Build auf Port 4001. Details: [WORKBENCH.md](WORKBENCH.md).
+
+Gemischte Suche: `node scripts/check-mixed.mjs`, `node scripts/check-mixed-contact.mjs`
+und `node scripts/check-mixed-browser.mjs`. Browserprüfungen verwenden denselben Server
+und echte Prolog-/OpenSCAD-WASM-Laufzeiten. Siehe [MIXED-SEARCH.md](MIXED-SEARCH.md).

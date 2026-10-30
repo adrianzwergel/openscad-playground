@@ -3,6 +3,12 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+Gemischte Kettensuche ergänzt: Schnecke → Stirnräder oder GT2, diskrete Prolog-Suche,
+analytische Platzierung entlang einer festen Eingangsachse und feste Ausgangsachse.
+Getrennte Lagerungen, koaxiale Kupplung, gemeinsame Gehäusebrücke, Montageansicht und
+STL-/ZIP-Export. Projektformat 5. Begrenzte Zweistufenfamilien; allgemeine Graphsuche
+und physische Abnahme bleiben offen. Siehe [MIXED-SEARCH.md](MIXED-SEARCH.md).
+
 Etappe G: Browser-Werkbank für Anschlussvorgaben, schematische Live-Kinematik mit
 Projektionsansichten, persistente Variantenablage mit JSON-Austausch und erweiterte
 CAD-Explosionsansichten implementiert. Fertigungsteile bleiben von Ansichtszuständen

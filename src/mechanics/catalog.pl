@@ -27,3 +27,13 @@ candidate(Target,Layers,Direction,Tolerance,Span,Kind,Ids) :-
     abs(R-Target)/Target =< Tolerance+0.000000001,
     sum_list(Lengths,Max), max_list(Lengths,Longest), Min is max(0,2*Longest-Max),
     Span =< Max+0.000001, Span >= Min-0.000001.
+% Bounded two-stage mixed chains. Exact fixed-axis placement and construction follow in TS.
+mixed_teeth(spur,Z) :- member(Z,[20,30,40,50]).
+mixed_teeth(belt,Z) :- member(Z,[16,20,30,40,60]).
+mixed_length(spur,0).
+mixed_length(belt,L) :- member(L,[200,280,300,400,500,600,610,752,800]).
+mixed_candidate(Target,Tolerance,Allowed,K,W,S,A,B,L) :-
+    member(K,[spur,belt]), (Allowed==both ; Allowed==K),
+    member(W,[30,40]), member(S,[1,2]), mixed_teeth(K,A),mixed_teeth(K,B),
+    R is W/S*B/A, abs(R-Target)/Target =< Tolerance+0.000000001,
+    mixed_length(K,L).

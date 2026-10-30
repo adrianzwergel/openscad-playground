@@ -24,7 +24,7 @@ try{
   const data=await page.$eval('#spatial-download',async a=>Array.from(new Uint8Array(await(await fetch(a.href)).arrayBuffer()))),zip=await JSZip.loadAsync(new Uint8Array(data));
   const names=Object.keys(zip.files).filter(n=>n.endsWith('.stl'));assert.equal(names.length,kind==='internal'?12:10);
   for(const name of names){const text=await zip.file(name).async('string');await fs.writeFile(path.join(dir,kind+'-'+name),text);meshCheck(text,kind+'/'+name);}
-  const project=JSON.parse(await zip.file('project.json').async('string'));assert.equal(project.spatial.kind,kind);assert.equal(project.version,4);
+  const project=JSON.parse(await zip.file('project.json').async('string'));assert.equal(project.spatial.kind,kind);assert.equal(project.version,5);
   assert.ok(zip.file('MONTAGE.txt'));assert.ok(zip.file('checks.json'));console.log(kind,'preview and meshes passed:',names.length);
   await page.click('#save-project');await page.reload();assert.equal(await page.$eval('#mechanism-kind',e=>e.value),kind);
  }

@@ -12,11 +12,14 @@ guided lead-screw and rack axes, full-stroke clearance checks and printable asse
 See [motion templates and limitations](docs/MOTION.md).
 Stage F adds internal gears, 90-degree bevel gears and worm pairs with oriented shaft ports,
 radial/axial bearing templates, removable housings, clearance checks and individual STL exports.
-These are standalone assembly templates; mixed transmission search and physical validation
+These are standalone assembly templates; unrestricted transmission search and physical validation
 remain future work. See [spatial pairs and assembly limitations](docs/SPATIAL-PAIRS.md).
 Stage G adds a shared port editor, schematic live kinematics, persistent project variants
 with JSON exchange, and adjustable CAD explosion views. Manufacturing exports remain
 independent of view settings. See [the browser workbench](docs/WORKBENCH.md).
+Mixed-chain search now combines a worm stage with spur gears or GT2 belts between fixed
+shaft axes, including separate bearing supports, a coupling, a bolted housing bridge and
+individual STL exports. See [scope and construction checks](docs/MIXED-SEARCH.md).
 See [the project plan](docs/PLAN.md) and [development instructions](docs/DEVELOPMENT.md).
 The [component model](docs/COMPONENT-MODEL.md) describes the shared model and current project format.
 

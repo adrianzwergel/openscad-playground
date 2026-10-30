@@ -12,6 +12,11 @@ self.onmessage = async ({data}) => {
       pl.prolog.query(`assertz(gear(${g.index},${g.teeth},${g.module},${g.pressureAngle})).`).once();
     }
     const version = pl.prolog.query('current_prolog_flag(version, Version).').once().Version;
+    if(data.mode==='mixed'){
+      if(!['both','spur','belt'].includes(data.allow)||!Number.isFinite(data.tolerance)||data.tolerance<0||data.tolerance>1000)throw Error('Ungültige gemischte Suchgrenzen.');
+      const result=pl.prolog.query(`findall(candidate{kind:K,wheel:W,starts:S,za:A,zb:B,belt:L},mixed_candidate(${data.target},${data.tolerance/100},${data.allow},K,W,S,A,B,L),Candidates).`).once();
+      self.postMessage({candidates:result.Candidates,version});return;
+    }
     if(data.search){
       const {maxLayers,direction,maxError}=data.search;
       if(![1,2].includes(maxLayers)||!['any','same','opposite'].includes(direction)||!Number.isFinite(maxError)||maxError<0||maxError>1000||!Number.isFinite(data.span)||data.span<0)throw Error('Ungültige Suchgrenzen.');
