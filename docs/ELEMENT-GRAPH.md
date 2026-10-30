@@ -3,7 +3,7 @@
 Der neue Modus „Freier Elementgraph · H1/H2“ ist eine eigenständige Grundlage für
 die spätere räumliche Autoroutensuche. Er verkettet keine fertigen Getriebemodule.
 Aktuell werden manuelle Graphen aufgelöst, geprüft, animiert und als Detailgeometrie
-gerendert. Eine automatische Suche über Graphen ist hier noch nicht implementiert.
+gerendert. Eine erste begrenzte Suche ist inzwischen verfügbar: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
 
 ## Domänenmodell
 

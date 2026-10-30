@@ -3,6 +3,11 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+Begrenzte räumliche Graphsuche begonnen: feste Zielrahmen, gemeinsame Wellen,
+Stirnrad-/Kegelradprovider und explizite Budgetzustände. Zweistufige Referenzen geprüft;
+drei/vier Stufen experimentell, konstruktive Kollisions-/Lagerprüfung noch offen.
+Siehe [GRAPH-SEARCH.md](GRAPH-SEARCH.md). Generative Gehäuse bleiben zurückgestellt.
+
 H1 implementiert, H2 begonnen: erweiterbarer Element-/Relationsgraph, gemeinsame Wellen,
 Quaternion-Rahmen, gerichtete feste Anschlüsse, Registry-Vertrag für Übertragungen,
 Umläufe und Gelenke. Erste Stirnrad-/Kegelradadapter, analytische Lagevorschläge und
