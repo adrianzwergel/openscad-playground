@@ -233,3 +233,12 @@ Bauraum, Sperrzonen und konservative Freiraum-/Bewegungshüllen als getrennte tr
 3D-Ebenen in Kandidaten- und Graphvorschau ergänzt. Umschalten ohne erneute CAD-Berechnung,
 Kamera bleibt erhalten, „Alles einpassen“ verfügbar. Projekt und Teileexport unverändert.
 Details: [SPACE-SEARCH.md](SPACE-SEARCH.md). Montage und generatives Gehäuse weiterhin später.
+
+## Mechanics Studio – neuer Zielentwurf (30.10.2026)
+
+3D-Arbeitsfläche mit Modellbaum, Katalog, lokalen Anschlussrahmen und gestrichelten
+Verbindungsabsichten geplant. Neue übergeordnete Dokumentebene für mehrere Baugruppen,
+Routen und später gekoppelte Mehrfachausgänge. STEP-Topologie und frei geformte Räume
+als gesonderte Erweiterungen; Three.js übernimmt die Interaktion, nicht den CAD-Kernel.
+Konkrete Bedienabläufe, Architektur, Grenzen und Abnahmen: [STUDIO-PLAN.md](STUDIO-PLAN.md).
+Status: Entwurf, noch nicht implementiert. Montage und generatives Gehäuse bleiben später.
