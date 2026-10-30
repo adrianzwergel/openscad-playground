@@ -12,12 +12,12 @@ export type Mechanism={version:1|2|3|4;environment?:Environment;registryVersion:
 export type Check={id:string;state:'pass'|'fail'|'unknown';message:string};
 export type PairContext={elements:Element[];frames:Frame[];params:Params};
 export type Envelope={radius:number;min:number;max:number;transverse?:[number,number]};
-export interface ElementFamily {id:string;carrier:'shaft'|'any';compoundRotor?:boolean;motion?:Motion;support?:'rear';pairDependent?:boolean;bore?:(e:Element)=>number;validate:(p:Params)=>void;envelope:(e:Element,c?:PairContext)=>Envelope;scad:(e:Element,c?:PairContext)=>string;}
+export interface ElementFamily {id:string;carrier:'shaft'|'any';compoundRotor?:boolean;motion?:Motion;support?:'rear';pairDependent?:boolean;reuseGeometry?:(e:Element,c:PairContext)=>string;bore?:(e:Element)=>number;validate:(p:Params)=>void;envelope:(e:Element,c?:PairContext)=>Envelope;scad:(e:Element,c?:PairContext)=>string;}
 export type PairChoice={elements:{family:string;params:Params}[];params:Params};
 // Open-chain search providers expose one directed transfer from element 0 to 1.
 // phase() returns the driven element phase; variables only change relation params.
 /** changesAxis=false promises parallel carrier frames for generated catalog pairs; undefined is unknown. */
-export type SearchProvider={changesAxis?:boolean;sharedRotor?:boolean;catalog:(request?:{stroke?:number})=>PairChoice[];variables:{key:string;lo:number;hi:number}[];phase:(c:PairContext)=>number};
+export type SearchProvider={changesAxis?:boolean;sharedRotor?:boolean;sharedParameters?:string[];catalog:(request?:{stroke?:number})=>PairChoice[];variables:{key:string;lo:number;hi:number}[];phase:(c:PairContext)=>number};
 export type ReservedSpace={frame:Frame;half:[number,number,number];exempt:{kind:'rotor'|'shaft';id:string}[]};
 export type Residual={id:string;value:number;unit:'mm'|'deg'|'ratio'|'unitless';sense:'eq'|'gte'|'lte';tolerance:number};
 export interface RelationRule {id:string;category:'transmission'|'joint'|'loop';arity:number;dofs:number;motion?:[Motion,Motion];search?:SearchProvider;contactShafts?:(c:PairContext)=>{element:string;body:string}[];bearingSpans?:(c:PairContext)=>{body:string;min:number;max:number}[];sweeps?:(c:PairContext)=>{body:string;direction:V;min:number;max:number}[];spaces?:(c:PairContext)=>ReservedSpace[];scad?:(c:PairContext)=>string;validate:(c:PairContext)=>void;evaluate:(c:PairContext)=>Check[];residuals?:(c:PairContext)=>Residual[];transfers?:(c:PairContext)=>{from:number;to:number;gain:number}[];mateFrames?:(c:PairContext)=>Frame[];}

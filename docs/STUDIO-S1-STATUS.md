@@ -171,3 +171,41 @@ Abnahme: check-shared-output-gear.mjs prüft eine kalte Suche mit drei statt vie
 Zahnrädern, drei CAD-Elementen, unveränderten Anschlüssen/Übersetzung und gültigen
 Freiräumen sowie die Ablehnung unpassender Zusammenlegungen. Bestehende Verbund- und
 Mehrstufentests prüfen weiterhin Alternativen mit getrennten Rädern.
+
+## Allgemeine Wiederverwendung, linearer Ausgang und konkreter 90°-Fehler
+
+Alle sechs Suchprovider sind weiterhin registriert: Stirnrad, Kegelrad, GT2,
+Schnecke/Schneckenrad, Spindel/Mutter und Ritzel/Zahnstange. Im Inspector wird die
+freigegebene Liste angezeigt. Für einen linearen Ausgang kann jetzt die Bewegungsart
+und der Hub gewählt werden; das Suchziel wird dann als mm pro Eingangsumdrehung
+beschriftet. Die Suche berücksichtigt 1–4 Stufen und auch gerichtete lineare Starts.
+Der Katalog zeigt nur Paarungen, deren Provider-Validierung zum aktuellen Hub passt.
+
+Wiederverwendung bleibt ein allgemeiner Topologiepfad mit providerseitiger Freigabe:
+GT2 und Kegelräder werden nun ebenfalls geprüft. Partnerabhängige Familien können mit
+reuseGeometry angeben, wann zwei Kontakte dieselbe Geometrie benötigen. Für Kegelräder
+müssen Gegenrad-Zähnezahl und Achswinkel übereinstimmen; gekoppelte Winkelparameter
+bleiben während der Optimierung gemeinsam. Kollidierende Riemenräume sind weiterhin
+ein Ausschlussgrund, auch bei identischer Riemenscheibe.
+
+Der neue Zahnstangenkatalog verwendet das reguläre Stirnrad als Ritzel. Damit kann ein
+Stirnrad gleichzeitig einen Zahnradeingriff und einen Zahnstangeneingriff bedienen.
+Die bisherige rack-pinion-Familie bleibt für gespeicherte Projekte erhalten; deren
+halbe Zahnphasenverschiebung wird beim neuen Spur-Ritzel ausdrücklich berücksichtigt.
+Ein Schneckenrad wird nicht zum Stirnrad und eine Mutter nicht zur Spindel umgedeutet.
+Solche unterschiedlichen Teile bleiben ein Verbund auf einer gemeinsamen Welle bzw.
+einem Träger. Die gerichtete Schneckenpaarung wird nicht stillschweigend rückwärts
+betrieben. Nicht jede Familie kann bei jeder Gesamtübersetzung vorkommen.
+
+Der tatsächliche Nutzerfall (Sperrzone Y=8.653182304867741 mm, Zielachse um Y=90°)
+wurde reproduziert: zuvor kein Treffer. Gerichtete Starts berücksichtigen nun auch
+mittlere Richtungswechsel, verschiedene Teilübersetzungen und beidseitige axiale
+Anordnungen vor/nach der Umlenkung. Ein musterbezogener Übersetzungsfilter vermeidet
+unmögliche Katalogkombinationen. In der Browserprüfung wurden acht gültige Treffer
+bei 4186/25000 Budgeteinheiten gefunden, ohne Zieltoleranz und ohne gelockerte Räume.
+Die Baugruppe im ursprünglichen Nutzertab wurde nicht verändert; geprüft wurde in
+einem separaten Tab.
+
+Neue Checks: check-reuse-providers.mjs und check-user-spatial-regression.mjs;
+zusätzlich bestehende lineare Ketten-, Verbund-, Koaxialitäts- und Mehrstufentests.
+Montage und generatives Gehäuse bleiben weiterhin außerhalb dieses Schritts.

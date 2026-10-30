@@ -28,13 +28,13 @@ export function registerLinear(registry:Registry){
   // Conservative transverse box encloses the toothed back and thickness.
   envelope:e=>({radius:16,transverse:[5,16],min:-e.params.teeth*Math.PI+e.phase,max:e.params.teeth*Math.PI+e.phase}),
   scad:e=>`translate([0,0,${e.phase}]) rotate([0,-90,0]) rack(mod=2,teeth=41,thickness=10,bottom=14,orient=BACK,profile_shift=0,pressure_angle=20,backlash=0.15);`});
- const rackPhase=(c:PairContext)=>{const p=c.elements[0].params,pitch=2*Math.PI,offset=c.params.stroke/2+(c.elements[0].phase-c.params.azimuth)*p.teeth*Math.PI/180;return ((offset%pitch)+pitch)%pitch;};
+ const rackPhase=(c:PairContext)=>{const p=c.elements[0].params,pitch=2*Math.PI,offset=c.params.stroke/2+(c.elements[0].phase-(c.elements[0].family==='spur'?180/p.teeth:0)-c.params.azimuth)*p.teeth*Math.PI/180;return ((offset%pitch)+pitch)%pitch;};
  const rackFrame=(c:PairContext)=>compose(c.frames[0],compose({position:[0,0,0],rotation:axisAngle([0,0,1],c.params.azimuth)},{position:[-c.params.stroke/2,-c.elements[0].params.teeth,0],rotation:axisAngle([0,1,0],90)}));
  registry.rule({id:'rack-drive',category:'transmission',arity:2,dofs:0,motion:['rotation','translation'],
-  validate:c=>{if(c.elements[0].family!=='rack-pinion'||c.elements[1].family!=='rack')throw Error('Ritzel/Zahnstange passen nicht zusammen.');bounded(c.params.stroke,1,200);bounded(c.params.azimuth,-360,360);},
+  validate:c=>{if(!['rack-pinion','spur'].includes(c.elements[0].family)||c.elements[1].family!=='rack')throw Error('Ritzel/Zahnstange passen nicht zusammen.');if(c.elements[0].params.module!==c.elements[1].params.module||c.elements[0].params.width!==c.elements[1].params.width)throw Error('Ritzel und Zahnstange benötigen gleiches Modul und gleiche Breite.');bounded(c.params.stroke,1,200);bounded(c.params.azimuth,-360,360);},
   transfers:c=>[{from:0,to:1,gain:2*Math.PI*c.elements[0].params.teeth}],mateFrames:c=>[rackFrame(c)],
   evaluate:c=>[...poseChecks(c,rackFrame(c)),{id:'coverage',state:c.elements[1].params.teeth*2*Math.PI>=c.params.stroke+40?'pass':'fail',message:'Zahnstange deckt den Hub und mindestens 20 mm Endreserve ab.'},obligation,{id:'rack-phase',state:Math.abs(c.elements[1].phase-rackPhase(c))<1e-6?'pass':'fail',message:'Zahnphase der Zahnstange entspricht Ritzelphase und Referenzlage.'}],
-  search:{variables:[{key:'azimuth',lo:-360,hi:360}],phase:rackPhase,catalog:request=>[20,30,40].map((teeth):PairChoice=>({elements:[{family:'rack-pinion',params:{teeth,module:2,width:10,bore:5.1}},{family:'rack',params:{teeth:41,module:2,width:10}}],params:{azimuth:0,stroke:request?.stroke??100}}))},
+  search:{sharedRotor:true,variables:[{key:'azimuth',lo:-360,hi:360}],phase:rackPhase,catalog:request=>[20,30,40].map((teeth):PairChoice=>({elements:[{family:'spur',params:{teeth,module:2,width:10,bore:5.1}},{family:'rack',params:{teeth:41,module:2,width:10}}],params:{azimuth:0,stroke:request?.stroke??100}}))},
   sweeps:c=>[{body:c.elements[1].body,direction:axis(c.frames[1]),min:0,max:c.params.stroke}]
  });
 }

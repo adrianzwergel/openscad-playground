@@ -68,12 +68,28 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
  // Budgeted, directed starts before the random tail. Enumerate pair families
  // and ratio-compatible catalogs, then vary signed layers on both sides of a shaft.
  // This also avoids belt lengths dominating the choice of transmission families.
- if(!linear){
+ {
   const straight=providers.filter(p=>p.search?.changesAxis===false),turns=providers.filter(p=>p.search?.changesAxis===true);
   const patterns:string[][]=[];
   for(let depth=min;depth<=o.maxStages;depth++)for(const p of straight){
    if(!needsAxisChange||o.includeNearMisses)patterns.push(Array(depth).fill(p.id));
-   for(const turn of needsAxisChange?turns:[])for(const index of [depth-1,0]){const pattern=Array(depth).fill(p.id);pattern[index]=turn.id;patterns.push(pattern);}
+   for(const turn of needsAxisChange?turns:[])for(const index of [...new Set([Math.floor(depth/2),depth-1,0,...Array.from({length:depth},(_,i)=>i)])]){const pattern=Array(depth).fill(p.id);pattern[index]=turn.id;patterns.push(pattern);}
+  }
+  if(linear){
+   patterns.length=0;
+   const terminal=providers.filter(p=>p.motion?.[1]==='translation');
+   for(let depth=min;depth<=o.maxStages;depth++)for(const end of terminal){
+    if(depth===1){patterns.push([end.id]);continue;}
+    for(const p of [...straight,...turns]){patterns.push([...Array(depth-1).fill(p.id),end.id]);}
+   }
+  }
+  if(needsAxisChange){
+   const extra:string[][]=[];
+   for(let depth=min;depth<=o.maxStages;depth++)for(const turn of turns)for(let count=2;count<=Math.min(depth,3);count++){
+    for(const p of straight.length?straight:turns){const pattern=Array(depth).fill(p.id);for(let i=0;i<count;i++)pattern[i]=turn.id;extra.push(pattern);}
+   }
+   // Several changes of axis can route around a blocked single-turn approach.
+   patterns.push(...extra);
   }
   const desired=compose(source.output.target,inverse(source.output.local));
   const direction=rotate(inverseQ(inputFrame.rotation),axis(desired));
@@ -84,22 +100,27 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
   const dot=(a:number[],b:number[])=>a.reduce((sum,n,i)=>sum+n*b[i],0);
   const catalogs=new Map(providers.map(p=>[p.id,[...groups.values()].flatMap(g=>g.variants.filter(v=>v.rule===p.id).map(v=>({...v,factor:g.factor}))).sort((a,b)=>Math.abs(Math.log(a.factor))-Math.abs(Math.log(b.factor))||Math.max(...a.choice.elements.map(e=>e.params.teeth??0))-Math.max(...b.choice.elements.map(e=>e.params.teeth??0)))]));
   const routes:{rule:string;choice:PairChoice}[][]=[],fallbackRoutes:typeof routes=[];
-  for(const pattern of patterns){let count=0,fallbackCount=0,sharedCount=0;
-   const canShare=pattern.some((id,i)=>i>0&&registry.getRule(id).search?.sharedRotor&&registry.getRule(pattern[i-1]).search?.sharedRotor);
-   const enough=()=>count>=2&&(!canShare||sharedCount>0);
+  for(const pattern of patterns){let count=0,fallbackCount=0,sharedCount=0;const entryRatios=new Set<string>();
+   const patternMemo=new Map<string,boolean>();
+   const canFinish=(i:number,ratio:number):boolean=>{if(i===pattern.length)return Math.abs((linear?1/ratio:ratio)-o.target)/o.target<=o.tolerance/100+1e-9;const key=i+':'+ratio.toPrecision(12);if(patternMemo.has(key))return patternMemo.get(key)!;const result=[...new Set((catalogs.get(pattern[i])??[]).map(c=>c.factor))].some(f=>canFinish(i+1,ratio*f));patternMemo.set(key,result);return result;};
+   if(!canFinish(0,1))continue;
+   const ratioDiversity=Math.min(3,new Set((catalogs.get(pattern[0])??[]).filter(c=>canFinish(1,c.factor)).map(c=>c.factor)).size);
+   const canShare=pattern.some((id,i)=>i>0&&registry.getRule(id).search?.sharedRotor&&registry.getRule(pattern[i-1]).search?.sharedRotor&&(catalogs.get(pattern[i-1])??[]).some(a=>(catalogs.get(id)??[]).some(b=>sameRotor(a.choice.elements[1],b.choice.elements[0]))));
+   const enough=()=>count>=2&&(!canShare||sharedCount>0)&&entryRatios.size>=ratioDiversity;
    function choose(i:number,ratio:number,path:{rule:string;choice:PairChoice}[]){
     if(enough())return;
-    if(i===pattern.length){if(Math.abs(ratio-o.target)/o.target<=o.tolerance/100+1e-9){
+    if(i===pattern.length){if(Math.abs((linear?1/ratio:ratio)-o.target)/o.target<=o.tolerance/100+1e-9){
      if(path.every(v=>registry.getRule(v.rule).search?.changesAxis===false)){
       const distances=path.map(v=>{const c={elements:v.choice.elements.map((e,j)=>({...e,id:String(j),body:String(j),pose:identity(),phase:0})),frames:[identity(),identity()],params:v.choice.params};return norm(registry.getRule(v.rule).mateFrames!(c)[0].position);});
       const distance=Math.hypot(chord[0],chord[1]),sum=distances.reduce((a,b)=>a+b,0);if(distance>sum+(source.output.tolerance?.position??0)+1e-6||distance<2*Math.max(...distances)-sum-(source.output.tolerance?.position??0)-1e-6||needsAxisChange){if(o.includeNearMisses&&fallbackCount<3){fallbackRoutes.push(path);fallbackCount++;}return;}
      }
      const reusable=path.some((p,i)=>i>0&&registry.getRule(p.rule).search?.sharedRotor&&registry.getRule(path[i-1].rule).search?.sharedRotor&&sameRotor(path[i-1].choice.elements[1],p.choice.elements[0]));
-     if(count<2||reusable&&sharedCount===0){routes.push(path);count++;if(reusable)sharedCount++;}
+     const entryRatio=String((path[0] as {factor?:number}).factor??1);if(count<2||reusable&&sharedCount===0||entryRatios.size<ratioDiversity&&!entryRatios.has(entryRatio)){routes.push(path);entryRatios.add(entryRatio);count++;if(reusable)sharedCount++;}
     }return;}
-    for(const c of catalogs.get(pattern[i])??[]){if(enough())break;if(feasible(pattern.length-i-1,ratio*c.factor))choose(i+1,ratio*c.factor,[...path,c]);}
+    for(const c of catalogs.get(pattern[i])??[]){if(enough())break;if(canFinish(i+1,ratio*c.factor))choose(i+1,ratio*c.factor,[...path,c]);}
    }choose(0,1,[]);
   }
+  if(needsAxisChange&&source.environment?.obstacles.length){const middle=(p:typeof routes[number])=>p.length===3&&registry.getRule(p[1].rule).search?.changesAxis&&!registry.getRule(p[0].rule).search?.changesAxis&&!registry.getRule(p[2].rule).search?.changesAxis?0:1;routes.sort((a,b)=>middle(a)-middle(b));}
   routes.push(...fallbackRoutes);
  // Round-robin starts reserve time for a different topology instead of exhausting
   // all detours and bindings of the first candidate.
@@ -107,16 +128,18 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
   for(let layout=0;layout<4&&active()&&visited<directedLimit;layout++)for(const choices of routes){
    if(!active()||visited>=directedLimit)break;
    const depth=choices.length;
-   const g:Mechanism={version:source.environment?4:2,registryVersion:registry.version,...(source.environment?{environment:structuredClone(source.environment)}:{}),bodies:Array.from({length:depth+1},(_,i)=>({id:'d'+i,kind:'shaft',frame:identity(),shaft:{diameter:5,start:-150,end:150}})),elements:[],relations:[],input:{...source.input,body:'d0'},output:{...source.output,body:'d'+depth}};
+   const g:Mechanism={version:source.environment?4:2,registryVersion:registry.version,...(source.environment?{environment:structuredClone(source.environment)}:{}),bodies:Array.from({length:depth+1},(_,i)=>({id:'d'+i,kind:linear&&i===depth?'rigid':'shaft',motion:linear&&i===depth?'translation':'rotation',frame:identity(),...(linear&&i===depth?{}:{shaft:{diameter:5,start:-150,end:150}})})),elements:[],relations:[],input:{...source.input,body:'d0'},output:{...source.output,body:'d'+depth}};
    choices.forEach(({rule,choice},i)=>{
     const changes=registry.getRule(rule).search!.changesAxis;
-    choice.elements.forEach((e,j)=>g.elements.push({...structuredClone(e),id:`d${i}-${j}`,body:'d'+(i+j),pose:{...identity(),position:[0,0,j?0:i?[-60,60,-35,35][layout]:0]},phase:0,binding:'fixed'}));
-    g.relations.push({id:'directed'+i,rule,elements:[`d${i}-0`,`d${i}-1`],params:{...choice.params,azimuth:changes?turnAzimuth:heading+(i%2?-1:1)*[35,-35,70,-70][layout],...(choice.params.angle===undefined?{}:{angle:Math.max(60,Math.min(120,turnAngle))})}});
+    choice.elements.forEach((e,j)=>g.elements.push({...structuredClone(e),id:`d${i}-${j}`,body:'d'+(i+j),pose:{...identity(),position:[0,0,j?0:i?(changes&&i<depth-1?[40,60,-40,-60][layout]:[-60,60,-35,35][layout]):0]},phase:0,binding:'fixed'}));
+    g.relations.push({id:'directed'+i,rule,elements:[`d${i}-0`,`d${i}-1`],params:{...choice.params,azimuth:changes?((turnAzimuth+(choices.filter(c=>registry.getRule(c.rule).search?.changesAxis).length>1?i*90+layout*90:0)+540)%360)-180:heading+(i%2?-1:1)*[-35,35,-70,70][layout],...(choice.params.angle===undefined?{}:{angle:Math.max(60,Math.min(120,turnAngle))})}});
    });
    try{
-    let start=reflow(g);const end=start.bodies.at(-1)!.frame,last=start.elements.find(e=>e.id===start.relations.at(-1)!.elements[1])!;
+    let start=reflow(g);
+    for(let i=1;i<start.relations.length;i++)if(registry.getRule(start.relations[i-1].rule).search?.changesAxis){const outgoing=start.elements.find(e=>e.id===start.relations[i].elements[0])!,carrier=start.bodies.find(b=>b.id===outgoing.body)!;outgoing.pose.position[2]=Math.max(-150,Math.min(150,dot(add(desired.position,scale(carrier.frame.position,-1)),axis(carrier.frame))+[20,-20,40,-40][layout]));start=reflow(start);}
+    const end=start.bodies.at(-1)!.frame,last=start.elements.find(e=>e.id===start.relations.at(-1)!.elements[1])!;
     const clock=multiply(inverseQ(desired.rotation),end.rotation);
-    if(Math.hypot(clock[0],clock[1])<1e-6)last.pose.rotation=clock;
+    if(!linear&&Math.hypot(clock[0],clock[1])<1e-6)last.pose.rotation=clock;
     last.pose.position[2]=Math.max(-150,Math.min(150,dot(add(end.position,scale(desired.position,-1)),axis(end))));
     start=reflow(start);const shift=dot(add(desired.position,scale(start.bodies.at(-1)!.frame.position,-1)),axis(inputFrame));
     start.elements.find(e=>e.id===start.relations[0].elements[0])!.pose.position[2]=Math.max(-150,Math.min(150,shift));

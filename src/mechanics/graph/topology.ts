@@ -1,3 +1,5 @@
+import {samePartGeometry} from './reuse.ts';
+import {context} from './model.ts';
 import type {Element,Mechanism} from './contracts.ts';
 import {registry} from './registry.ts';
 
@@ -25,7 +27,7 @@ export function connectionVariants(input:Mechanism):Mechanism[]{
   if(a.id===b.id||a.body!==b.body||a.rotorGroup||b.rotorGroup)continue;
   const body=input.bodies.find(x=>x.id===a.body)!;
   if(body.id===input.input.body||body.id===input.output.body||body.kind!=='shaft'||body.motion==='translation'||input.elements.filter(e=>e.body===body.id).length!==2)continue;
-  const shared=!!registry.getRule(prev.rule).search?.sharedRotor&&!!registry.getRule(next.rule).search?.sharedRotor&&sameRotor(a,b)&&!registry.getFamily(a.family).pairDependent;
+  const shared=!!registry.getRule(prev.rule).search?.sharedRotor&&!!registry.getRule(next.rule).search?.sharedRotor&&sameRotor(a,b)&&samePartGeometry(a,[context(input,prev),{...context(input,next),elements:context(input,next).elements.map(e=>e.id===b.id?{...e,id:a.id}:e)}],registry);
   const compound=!!registry.getFamily(a.family).compoundRotor&&!!registry.getFamily(b.family).compoundRotor;
   if(shared||compound)joins.push({index:i,shared,compound});
  }
