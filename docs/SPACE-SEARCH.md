@@ -54,3 +54,41 @@ Zwischenrad. Eine Suche mit Übersetzung 1 und zwei Stufen kann es versetzen.
   Speicherung/Neuladen, Sperrzoneneditor und räumliche Überlagerung.
 
 Montage, konkrete Lagerauslegung und generatives Gehäuse bleiben spätere Schritte.
+
+## Robustere Umfahrungen (30.10.2026)
+
+Die Suche ergänzt zufällige Startlagen um geometrisch geführte Umfahrungsstarts:
+Eine Verbindung zwischen den festen Anschlusszielen wird in acht Richtungen und
+zwei Auslenkungen seitlich versetzt. Gegenüberliegende Seiten werden abwechselnd
+versucht. Hindernisausdehnungen beeinflussen die Auslenkung; die Paarungsprovider
+setzen daraus reale Katalogpaarungen über ihre freigegebenen Winkel auf. Diese
+Startlagen sind noch keine geprüften Lösungen. Erst die anschließende kontinuierliche
+Optimierung und die vollständige Endprüfung dürfen sie freigeben.
+
+Pro neuem Katalogaufbau werden zunächst die ursprüngliche Lage und zwei geführte
+Lagen versucht. Verbindungsvarianten werden dazwischen verteilt, damit nicht alle
+Rechenzeit in ähnliche blockierte Lagen fließt. Ein vorhandener passender Aufbau
+bekommt zusätzlich bis zu acht Umfahrungsstarts. Alle Versuche teilen dasselbe
+Suchbudget; Abbruch bleibt möglich. Zwölf aufeinanderfolgende erfolglose lokale
+Optimierungsschritte beenden einen festgefahrenen Versuch früher.
+
+Jede Sperrzone hat jetzt einen eigenen Fehlerterm. Zusätzlich beeinflussen interne
+Bauteil-/Lagerraumkollisionen die Lageoptimierung, statt nur am Ende eine ansonsten
+passende Lösung zu verwerfen. Die Hüllenerzeugung und die erlaubten Kontaktpaare
+werden zwischen Optimierung und Endprüfung geteilt. Der Suchbericht zeigt die Zahl
+der gezielten Umfahrungsstarts. Graph- und Projektformat bleiben unverändert.
+
+Zusätzliche Abnahme:
+
+- `node scripts/check-graph-detours.mjs`: unabhängige Drei-/Vierstufensuche findet
+  Lösungen auf beiden Seiten einer Sperrzone; Vierstufenfall mit gedrehten
+  Anschlüssen und Raum. Eine zweite Sperrzone blockiert eine zunächst gültige
+  Seite und erzwingt die andere. Prüfung von Katalog, Übersetzung, festen Zielen,
+  gesamten Hüllen, Budget, unveränderten Eingaben und Abbruch.
+- `node scripts/check-graph-detours-browser.mjs`: Dreistufensuche im Browser,
+  Umfahrungsbericht, Übernahme und Speicherung/Neuladen.
+
+Diese Testfälle verbessern die Abdeckung, sind aber kein Vollständigkeitsnachweis.
+Komplexe Labyrinthe mit mehreren aufeinanderfolgenden Richtungswechseln können
+weiterhin zusätzliche Suchstrategien benötigen. Montage und generatives Gehäuse
+bleiben außerhalb dieses Schritts.

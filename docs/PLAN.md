@@ -191,3 +191,12 @@ umfasst die vollständigen Bauteil- und Bewegungsräume einschließlich vorhande
 Lager-/Zugangsreservierungen. Katalog und feste Anschlüsse bleiben unverändert.
 Montage und generatives Gehäuse weiterhin später. Verfahren, Grenzen und Abnahme:
 [SPACE-SEARCH.md](SPACE-SEARCH.md).
+
+## Mehrstufige Hindernisumfahrung (30.10.2026)
+
+Gezielte, gegensätzliche Umfahrungsstarts ergänzen die Katalogsuche. Einzelne
+Sperrzonen und interne Bauteilkollisionen beeinflussen gemeinsam die kontinuierliche
+Lageoptimierung. Drei-/Vierstufentests, gedrehter Bauraum, alternative Seiten und eine
+zusätzlich gesperrte Umfahrung ergänzen die Abnahme. Suchbericht zeigt Umfahrungsstarts.
+Verfahren und verbleibende Grenzen: [SPACE-SEARCH.md](SPACE-SEARCH.md).
+Montage und generatives Gehäuse weiterhin später.

@@ -17,7 +17,7 @@ export function containment(b:Hull,region:Hull,margin:number){
 export function spaceViolations(b:Hull,environment:Environment,extra=0){
  const margin=environment.margin+extra;
  return [...(environment.bounds?containment(b,regionHull(environment.bounds),margin):[]),
-  Math.max(0,...environment.obstacles.map(o=>margin-separation(b,regionHull(o))))];
+  ...environment.obstacles.map(o=>Math.max(0,margin-separation(b,regionHull(o))))];
 }
 export function regionCorners(r:Region):V[]{const h=regionHull(r);return Array.from({length:8},(_,i)=>h.axes.reduce((p,a,k)=>add(p,scale(a,h.half[k]*(i&(1<<k)?1:-1))),h.center));}
 export const regionEdges=Array.from({length:8},(_,i)=>[0,1,2].filter(k=>!(i&(1<<k))).map(k=>[i,i|(1<<k)])).flat();

@@ -1,6 +1,7 @@
 import type {Mechanism,PairChoice,Motion} from './contracts.ts';
 import {connectionVariants,sameRotor,connectionSummary} from './topology.ts';
 import {registry} from './registry.ts';
+import {detourSeed} from './detours.ts';
 import {identity} from './frames.ts';
 import {parseMechanism,resolveMechanism} from './model.ts';
 import {refineGraph,reflow} from './refine.ts';
@@ -13,7 +14,7 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
  if(!Number.isFinite(o.target)||o.target<=0||o.target>1000||!Number.isFinite(o.tolerance)||o.tolerance<0||o.tolerance>100||!Number.isInteger(min)||min<1||!Number.isInteger(o.maxStages)||o.maxStages<min||o.maxStages>4||!Number.isInteger(o.budget)||o.budget<1||o.budget>100000||(o.seed!==undefined&&!Number.isInteger(o.seed)))throw Error('Ungültige Suchgrenzen.');
  let seed=(o.seed??73421)>>>0;const random=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296;};
  const signature=(g:Mechanism)=>JSON.stringify([g.bodies.map(b=>[b.motion,b.frame.position.map(n=>Math.round(n*10)),b.frame.rotation.map(n=>Math.round(n*1000))]),g.relations.map(r=>[r.rule,r.elements]),g.elements.map(e=>[e.id,e.binding,e.rotorGroup,e.family,e.params,e.pose.position.map(n=>Math.round(n*10))])]);
- const solutions:Mechanism[]=[],reports:ReturnType<typeof assessConstruction>[]=[],rejections:Record<string,number>={};let visited=0,attempts=0;
+ const solutions:Mechanism[]=[],reports:ReturnType<typeof assessConstruction>[]=[],rejections:Record<string,number>={};let visited=0,attempts=0,detourStarts=0;
  const providers=[...registry.rules.values()].filter(r=>r.search&&r.arity===2&&(r.motion?.[0]??'rotation')==='rotation'&&(!o.rules||o.rules.includes(r.id)));
  if(!providers.length||o.rules?.some(id=>!providers.some(r=>r.id===id)))throw Error('Keine gültige Auswahl von Suchprovidern.');
  const allowed=(g:Mechanism)=>g.relations.every(r=>providers.some(p=>p.id===r.rule))&&Math.abs(resolveMechanism(g).value-o.target)/o.target<=o.tolerance/100+1e-9;
@@ -35,9 +36,25 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
   const key=remaining+':'+ratio.toPrecision(12);if(memo.has(key))return memo.get(key)!;
   const result=ratios.some(r=>{const group=groups.get(r)!;return group.motion===(linear&&remaining===1?'translation':'rotation')&&feasible(remaining-1,ratio*group.factor);});memo.set(key,result);return result;
  };
- if(source.relations.length>=min&&source.relations.length<=o.maxStages&&allowed(source))for(const variant of connectionVariants(source)){if(visited>=o.budget||solutions.length>=8||signal?.aborted)break;await attempt(variant);}
+ const active=()=>visited<o.budget&&solutions.length<8&&!signal?.aborted;
+ async function explore(g:Mechanism,round:number,warm=false){
+  const variants=connectionVariants(g);
+  if(!g.environment){for(const variant of variants){if(!active())break;await attempt(variant);}return;}
+  // Interleave layout and connection choices instead of spending the entire budget
+  // on every binding variant of the same trapped initial layout.
+  const count=warm?9:3;
+  const sectors=[0,4,2,6,1,5,3,7,8,12,10,14,9,13,11,15];
+  for(let j=0;j<count&&active();j++){
+   const variant=variants[j%variants.length];
+   if(j===0){await attempt(variant);continue;}
+   try{visited++;detourStarts++;await attempt(detourSeed(variant,sectors[warm?j-1:(round*2+j-1)%16]));}
+   catch{rejections.seed=(rejections.seed??0)+1;}
+  }
+  if(active()&&variants.length>1)await attempt(variants[1+round%(variants.length-1)]);
+ }
+ if(source.relations.length>=min&&source.relations.length<=o.maxStages&&allowed(source))await explore(source,0,true);
  for(let round=0;round<160&&visited<o.budget&&solutions.length<8;round++)for(let depth=min;depth<=o.maxStages&&visited<o.budget&&solutions.length<8;depth++){
-  if(signal?.aborted)return {solutions,reports,rejections,visited,attempts,status:'cancelled'};if(!feasible(depth,1))continue;
+  if(signal?.aborted)return {solutions,reports,rejections,visited,attempts,detourStarts,status:'cancelled'};if(!feasible(depth,1))continue;
   const choices:{rule:string;choice:PairChoice}[]=[];let ratio=1;
   for(let i=0;i<depth;i++){const possible=ratios.filter(r=>groups.get(r)!.motion===(linear&&i===depth-1?'translation':'rotation')&&feasible(depth-i-1,ratio*groups.get(r)!.factor)),r=possible[Math.floor(random()*possible.length)],variants=groups.get(r)!.variants;
    // Pick families first, so nine belt lengths do not crowd out gears.
@@ -51,8 +68,8 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
    choice.elements.forEach((e,j)=>g.elements.push({...structuredClone(e),id:`${j?'b':'a'}${i}`,body:`r${i+j}`,pose:{...identity(),position:[0,0,j?0:i?25+random()*40:random()*10]},phase:0,binding:'fixed'}));
    const params={...choice.params};for(const v of registry.getRule(rule).search!.variables)params[v.key]=v.lo+random()*(v.hi-v.lo);
    g.relations.push({id:`p${i}`,rule,elements:[`a${i}`,`b${i}`],params});
-  });for(const variant of connectionVariants(g)){if(visited>=o.budget||solutions.length>=8||signal?.aborted)break;await attempt(variant);}
+  });await explore(g,round);
  }
  const ranked=solutions.map((g,i)=>({g,report:reports[i],score:connectionSummary(g)})).sort((a,b)=>a.score.driveShafts-b.score.driveShafts||a.score.elements-b.score.elements);solutions.splice(0,solutions.length,...ranked.map(x=>x.g));reports.splice(0,reports.length,...ranked.map(x=>x.report));
- return {solutions,reports,rejections,visited,attempts,status:signal?.aborted?'cancelled':solutions.length>=8?'solution-limit':visited>=o.budget-20?'budget':'starts-exhausted'};
+ return {solutions,reports,rejections,visited,attempts,detourStarts,status:signal?.aborted?'cancelled':solutions.length>=8?'solution-limit':visited>=o.budget-20?'budget':'starts-exhausted'};
 }
