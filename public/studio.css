@@ -3,3 +3,5 @@
 .tree-row{display:flex;align-items:center;gap:5px}.tree-row button{flex:1;min-width:0}.tree-row input{flex:none;cursor:pointer}#detail-status{font-size:12px;overflow-wrap:anywhere}#detail-status[data-state=error]{color:#ffb1a4}
 
 #search-report{margin:0 12px 6px;flex-shrink:0}#search-report:empty{display:none}
+
+#results article[data-near-miss=true]{border-left:3px solid #e5b65f}#results article[data-near-miss=true][aria-selected=true]{background:#4b4029}

@@ -130,3 +130,22 @@ Neue Checks: check-studio-search-regressions.mjs (Standardvarianten, 90° um X/Y
 Katalog-Nichttreffer vs. zulässige Annäherung, Grenzen und Übernahme) und
 check-studio-tolerance-browser.mjs (Bearbeitung, Undo/Redo, Ergebnisabweichung,
 Übernahme und Neuladen). Montage und generatives Gehäuse bleiben später.
+
+## Drei nahe Kandidaten trotz Zielverfehlung
+
+Studio fordert zusätzlich die bis zu drei nächsten gefundenen Ziel-Nichttreffer an.
+Sie werden während der Suche aktualisiert und als eigene, bernsteinfarbene Gruppe
+mit „Ziel nicht erreicht“ angezeigt. Positions- und Winkelabweichung sowie die
+jeweiligen erlaubten Werte bleiben sichtbar. Die Sortierung verwendet die euklidische
+Kombination der Toleranzüberschreitungen: Millimeter Positionsfehler und Winkel als
+Bogenlänge bei 30 mm Bezugsradius. Keine globale Optimalitätsgarantie.
+
+Nur output/terminal darf fehlschlagen: Eingang, Paarungen, Übersetzung, Bauraum,
+Sperrzonen und reservierte Freiräume müssen die bisherigen Prüfungen bestehen.
+Die Kandidaten können angesehen, aber nicht als gültige Lösung übernommen werden.
+Die CAD-Vorschau verwendet eine geprüfte Kopie mit dem tatsächlich erreichten Ziel;
+das Original mit der verfehlten Vorgabe bleibt unverändert. Suchabbruch erhält die
+bereits gefundenen Kandidaten, Änderungen an Vorgaben verwerfen sie.
+
+Abnahme: check-near-misses.mjs; check-studio-near-browser.mjs (echter Worker,
+Warnkennzeichnung, keine Übernahme, OpenSCAD-Vorschau und Verwerfen bei Änderung).

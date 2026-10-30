@@ -1,3 +1,4 @@
+import {nearMissPreviewGraph} from './graph/near-misses';
 import * as THREE from 'three';
 import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {mechanismCAD} from './graph/model';
@@ -9,7 +10,7 @@ export class StudioDetailPreview {
  private worker?:Worker;
  private timer?:ReturnType<typeof setTimeout>;
  private generation=0;
- private current?:Mechanism;
+ private current?:Mechanism;private nearMiss=false;
  private cache=new Map<string,Uint8Array>();
  constructor(private state:(state:string,message:string)=>void){}
  clear(){
@@ -20,20 +21,20 @@ export class StudioDetailPreview {
   }
   this.current=undefined;this.state('empty','Noch keine Lösung ausgewählt.');
  }
- retry(){if(this.current)this.show(this.current);}
+ retry(){if(this.current)this.show(this.current,this.nearMiss);}
  private install(bytes:Uint8Array){
   const geometry=new STLLoader().parse(bytes.slice().buffer as ArrayBuffer);
   if(!geometry.getAttribute('position')?.count){geometry.dispose();throw Error('Leere CAD-Geometrie');}
   geometry.computeVertexNormals();geometry.computeBoundingSphere();
-  const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:0x63cbb3,roughness:.55,metalness:.15}));
+  const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:this.nearMiss?0xe5b65f:0x63cbb3,roughness:.55,metalness:.15}));
   mesh.name='cad-detail';this.group.add(mesh);
  }
- show(graph:Mechanism){
-  this.clear();this.current=graph;const token=this.generation;
+ show(graph:Mechanism,nearMiss=false){
+  this.clear();this.current=graph;this.nearMiss=nearMiss;const token=this.generation;
   const fail=(message:string)=>{if(token!==this.generation)return;clearTimeout(this.timer);this.worker?.terminate();this.worker=undefined;this.state('error',`Detailvorschau fehlgeschlagen: ${message}`);};
   try{
-   const source=mechanismCAD(graph).source,cached=this.cache.get(source);
-   const ready=()=>this.state('ready','Detailvorschau bereit.'+(graph.relations.some(r=>r.rule==='gt2-belt')?' GT2-Kaufteile vereinfacht; ohne exaktes Zahnprofil.':''));
+   const source=mechanismCAD(nearMiss?nearMissPreviewGraph(graph):graph).source,cached=this.cache.get(source);
+   const ready=()=>this.state('ready',(nearMiss?'Ziel nicht erreicht · Detailvorschau des Kandidaten.':'Detailvorschau bereit.')+(graph.relations.some(r=>r.rule==='gt2-belt')?' GT2-Kaufteile vereinfacht; ohne exaktes Zahnprofil.':''));
    if(cached){this.install(cached);ready();return;}
    this.state('loading','OpenSCAD erzeugt die Detailgeometrie …');
    const worker=new Worker('./mechanics-render-worker.js');this.worker=worker;

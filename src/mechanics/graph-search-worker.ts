@@ -6,7 +6,7 @@ self.onmessage=async ({data})=>{
  try{
   const result=await robustRoute(data.graph,data.options,undefined,visited=>{
    const now=performance.now();if(now-last<100)return;last=now;self.postMessage({type:'progress',visited});
-  },(graph,report,stats)=>self.postMessage({type:'solution',graph,report,stats}));
+  },(graph,report,stats)=>self.postMessage({type:'solution',graph,report,stats}),candidates=>self.postMessage({type:'near-misses',candidates}));
   self.postMessage({type:'done',result});
  }catch(error){self.postMessage({type:'error',message:String(error)});}
 };
