@@ -88,7 +88,8 @@ Der ZIP enthält:
 STLs sind in Millimetern, mit Unterseite bei Z=0. Doppelzahnräder und horizontale Pilotbohrungen
 können Stützmaterial oder Nacharbeit benötigen. Es wird keine stützfreie Druckbarkeit behauptet.
 
-Projektformat bleibt Version 2 mit optionalem `housing`-Objekt: `plateThickness`, `clearance`,
+Etappe D führte ein optionales `housing`-Objekt in Version 2 ein; das aktuelle Format 3
+übernimmt es unverändert: `plateThickness`, `clearance`,
 `bearingFit`, `endplay`. Alte Version-1/2-Dateien verwenden die dokumentierten Standardwerte;
 bei einer Änderung der Gehäuseparameter werden diese explizit mitgespeichert. Alle Längen mm.
 

@@ -1,15 +1,17 @@
 # OpenSCAD Playground
 
-## Mechanics-10 – Etappe D
+## Mechanics-10 – Etappe E
 
 This fork adds a browser-local Prolog → OpenSCAD workflow with a shared component catalog,
 shaft/gear ports, fixed-axis spatial search with idlers and compound gears on two planes,
 clearance rules, solution comparison and local/JSON project persistence. Stage D adds two-sided
 bearing support, removable housing plates, spacers, assembly views, a hardware BOM and individual
 printable STLs (also as ZIP). Physical print/assembly validation is still pending; see
-[the housing design](docs/HOUSING.md).
+[the housing design](docs/HOUSING.md). Stage E adds GT2 belt-length/tension-travel selection,
+guided lead-screw and rack axes, full-stroke clearance checks and printable assembly parts.
+See [motion templates and limitations](docs/MOTION.md).
 See [the project plan](docs/PLAN.md) and [development instructions](docs/DEVELOPMENT.md).
-The [component model](docs/COMPONENT-MODEL.md) describes the stage-C scope and file format.
+The [component model](docs/COMPONENT-MODEL.md) describes the shared model and current project format.
 
 ```sh
 npm ci

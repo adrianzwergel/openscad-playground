@@ -1,4 +1,4 @@
-# Lokaler Start – Etappe D
+# Lokaler Start – Etappe E
 
 Node.js >=22, npm und Git. Keine native OpenSCAD-/Prolog-Installation erforderlich.
 
@@ -45,3 +45,7 @@ Projektformat und Speicherverhalten: [COMPONENT-MODEL.md](COMPONENT-MODEL.md).
 Etappe D: `node scripts/check-housing.mjs` und `node scripts/check-housing-browser.mjs`.
 Letzterer prüft die tatsächlichen Einzelteil-STLs aus dem ZIP einschließlich geschlossener
 Netze, Zusammenhang und Drucklage. Details: [HOUSING.md](HOUSING.md).
+
+Etappe E: `node scripts/check-motion.mjs` und `node scripts/check-motion-browser.mjs`.
+Browserprüfung einschließlich aller drei Vorlagen, Zahneingriffs-Schnittprüfung,
+Einzelteilnetze und durchgängiger Hub-/Sperrraumprüfung. Siehe [MOTION.md](MOTION.md).

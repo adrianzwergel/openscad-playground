@@ -3,6 +3,12 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+Etappe E als Softwareentwurf implementiert: GT2-Kataloglängen mit exakter Teilkreislänge und
+freigegebenem Stellweg; separat geführte TR8-/Zahnstangenachsen, vollständige Bewegungshüllen,
+Sperrraumprüfung, Montagevorlagen und Einzelteil-/ZIP-Exporte. Projektformat 3 migriert ältere
+Projekte. Drei eigenständige Vorlagen, noch keine automatische Suche gemischter Ketten.
+Physische Abnahme und Lastauslegung bleiben offen. Siehe [MOTION.md](MOTION.md).
+
 Etappe D als Softwareentwurf implementiert: zwei Lager je Welle, zwei abnehmbare Lagerplatten,
 Abstandshalter, Nabenfixierung und axiale Hülsen, Freiraumprüfungen, Montageansicht,
 Stückliste und Einzelteil-STLs/ZIP. Der reale Druck-/Montageversuch ist noch offen;

@@ -1,3 +1,5 @@
+import {parseMotion} from './motion.ts';
+import type {Motion} from './motion.ts';
 /** Millimetres and degrees. Stage C: unshifted spur gears on parallel +Z shaft axes. */
 export const CATALOG_VERSION = 'mechanics10-spur-1';
 export type Vec3 = [number, number, number];
@@ -11,13 +13,13 @@ export type Connection = {kind:'external-spur-mesh'|'rigid-shaft'; a:Endpoint; b
 export type SearchSettings = {maxLayers:1|2; layerSpacing:number; margin:number; maxError:number; direction:'any'|'same'|'opposite'};
 export type HousingSettings={plateThickness:number;clearance:number;bearingFit:number;endplay:number};
 export const DEFAULT_HOUSING:HousingSettings={plateThickness:6,clearance:2,bearingFit:0.15,endplay:0.3};
-export type Project = {format:'mechanics10'; version:2; catalogVersion:typeof CATALOG_VERSION; name:string;
+export type Project = {format:'mechanics10'; version:3; catalogVersion:typeof CATALOG_VERSION; name:string;
   targetRatio:number; components:Instance[]; input:Endpoint; output:Endpoint; connections:Connection[];
-  axes:{input:Vec3; output:Vec3}; search:SearchSettings;housing?:HousingSettings};
+  axes:{input:Vec3; output:Vec3}; search:SearchSettings;housing?:HousingSettings;motion?:Motion};
 export type Check = {id:string; state:'pass'|'fail'|'unknown'; message:string};
 export const gear = (id:string) => {const g=CATALOG.find(g=>g.id===id);if(!g)throw Error(`Unbekannter Katalogeintrag: ${id}`);return g;};
 export function initialProject():Project {
-  return {format:'mechanics10',version:2,catalogVersion:CATALOG_VERSION,name:'Mein Getriebe',targetRatio:2.1,
+  return {format:'mechanics10',version:3,catalogVersion:CATALOG_VERSION,name:'Mein Getriebe',targetRatio:2.1,
     components:[{id:'input',catalogId:'spur-m2-z20',position:[0,0,0]},{id:'output',catalogId:'spur-m2-z40',position:[60,0,0]}],
     input:{component:'input',port:'shaft'},output:{component:'output',port:'shaft'},
     connections:[{kind:'external-spur-mesh',a:{component:'input',port:'teeth'},b:{component:'output',port:'teeth'}}],
@@ -31,7 +33,7 @@ function vector(v:unknown):Vec3{if(!Array.isArray(v)||v.length!==3)throw Error('
 export function parseProject(text:string):Project {
   if(text.length>100000)throw Error('Projektdatei ist zu groß (max. 100 KB).');
   const p=object(JSON.parse(text));
-  if(p.format!=='mechanics10'||![1,2].includes(p.version as number))throw Error('Projektformat oder Version wird nicht unterstützt.');
+  if(p.format!=='mechanics10'||![1,2,3].includes(p.version as number))throw Error('Projektformat oder Version wird nicht unterstützt.');
   if(p.catalogVersion!==CATALOG_VERSION)throw Error('Katalogversion wird nicht unterstützt.');
   if(!Array.isArray(p.components)||p.components.length<2||p.components.length>6)throw Error('Zwei bis sechs Stirnräder erforderlich.');
   const components=p.components.map(v=>{const c=object(v);const catalogId=string(c.catalogId);gear(catalogId);return {id:string(c.id),catalogId,position:vector(c.position)};});
@@ -61,8 +63,8 @@ export function parseProject(text:string):Project {
   let housing:HousingSettings|undefined;
   if(p.housing!==undefined){const h=object(p.housing);housing={plateThickness:number(h.plateThickness),clearance:number(h.clearance),bearingFit:number(h.bearingFit),endplay:number(h.endplay)};
     if(housing.plateThickness<4||housing.plateThickness>15||housing.clearance<1||housing.clearance>20||housing.bearingFit<0||housing.bearingFit>0.5||housing.endplay<0.1||housing.endplay>0.8)throw Error('Ungültige Gehäuseparameter.');}
-  return {format:'mechanics10',version:2,catalogVersion:CATALOG_VERSION,name:string(p.name),targetRatio,components,input,output,connections,
-    axes:{input:vector(axes.input),output:vector(axes.output)},search:{maxLayers:s.maxLayers,layerSpacing,margin,maxError,direction:s.direction as SearchSettings['direction']},...(housing?{housing}:{})};
+  return {format:'mechanics10',version:3,catalogVersion:CATALOG_VERSION,name:string(p.name),targetRatio,components,input,output,connections,
+    axes:{input:vector(axes.input),output:vector(axes.output)},search:{maxLayers:s.maxLayers,layerSpacing,margin,maxError,direction:s.direction as SearchSettings['direction']},...(housing?{housing}:{}),...(p.motion!==undefined?{motion:parseMotion(p.motion)}:{})};
 }
 export function serializeProject(p:Project){return JSON.stringify(parseProject(JSON.stringify(p)),null,2)+'\n';}
 export const distanceXY=(a:Vec3,b:Vec3)=>Math.hypot(a[0]-b[0],a[1]-b[1]);

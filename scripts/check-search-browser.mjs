@@ -19,7 +19,7 @@ try{
  const stl=await page.$eval('a[download]',async a=>(await(await fetch(a.href)).text()));assert.ok((stl.match(/facet normal/g)||[]).length>100);
  await page.click('#save-project');await page.reload();
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('mechanics10.project.v1')));
- assert.equal(saved.version,2);assert.equal(saved.components.length,4);assert.equal(saved.connections[1].kind,'rigid-shaft');assert.deepEqual(saved.axes.output,[100,0,0]);
+ assert.equal(saved.version,3);assert.equal(saved.components.length,4);assert.equal(saved.connections[1].kind,'rigid-shaft');assert.deepEqual(saved.axes.output,[100,0,0]);
  await page.select('#max-layers','1');assert.match(await search(),/Keine passende/);
  await page.select('#max-layers','2');await field('#ratio',2);await field('#maxError',10);
  assert.match(await search(),/gültige Anordnungen/);assert.ok(await page.$('#solutions tr[data-kind="idler"]'));

@@ -1,4 +1,4 @@
-# Gemeinsames Komponentenmodell – Etappe C
+# Gemeinsames Komponentenmodell
 
 ## Datenfluss
 `model.ts` enthält den versionierten Katalog und die Projekt-Typen. `resolveProject` berechnet
@@ -25,7 +25,7 @@ Wellen-/Nabenkorridore. Fehler verhindern den Geometrieexport. Lager, Gehäuse u
 bleiben unbekannt. Details und Suchgrenzen: [SPATIAL-SEARCH.md](SPATIAL-SEARCH.md).
 
 ## Projektdatei
-JSON: `format: mechanics10`, `version: 2`, `catalogVersion: mechanics10-spur-1`.
+JSON: `format: mechanics10`, `version: 3`, `catalogVersion: mechanics10-spur-1`.
 Gespeichert werden Name, Soll-Untersetzung, Komponenten-IDs, Katalogreferenzen, Positionen,
 Eingang/Ausgang, Verbindungen, feste Achsen (`axes`) und Suchvorgaben (`search`).
 Berechnete Werte, Code, Worker-Zustand, Meshes und Blob-URLs werden nicht gespeichert.
@@ -35,7 +35,7 @@ Strukturell gültige Projekte mit geometrischen Regelverletzungen dürfen zur Ko
 und gespeichert werden, sind bis zur Korrektur aber nicht renderbar.
 
 Version-1-Dateien werden beim Laden migriert: Achsen aus den bisherigen Anschlusspositionen,
-Standardsuchvorgaben, anschließend Speicherung als Version 2. Der localStorage-Schlüssel bleibt
+Standardsuchvorgaben, anschließend Speicherung als Version 3. Der localStorage-Schlüssel bleibt
 `mechanics10.project.v1`, damit vorhandene Projekte automatisch gefunden werden.
 
 `Lokal speichern` speichert einen Projektstand im localStorage der jeweiligen Browser-Origin.
@@ -57,7 +57,14 @@ tatsächlicher JSON-Download/Import, unbekannte Version, inkompatible Module, ve
 Ergebnisse und defekter Speicher. Such-/Renderablauf: `node scripts/check-search-browser.mjs`.
 
 ## Erweiterung Etappe D
-Optionale Gehäuseparameter `housing` bleiben im Version-2-Projekt erhalten. Fehlende Werte
+Optionale Gehäuseparameter `housing` bleiben im Projekt erhalten (eingeführt in Version 2). Fehlende Werte
 verwenden das Standardprofil. `housing.ts` ergänzt Lager, Platten, Naben, Hülsen und Hardware
 als abgeleitete Konstruktion. Gehäusefehler blockieren dessen STL-Export, nicht die bisherige
 Verzahnungsansicht. Konstruktion und Grenzen: [HOUSING.md](HOUSING.md).
+
+## Projektformat 3 / Etappe E
+Die aktuelle Speicherung verwendet Version 3. Version 1 und 2 werden weiterhin eingelesen
+und migriert. Das optionale `motion`-Objekt aktiviert eine Riemen-, Spindel- oder Rack-Vorlage;
+die Stirnradkomponenten bleiben erhalten, bilden aber keine automatisch angekoppelte Kette.
+Die Anschlüsse unterscheiden Wellenrotation und linearen Hub, mit passenden Einheiten.
+Details, Maßvorlagen und Grenzen: [MOTION.md](MOTION.md).
