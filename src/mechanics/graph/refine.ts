@@ -1,15 +1,30 @@
+import {terminalDeviation} from './terminals.ts';
 import type {Mechanism} from './contracts.ts';
 import {constructionHulls,collisionPairs} from './construction.ts';
 import {spaceViolations,separation} from './space.ts';
 import {registry} from './registry.ts';
 import {parseMechanism,proposeMate,context} from './model.ts';
-import {compose,inverse,multiply,inverseQ,axis,add,scale,cross} from './frames.ts';
+import {compose,inverse,multiply,inverseQ,axisAngle,axis,add,scale,cross} from './frames.ts';
 export function reflow(input:Mechanism){const g=structuredClone(input);g.bodies.find(b=>b.id===g.input.body)!.frame=compose(g.input.target,inverse(g.input.local));const done=new Set([g.input.body]);const remaining=[...g.relations];while(remaining.length){const i=remaining.findIndex(r=>done.has(g.elements.find(e=>e.id===r.elements[0])!.body)&&!done.has(g.elements.find(e=>e.id===r.elements[1])!.body));if(i<0)throw Error('Optimierung benötigt eine gerichtete offene Kette.');const r=remaining.splice(i,1)[0];const provider=registry.getRule(r.rule).search;if(!provider)throw Error('Paarungsregel hat keinen Suchprovider.');const b=g.elements.find(e=>e.id===r.elements[1])!;const phase=provider.phase(context(g,r)),delta=phase-b.phase;if(b.rotorGroup)for(const member of g.elements)if(member.rotorGroup===b.rotorGroup&&member.id!==b.id)member.phase+=delta;b.phase=phase;const p=proposeMate(g,r.id)[0];g.bodies.find(b=>b.id===p.body)!.frame=p.frame;done.add(p.body);}for(const body of g.bodies){const es=g.elements.filter(e=>e.body===body.id);if(body.shaft){body.shaft.start=Math.min(...es.map(e=>e.pose.position[2]))-40;body.shaft.end=Math.max(...es.map(e=>e.pose.position[2]))+12;}}return g;}
-export function endResidual(g:Mechanism){const f=compose(g.bodies.find(b=>b.id===g.output.body)!.frame,g.output.local),t=g.output.target,delta=add(f.position,scale(t.position,-1));if(g.output.constraint==='axis')return [...cross(delta,axis(t)),...add(axis(f),scale(axis(t),-1)).map(n=>n*30)];let q=multiply(inverseQ(t.rotation),f.rotation);if(q[3]<0)q=q.map(n=>-n) as typeof q;return [...delta,...q.slice(0,3).map(n=>n*60)];}
+export function endResidual(g:Mechanism){
+ const f=compose(g.bodies.find(b=>b.id===g.output.body)!.frame,g.output.local),t=g.output.target,delta=add(f.position,scale(t.position,-1));
+ const deviation=terminalDeviation(f,g.output);
+ const shrink=(v:number[],error:number,limit:number)=>v.map(n=>n*(error>0?Math.max(0,error-limit)/error:0));
+ const position=shrink(g.output.constraint==='axis'?cross(delta,axis(t)):delta,deviation.position,deviation.positionLimit);
+ let orientation:number[];
+ if(g.output.constraint==='axis')orientation=add(axis(f),scale(axis(t),-1)).map(n=>n*30);
+ else{let q=multiply(inverseQ(t.rotation),f.rotation);if(q[3]<0)q=q.map(n=>-n) as typeof q;orientation=q.slice(0,3).map(n=>n*60);}
+ return [...position,...shrink(orientation,deviation.angle,deviation.angleLimit)];
+}
 function solve(a:number[][],b:number[]){const m=a.map((r,i)=>[...r,b[i]]),n=b.length;for(let i=0;i<n;i++){let pivot=i;for(let j=i+1;j<n;j++)if(Math.abs(m[j][i])>Math.abs(m[pivot][i]))pivot=j;[m[i],m[pivot]]=[m[pivot],m[i]];if(Math.abs(m[i][i])<1e-14)return null;const d=m[i][i];for(let k=i;k<=n;k++)m[i][k]/=d;for(let j=0;j<n;j++)if(j!==i){const s=m[j][i];for(let k=i;k<=n;k++)m[j][k]-=s*m[i][k];}}return m.map(r=>r[n]);}
 export async function refineGraph(input:Mechanism,signal?:AbortSignal,iterations=100){
  const initial=parseMechanism(input),variables:{read:(g:Mechanism)=>number;write:(g:Mechanism,v:number)=>void;lo:number;hi:number}[]=[];
- initial.relations.forEach(r=>{for(const {key,lo,hi} of registry.getRule(r.rule).search!.variables)variables.push({read:g=>g.relations.find(x=>x.id===r.id)!.params[key],write:(g,v)=>{g.relations.find(x=>x.id===r.id)!.params[key]=v;},lo,hi});const element=r.elements[0];if(initial.relations.some(other=>other.elements[1]===element))return;variables.push({read:g=>g.elements.find(e=>e.id===element)!.pose.position[2],write:(g,v)=>{g.elements.find(e=>e.id===element)!.pose.position[2]=v;},lo:element===initial.relations[0].elements[0]?0:20,hi:150});});
+ initial.relations.forEach(r=>{for(const {key,lo,hi} of registry.getRule(r.rule).search!.variables)variables.push({read:g=>g.relations.find(x=>x.id===r.id)!.params[key],write:(g,v)=>{g.relations.find(x=>x.id===r.id)!.params[key]=v;},lo,hi});const element=r.elements[0];if(initial.relations.some(other=>other.elements[1]===element))return;variables.push({read:g=>g.elements.find(e=>e.id===element)!.pose.position[2],write:(g,v)=>{g.elements.find(e=>e.id===element)!.pose.position[2]=v;},lo:-150,hi:150});});
+ // A shaft's clocking is independent of its direction. The final driven element
+ // may rotate around its carrier without changing its world-space mating pose.
+ const last=initial.relations.map(r=>r.elements[1]).find(id=>initial.elements.find(e=>e.id===id)!.body===initial.output.body);
+ if(last&&registry.getFamily(initial.elements.find(e=>e.id===last)!.family).carrier==='shaft'){variables.push({read:g=>g.elements.find(e=>e.id===last)!.pose.position[2],write:(g,v)=>{g.elements.find(e=>e.id===last)!.pose.position[2]=v;},lo:-150,hi:150});const base=initial.elements.find(e=>e.id===last)!.pose.rotation;
+  variables.push({read:g=>{const q=multiply(inverseQ(base),g.elements.find(e=>e.id===last)!.pose.rotation);return 2*Math.atan2(q[2],q[3])*180/Math.PI;},write:(g,v)=>{g.elements.find(e=>e.id===last)!.pose.rotation=multiply(base,axisAngle([0,0,1],v));},lo:-180,hi:180});}
  // Keep residual dimensions stable even when a short compound has no gap hull yet.
  const hullKeys=initial.environment?[...new Set([...constructionHulls(initial).boxes.map(b=>b.kind+':'+b.id),...initial.elements.filter(e=>e.rotorGroup).map(e=>'coupling:coupling-'+e.rotorGroup)])].sort():[];
  const residual=(g:Mechanism)=>{const end=endResidual(g);if(!g.environment)return end;

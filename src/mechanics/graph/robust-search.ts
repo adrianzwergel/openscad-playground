@@ -2,7 +2,7 @@ import type {Mechanism,PairChoice,Motion} from './contracts.ts';
 import {connectionVariants,sameRotor,connectionSummary} from './topology.ts';
 import {registry} from './registry.ts';
 import {detourSeed} from './detours.ts';
-import {identity,compose,inverse,axis,add,scale,norm,rotationError} from './frames.ts';
+import {identity,compose,inverse,axis,add,scale,norm,rotate,multiply,inverseQ} from './frames.ts';
 import {parseMechanism,resolveMechanism} from './model.ts';
 import {refineGraph,reflow} from './refine.ts';
 import {assessConstruction} from './construction.ts';
@@ -19,10 +19,10 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
  if(!providers.length||o.rules?.some(id=>!providers.some(r=>r.id===id)))throw Error('Keine gültige Auswahl von Suchprovidern.');
  const allowed=(g:Mechanism)=>g.relations.every(r=>providers.some(p=>p.id===r.rule))&&Math.abs(resolveMechanism(g).value-o.target)/o.target<=o.tolerance/100+1e-9;
  const inputFrame=compose(source.input.target,inverse(source.input.local)),parallelOutput=compose(inputFrame,source.output.local);
- const needsAxisChange=!linear&&(source.output.constraint==='frame'?rotationError(parallelOutput.rotation,source.output.target.rotation)>1e-5:norm(add(axis(parallelOutput),scale(axis(source.output.target),-1)))>1e-7);
+ const needsAxisChange=!linear&&norm(add(axis(parallelOutput),scale(axis(source.output.target),-1)))>2*Math.sin((source.output.tolerance?.angle??0)*Math.PI/360)+1e-7;
  const refined=new Map<string,Awaited<ReturnType<typeof refineGraph>>>();
  const geometryKey=(g:Mechanism)=>g.environment?JSON.stringify(g):JSON.stringify([g.bodies.map(({motion,...b})=>b),g.elements.map(({binding,rotorGroup,...e})=>e),g.relations,g.input,g.output]);
- async function attempt(g:Mechanism){if(signal?.aborted)return;const variables=g.relations.reduce((s,r)=>s+(registry.getRule(r.rule).search!.variables.length+1),0),iterations=Math.min(100,Math.floor((o.budget-visited)/Math.max(1,variables+2)));if(iterations<1){visited=o.budget;return;}attempts++;try{const keyGeometry=geometryKey(g),cached=refined.get(keyGeometry);let solved;
+ async function attempt(g:Mechanism){if(signal?.aborted)return;const variables=2+g.relations.reduce((s,r)=>s+(registry.getRule(r.rule).search!.variables.length+1),0),iterations=Math.min(100,Math.floor((o.budget-visited)/Math.max(1,variables+2)));if(iterations<1){visited=o.budget;return;}attempts++;try{const keyGeometry=geometryKey(g),cached=refined.get(keyGeometry);let solved;
  if(cached){solved=structuredClone(cached);solved.graph.version=g.version;solved.graph.bodies.forEach(b=>{const motion=g.bodies.find(x=>x.id===b.id)!.motion;if(motion===undefined)delete b.motion;else b.motion=motion;});solved.graph.elements.forEach(e=>{const source=g.elements.find(x=>x.id===e.id)!;e.phase=source.phase;if(source.binding===undefined)delete e.binding;else e.binding=source.binding;if(source.rotorGroup===undefined)delete e.rotorGroup;else e.rotorGroup=source.rotorGroup;});solved.graph=reflow(solved.graph);visited++;}
  else{solved=await refineGraph(g,signal,iterations);if(!solved.cancelled)refined.set(keyGeometry,structuredClone(solved));visited+=Math.max(1,solved.iterations)*(variables+2);}onProgress?.(visited);if(solved.cancelled)return;const k=resolveMechanism(solved.graph);if(!k.valid||Math.abs(k.value-o.target)/o.target>o.tolerance/100+1e-9){rejections.closure=(rejections.closure??0)+1;return;}const c=assessConstruction(solved.graph);if(!c.valid){rejections.space=(rejections.space??0)+1;return;}if(!resolveMechanism(c.graph).valid)return;const key=signature(c.graph);if(solutions.some(g=>signature(g)===key))return;solutions.push(c.graph);reports.push(c);onSolution?.(structuredClone(c.graph),structuredClone(c),{visited,attempts,detourStarts});}catch{visited+=Math.max(1,variables);rejections.domain=(rejections.domain??0)+1;}}
  // Group catalog choices by transfer ratio. Memoized feasibility avoids enumerating
@@ -54,7 +54,62 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
   }
   if(active()&&variants.length>1)await attempt(variants[1+round%(variants.length-1)]);
  }
- if(source.relations.length>=min&&source.relations.length<=o.maxStages&&allowed(source))await explore(source,0,true);
+ if(source.relations.length>=min&&source.relations.length<=o.maxStages&&allowed(source))await (source.relations.length>=3?explore(source,0,true):attempt(source));
+ // Budgeted, directed starts before the random tail. Enumerate pair families
+ // and ratio-compatible catalogs, then vary signed layers on both sides of a shaft.
+ // This also avoids belt lengths dominating the choice of transmission families.
+ if(!linear){
+  const straight=providers.filter(p=>p.search?.changesAxis===false),turns=providers.filter(p=>p.search?.changesAxis===true);
+  const patterns:string[][]=[];
+  for(let depth=min;depth<=o.maxStages;depth++)for(const p of straight){
+   if(!needsAxisChange)patterns.push(Array(depth).fill(p.id));
+   for(const turn of needsAxisChange?turns:[])for(const index of [depth-1,0]){const pattern=Array(depth).fill(p.id);pattern[index]=turn.id;patterns.push(pattern);}
+  }
+  const desired=compose(source.output.target,inverse(source.output.local));
+  const direction=rotate(inverseQ(inputFrame.rotation),axis(desired));
+  const turnAzimuth=Math.atan2(direction[0],-direction[1])*180/Math.PI;
+  const turnAngle=Math.acos(Math.max(-1,Math.min(1,direction[2])))*180/Math.PI;
+  const chord=rotate(inverseQ(inputFrame.rotation),add(desired.position,scale(inputFrame.position,-1)));
+  const heading=Math.atan2(chord[1],chord[0])*180/Math.PI;
+  const dot=(a:number[],b:number[])=>a.reduce((sum,n,i)=>sum+n*b[i],0);
+  const catalogs=new Map(providers.map(p=>[p.id,[...groups.values()].flatMap(g=>g.variants.filter(v=>v.rule===p.id).map(v=>({...v,factor:g.factor}))).sort((a,b)=>Math.abs(Math.log(a.factor))-Math.abs(Math.log(b.factor))||Math.max(...a.choice.elements.map(e=>e.params.teeth??0))-Math.max(...b.choice.elements.map(e=>e.params.teeth??0)))]));
+  const routes:{rule:string;choice:PairChoice}[][]=[];
+  for(const pattern of patterns){let count=0;
+   function choose(i:number,ratio:number,path:{rule:string;choice:PairChoice}[]){
+    if(count>=2)return;
+    if(i===pattern.length){if(Math.abs(ratio-o.target)/o.target<=o.tolerance/100+1e-9){
+     if(path.every(v=>registry.getRule(v.rule).search?.changesAxis===false)){
+      const distances=path.map(v=>{const c={elements:v.choice.elements.map((e,j)=>({...e,id:String(j),body:String(j),pose:identity(),phase:0})),frames:[identity(),identity()],params:v.choice.params};return norm(registry.getRule(v.rule).mateFrames!(c)[0].position);});
+      const distance=Math.hypot(chord[0],chord[1]),sum=distances.reduce((a,b)=>a+b,0);if(distance>sum+(source.output.tolerance?.position??0)+1e-6||distance<2*Math.max(...distances)-sum-(source.output.tolerance?.position??0)-1e-6)return;
+     }
+     routes.push(path);count++;
+    }return;}
+    for(const c of catalogs.get(pattern[i])??[]){if(count>=2)break;if(feasible(pattern.length-i-1,ratio*c.factor))choose(i+1,ratio*c.factor,[...path,c]);}
+   }choose(0,1,[]);
+  }
+  // Round-robin starts reserve time for a different topology instead of exhausting
+  // all detours and bindings of the first candidate.
+  const directedLimit=Math.floor(o.budget*.65);
+  for(let layout=0;layout<4&&active()&&visited<directedLimit;layout++)for(const choices of routes){
+   if(!active()||visited>=directedLimit)break;
+   const depth=choices.length;
+   const g:Mechanism={version:source.environment?4:2,registryVersion:registry.version,...(source.environment?{environment:structuredClone(source.environment)}:{}),bodies:Array.from({length:depth+1},(_,i)=>({id:'d'+i,kind:'shaft',frame:identity(),shaft:{diameter:5,start:-150,end:150}})),elements:[],relations:[],input:{...source.input,body:'d0'},output:{...source.output,body:'d'+depth}};
+   choices.forEach(({rule,choice},i)=>{
+    const changes=registry.getRule(rule).search!.changesAxis;
+    choice.elements.forEach((e,j)=>g.elements.push({...structuredClone(e),id:`d${i}-${j}`,body:'d'+(i+j),pose:{...identity(),position:[0,0,j?0:i?[-60,60,-35,35][layout]:0]},phase:0,binding:'fixed'}));
+    g.relations.push({id:'directed'+i,rule,elements:[`d${i}-0`,`d${i}-1`],params:{...choice.params,azimuth:changes?turnAzimuth:heading+(i%2?-1:1)*[35,-35,70,-70][layout],...(choice.params.angle===undefined?{}:{angle:Math.max(60,Math.min(120,turnAngle))})}});
+   });
+   try{
+    let start=reflow(g);const end=start.bodies.at(-1)!.frame,last=start.elements.find(e=>e.id===start.relations.at(-1)!.elements[1])!;
+    const clock=multiply(inverseQ(desired.rotation),end.rotation);
+    if(Math.hypot(clock[0],clock[1])<1e-6)last.pose.rotation=clock;
+    last.pose.position[2]=Math.max(-150,Math.min(150,dot(add(end.position,scale(desired.position,-1)),axis(end))));
+    start=reflow(start);const shift=dot(add(desired.position,scale(start.bodies.at(-1)!.frame.position,-1)),axis(inputFrame));
+    start.elements.find(e=>e.id===start.relations[0].elements[0])!.pose.position[2]=Math.max(-150,Math.min(150,shift));
+    await attempt(start);
+   }catch{rejections.seed=(rejections.seed??0)+1;visited++;}
+  }
+ }
  for(let round=0;round<160&&visited<o.budget&&solutions.length<8;round++)for(let depth=min;depth<=o.maxStages&&visited<o.budget&&solutions.length<8;depth++){
   if(signal?.aborted)return {solutions,reports,rejections,visited,attempts,detourStarts,status:'cancelled'};if(!feasible(depth,1))continue;
   const choices:{rule:string;choice:PairChoice}[]=[];let ratio=1;
@@ -65,7 +120,7 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
    const rules=[...new Set(pool.map(v=>v.rule))],rule=rules[Math.floor(random()*rules.length)],same=pool.filter(v=>v.rule===rule);
    choices.push(same[Math.floor(random()*same.length)]);ratio*=groups.get(r)!.factor;
   }
-  if(source.environment&&needsAxisChange&&choices.every(c=>registry.getRule(c.rule).search?.changesAxis===false)){visited++;rejections.orientation=(rejections.orientation??0)+1;continue;}
+  if(needsAxisChange&&choices.every(c=>registry.getRule(c.rule).search?.changesAxis===false)){visited++;rejections.orientation=(rejections.orientation??0)+1;continue;}
   const g:Mechanism={version:source.environment?4:2,...(source.environment?{environment:structuredClone(source.environment)}:{}),registryVersion:registry.version,bodies:Array.from({length:depth+1},(_,i)=>({id:`r${i}`,kind:linear&&i===depth?'rigid':'shaft',motion:linear&&i===depth?'translation':'rotation',frame:identity(),...(linear&&i===depth?{}:{shaft:{diameter:5,start:-40,end:150}})})),elements:[],relations:[],input:{...source.input,body:'r0'},output:{...source.output,body:`r${depth}`}};
   choices.forEach(({rule,choice},i)=>{
    choice.elements.forEach((e,j)=>g.elements.push({...structuredClone(e),id:`${j?'b':'a'}${i}`,body:`r${i+j}`,pose:{...identity(),position:[0,0,j?0:i?25+random()*40:random()*10]},phase:0,binding:'fixed'}));

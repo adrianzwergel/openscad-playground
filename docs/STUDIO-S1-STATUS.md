@@ -94,3 +94,39 @@ Sichtbarkeit ist eine Sitzungseinstellung und verändert weder Dokument noch His
 Abnahme zusätzlich: check-studio-detail-browser.mjs (echtes OpenSCAD-WASM für Stirnrad/
 Welle und Zahnrad-Riemen-Verbund, Sichtbarkeit, Abbruch bei Änderung, Undo, Renderfehler
 und erneutes Laden). Montage und Gehäuse bleiben ausdrücklich außerhalb dieses Schritts.
+
+## Suche und explizite Zieltoleranzen (30.10.2026)
+
+Die Suche verteilt einen Teil des Budgets auf gerichtete Startanordnungen aus echten
+Katalogpaarungen. Familien, passende Übersetzungen, mehrere Stufenzahlen und positive/
+negative Wellenebenen werden vor den zufälligen Restarts ausprobiert. Rein parallele
+Ketten erhalten einen Reichweitentest; eine Verdrehung um die Achse erfordert keine
+winkeländernde Paarung. Die Suche bleibt heuristisch, mit maximal acht Treffern.
+Kein Treffer innerhalb eines Budgets ist ausdrücklich kein Unmöglichkeitsnachweis.
+Die Ergebnisleiste nennt Treffer, Startlagen und verwendetes Budget.
+
+Die kontinuierliche Optimierung darf axiale Sitze beidseits des Wellenursprungs
+verschieben und den letzten Rotor axial verschieben sowie um die Wellenachse drehen.
+Koaxialität bedeutet dabei gleiche Achsrichtung; eine Verdrehung um diese Achse ist
+zulässig, eine Verkippung weiterhin nicht. Zahnphase und lokaler Montagerahmen sind
+getrennte Größen. Kollisions-, Lagerraum- und Übersetzungsprüfungen bleiben bestehen.
+
+Unter Ausgang → Zieltoleranz stehen Positionsradius (0–100 mm) und maximale Drehung
+(0–45°). Standard ist jeweils null. Der Positionsradius ist eine euklidische Kugel,
+keine separate +/- Toleranz je Koordinate. Bei Rahmenanschlüssen gilt der Winkel für
+die vollständige Orientierung; bei importierten Achslinien-Anschlüssen gelten Abstand
+zur Zielachse und Winkel der Achsrichtung. Nominalziel und Toleranzen bleiben erhalten;
+der Solver verändert sie nicht. Die reale Lage entsteht aus der gefundenen Mechanik.
+Die Ergebnisliste nennt tatsächliche und erlaubte Abweichung, die Vorschau zeigt ein
+zusätzliches Achskreuz an der erreichten Ausgangslage und eine Verbindung zum Ziel.
+
+Toleranzen sind Teil des validierten Graphen, der Undo-Historie und des JSON-Projekts.
+Übernahme verweigert Kandidaten mit anderen Toleranzvorgaben. Bauraum, Sperrzonen,
+Mindestabstände und Sollübersetzung werden dadurch nicht aufgeweicht. Toleranzen
+beschreiben Konstruktionsfreiheit, keine Fertigungsgenauigkeit oder elastische Verformung.
+
+Neue Checks: check-studio-search-regressions.mjs (Standardvarianten, 90° um X/Y,
+90° Verdrehung um Z, versetztes Hindernis), check-target-tolerance.mjs (exakter
+Katalog-Nichttreffer vs. zulässige Annäherung, Grenzen und Übernahme) und
+check-studio-tolerance-browser.mjs (Bearbeitung, Undo/Redo, Ergebnisabweichung,
+Übernahme und Neuladen). Montage und generatives Gehäuse bleiben später.
