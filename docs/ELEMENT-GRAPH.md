@@ -126,3 +126,9 @@ Der aktuelle Prüfstand und verbleibende Grenzen stehen in [GRAPH-SEARCH.md](GRA
 Aktualisierung 30.10.2026: GT2 und Schnecke sind nun über Suchprovider angebunden.
 Diese liefern Katalog, numerische Parameter, Phasen, zusätzliche Raumhüllen und
 Lager-Freihaltezonen. Aktueller Stand: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
+
+
+Aktualisierung 30.10.2026: Graphversion 2 trennt Trägerbewegung und Elementbindung.
+Freie Rotoren übertragen ihre Bewegung nicht automatisch auf die Achse. Spindel
+und Zahnstange ermöglichen lineare Ausgänge der freien Suche. Siehe
+[LINEAR-GRAPH.md](LINEAR-GRAPH.md) für Einheiten, Migration und offene Bedingungen.

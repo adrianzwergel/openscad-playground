@@ -1,3 +1,4 @@
+import {registerLinear} from './linear.ts';
 import {registerDrives} from './drives.ts';
 import {Registry} from './contracts.ts';
 import type {Params,PairContext,Check,Residual} from './contracts.ts';
@@ -24,6 +25,7 @@ export function standardRegistry(){
  r.getRule('external-spur').search={catalog:()=>catalog('spur'),variables:[azimuth],phase:c=>{const [a,b]=c.elements,t=c.params.azimuth;return t+90-180/b.params.teeth-(a.phase-(t-90))*a.params.teeth/b.params.teeth;}};
  r.getRule('bevel-mesh').search={catalog:()=>catalog('bevel'),variables:[azimuth,{key:'angle',lo:60,hi:120}],phase:c=>180/c.elements[1].params.teeth-(c.elements[0].phase-c.params.azimuth)*c.elements[0].params.teeth/c.elements[1].params.teeth};
  registerDrives(r);
+ registerLinear(r);
  return r;
 }
 export const registry=standardRegistry();

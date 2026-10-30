@@ -148,3 +148,14 @@ Details und Grenzen: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
 Noch offen: konkrete Axiallager und Spannvorrichtungen, vollständige Montagewege,
 gezielte Hindernisumgehung, vorgegebene Bauräume und Sperrzonen, weitere Provider.
 Generatives Gehäuse bleibt zurückgestellt.
+
+
+## Lineare Graphausgänge und Bindungen (30.10.2026)
+
+Graphversion 2 ergänzt Trägerbewegungen und feste/freie/axial verschiebbare
+Elementbindungen. Spindel/Mutter und Ritzel/Zahnstange sind als letzte Stufe der
+freien Suche integriert. Suchziel für lineare Ausgänge: Vorschubbetrag in mm/U;
+Hub und Bewegungshüllen werden separat geprüft. Feste Kataloge bleiben bestehen.
+UI, schematische Bewegung, Referenzen und Persistenz angepasst. Die konkrete
+Führung, Verdrehsicherung, D-Wellen/Montageprofile und Lagerauslegung bleiben
+bewusst offen. Details: [LINEAR-GRAPH.md](LINEAR-GRAPH.md).

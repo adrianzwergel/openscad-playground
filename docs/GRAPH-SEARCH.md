@@ -113,3 +113,12 @@ Längen-/Spannregeln, Riemenkorridor-Kollisionen und JSON-Roundtrip.
 `node scripts/check-graph-drives-browser.mjs` rendert alle drei Referenzen mit WASM,
 prüft Speicherung und stichprobenartig tatsächliche Schnecken-Zahnüberschneidungen
 bei verschiedenen Azimuten und Phasen. Stichproben sind kein Bewegungsnachweis.
+
+
+## Lineare Endstufen und Bindungen
+
+Spindel/Mutter und Ritzel/Zahnstange können jetzt die letzte Stufe einer gemischten
+Kette bilden. Suche und Vergleich verwenden dann Vorschub in mm/U statt :1.
+Neue Graphversion 2 trennt Trägerbewegung und Elementbindung; alte Graphen bleiben
+lesbar. Hub, Bewegungshüllen, Referenzen und bewusst offene Führungsbedingungen:
+[LINEAR-GRAPH.md](LINEAR-GRAPH.md).
