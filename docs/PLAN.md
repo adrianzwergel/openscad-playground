@@ -3,6 +3,12 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+Etappe G: Browser-Werkbank für Anschlussvorgaben, schematische Live-Kinematik mit
+Projektionsansichten, persistente Variantenablage mit JSON-Austausch und erweiterte
+CAD-Explosionsansichten implementiert. Fertigungsteile bleiben von Ansichtszuständen
+unberührt. Freie Baugruppenkopplung, animierte CAD-Zahngeometrie und öffentliche
+Bereitstellung bleiben offen. Bedienung und Tests: [WORKBENCH.md](WORKBENCH.md).
+
 Etappe F als Softwareentwurf implementiert: Innenverzahnung, 90°-Kegelräder und rechtwinklige
 Schneckenpaare mit Katalogvarianten, expliziten Portachsen, radialer/axialer Lagerung,
 abnehmbaren Gehäusen und Einzelteil-/ZIP-Export. Rotationshüllen und endliche Wellen werden

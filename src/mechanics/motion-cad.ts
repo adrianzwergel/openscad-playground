@@ -4,15 +4,15 @@ export type MotionPart={id:string;name:string;quantity:number;source:string};
 const head='include <BOSL2/std.scad>\ninclude <BOSL2/gears.scad>\n$fn=48;\n';
 const ring=(d:number,b:number,h:number)=>`difference(){cylinder(d=${d},h=${h});translate([0,0,-0.1]) cylinder(d=${b},h=${h+0.2});}`;
 const xring=(x:number,y:number,z:number,d:number,b:number,h:number)=>`translate([${x},${y},${z}]) rotate([0,90,0]) ${ring(d,b,h)}`;
-function beltCAD(m:Motion){
+function beltCAD(m:Motion,e=0){
  const a=resolveMotion(m),rs=[a.r,a.R],ys=rs.map(r=>Math.max(r+1.5,8)+m.clearance+4),bw=Math.max(...ys)+10;
  const plate=(i:number)=>`difference(){translate([-12,${-ys[i]-7},0]) cube([24,${2*ys[i]+14},6]);translate([0,0,-0.1]) cylinder(d=6.2,h=6.2);translate([0,0,3.5]) cylinder(d=8.15,h=2.6);for(y=[${-ys[i]},${ys[i]}]) translate([0,y,-0.1]) cylinder(d=3.4,h=6.2);}`;
  const base=`difference(){translate([-20,${-bw},0]) cube([${a.max+40},${2*bw},6]);translate([0,0,-0.1]) cylinder(d=6.2,h=6.2);hull(){translate([${a.min},0,-0.1]) cylinder(d=6.2,h=6.2);translate([${a.max},0,-0.1]) cylinder(d=6.2,h=6.2);}for(y=[${-ys[0]},${ys[0]}]) translate([0,y,-0.1]) cylinder(d=3.4,h=6.2);for(y=[${-ys[1]},${ys[1]}]) hull(){translate([${a.min},y,-0.1]) cylinder(d=3.4,h=6.2);translate([${a.max},y,-0.1]) cylinder(d=3.4,h=6.2);}}`;
  const parts:MotionPart[]=[{id:'belt-base',name:'Grundplatte mit freigegebenem Spannweg',quantity:1,source:head+base},...rs.map((_,i)=>({id:`belt-carrier-${i}`,name:`Lagerplatte Scheibe ${i+1} (oben umdrehen)`,quantity:2,source:head+plate(i)})),{id:'belt-post',name:'Lagerplatten-Abstandshalter',quantity:4,source:head+ring(8,3.4,24)}];
- const bodies=[base];
+ const bodies=[`translate([0,0,${-e}]) ${base}`];
  for(const i of [0,1]){
   const x=i?a.c:0,r=rs[i];
-  bodies.push(`translate([${x},0,6]) ${plate(i)}`,`translate([${x},0,42]) mirror([0,0,1]) ${plate(i)}`);
+  bodies.push(`translate([${x},0,6]) ${plate(i)}`,`translate([${x},0,${42+e}]) mirror([0,0,1]) ${plate(i)}`);
   for(const y of [-ys[i],ys[i]])bodies.push(`translate([${x},${y},12]) ${ring(8,3.4,24)}`);
   // Purchased GT2 pulleys and belt are pitch/flange envelopes, not fabricated tooth approximations.
   bodies.push(`translate([${x},0,17]) ${ring(2*r,5,6)}`,`translate([${x},0,16]) ${ring(2*r+3,5,1)}`,`translate([${x},0,23]) ${ring(2*r+3,5,1)}`,`translate([${x},0,24]) ${ring(16,5,8)}`,`translate([${x},0,2]) cylinder(d=5,h=50);`);
@@ -22,7 +22,7 @@ function beltCAD(m:Motion){
  bodies.push(`translate([0,0,17]) linear_extrude(6) difference(){hull(){circle(r=${a.r+0.75});translate([${a.c},0]) circle(r=${a.R+0.75});}hull(){circle(r=${a.r-0.75});translate([${a.c},0]) circle(r=${a.R-0.75});}}`);
  return {parts,source:head+bodies.join('\n'),bom:[`GT2-Endlosriemen ${m.beltLength} mm / ${m.beltLength/2} Zähne, 6 mm breit`,`GT2-Kaufscheiben ${m.teethA}/${m.teethB} Zähne, 5-mm-Bohrung, Flanschpaket 8 mm breit + Klemmnabe Ø16 × 8 mm; Hüllmaße vor Kauf prüfen`,'4 Lager 5 × 8 × 2,5 mm; 2 Wellen Ø5 × 50 mm','4 Metall-Distanzhülsen innen 5,1 / außen 6 × 3,85 mm; Innenringkontakt prüfen','4 M3 × 50 Schrauben, 8 breite Scheiben, 4 Muttern; M3-Schrauben führen auch die verstellbare Lagerbrücke']};
 }
-function axisCAD(m:Motion){
+function axisCAD(m:Motion,e=0){
  const a=resolveMotion(m),right=a.right,rack=m.kind==='rack',cx=m.stroke/2,py=80;
  const xmin=rack?Math.min(-79,-a.rackLength/2-8):-104,xmax=rack?Math.max(right+24,m.stroke+a.rackLength/2+8):right+24;
  const low=19-m.clearance,high=37+m.clearance;
@@ -49,7 +49,7 @@ function axisCAD(m:Motion){
  `;
  const part=(id:string,name:string,quantity:number,body:string):MotionPart=>({id,name,quantity,source:head+defs+body});
  const parts=[part('axis-base','Grundplatte',1,'base();'),part('guide-left','Linker Führungsträger',1,'translate([0,0,-6]) guide_end(-67);'),part('guide-right','Rechter Führungsträger',1,`translate([0,0,-6]) guide_end(${right},true);`),part('carriage','Schlitten mit Lager- und Antriebsaufnahme',1,'translate([0,0,-12]) carriage();'),part('keeper','Schlitten-Lagerdeckel',2,'rotate([0,-90,0]) keeper();')];
- const scene=['base();','guide_end(-67);',`guide_end(${right},true);`,`translate([${a.q},0,0]) carriage();`,`translate([${a.q-38},0,0]) keeper();`,`translate([${a.q+35},0,0]) keeper();`];
+ const scene=[`translate([0,0,${-e}]) base();`,`translate([${-e},0,0]) guide_end(-67);`,`translate([${e},0,0]) guide_end(${right},true);`,`translate([${a.q},0,0]) carriage();`,`translate([${a.q-38-e},0,0]) keeper();`,`translate([${a.q+35+e},0,0]) keeper();`];
  for(const y of [-30,30]){scene.push(`xhole(-67,${y},24,8,${m.guideLength});`);for(const x of [a.q-35,a.q+11])scene.push(xring(x,y,24,15,8,24));}
  const bom=['2 Führungswellen Ø8 × '+m.guideLength+' mm; 4 LM8UU (8 × 15 × 24 mm)', '8 M3 × 10 für Schlitten-Lagerdeckel, 4 M3 × 20 für Führungsklemmung; Ø2,5-Piloten M3 schneiden',`${rack?4:6} M4 × 20 von unten in Führungsträger (Ø3,3-Piloten M4 schneiden)`];
  if(!rack){
@@ -70,5 +70,5 @@ function axisCAD(m:Motion){
  }
  return {parts,source:head+defs+scene.join('\n'),bom};
 }
-export function motionCAD(m:Motion){const a=resolveMotion(m);if(!a.valid)throw Error('Antriebs-/Hubprüfung verletzt.');return m.kind==='belt'?beltCAD(m):axisCAD(m);}
+export function motionCAD(m:Motion,explosion=0){if(!Number.isFinite(explosion)||explosion<0||explosion>80)throw Error('Ungültiger Explosionsabstand.');const a=resolveMotion(m);if(!a.valid)throw Error('Antriebs-/Hubprüfung verletzt.');return m.kind==='belt'?beltCAD(m,explosion):axisCAD(m,explosion);}
 export function motionInstructions(m:Motion){const a=resolveMotion(m);return `Mechanics-10 Etappe E — ${m.kind}\n\n${m.kind==='belt'?`GT2, 2-mm-Teilung, 6-mm-Breite. Riemen und Scheiben sind Kaufteile; Vorschau zeigt Teilkreis-/Flanschhüllen, keine GT2-Zahngeometrie. Ausgangs-Lagerbrücke ist nur im Bereich ${a.min.toFixed(2)} bis ${a.max.toFixed(2)} mm verstellbar. Rechnerischer Achsabstand ${a.c.toFixed(3)} mm. Vor Montage Brücke mindestens 2 mm nach innen schieben, Riemen mit abnehmbaren Scheiben/Flanschen einsetzen, Brücke nach außen verschieben und beide M3-Schrauben mit breiten Scheiben klemmen. Der verbleibende Stellweg ist keine berechnete Riemenvorspannung. Nach Herstellerangaben spannen; nicht bis zum Anschlag überdehnen. Beide Wellen beidseitig lagern, Distanzhülsen nur gegen Innenringe setzen, Scheiben auf Wellen klemmen. Die feste Eingangsachse bleibt unverändert; nur die ausdrücklich freigegebene Ausgangsbrücke verschiebt sich.`:`Zwei Ø8-Führungswellen verhindern Verdrehen; vier LM8UU tragen den Schlitten. Lager in die offenen Taschen einsetzen, Schlitten-Enddeckel verschrauben, Führungswellen durchschieben und die geteilten Endhalter klemmen. M3-Pilotlöcher Ø2,5 und M4-Piloten Ø3,3 nachschneiden. Endträger von unten mit Grundplatte verschrauben. Alle Enddeckel und Halter bleiben lösbar. Erst danach Antrieb montieren.\n${m.kind==='screw'?`Flanschmutter mit vier M3-Schrauben am Schlitten befestigen: sie darf sich nicht mitdrehen. Spindel mit passenden glatten Ø8-Zapfen verwenden; keine Kugellager auf Gewindegängen laufen lassen. Linke axiale Abstützung: Klemmring – Axiallager – Führungsträger – Axiallager – Klemmring. Separater radialer Lagerträger links; rechtes Radiallager lässt den Zapfen axial gleiten. Klemmringe auf ca. 0,2 mm axiales Spiel einstellen, nicht verspannen. Mutter- und Lagermaße sind konkrete Vorlagen, keine universellen TR8-Adapter. Gewinde wird in der Vorschau nur als Hülle dargestellt; Spindel und Mutter sind Kaufteile.`:`Zahnstange an beiden Schlittenarmen verschrauben. Festes Modul-2-Ritzel zwischen zwei Lagerplatten einsetzen, Zahneingriff einstellen und Nabe auf der Welle klemmen. Ritzelphase folgt dem Schlittenweg; 20 Zähne entsprechen ${(40*Math.PI).toFixed(3)} mm/U. Die bewegte Zahnstange benötigt seitlich zusätzlichen Raum über beide Hubenden hinaus.`}\nHub 0 bis ${m.stroke} mm. Die Hubprüfung verwendet analytische Bewegungshüllen, nicht nur die aktuelle Vorschauposition. Einen Sperrraum kann man explizit vorgeben. Endlagen zunächst von Hand prüfen; Endschalter und elastische Anschläge sind vor motorischem Betrieb zu ergänzen.`}\n\nAlle Maße mm. Druckteile liegen mit Unterseite bei Z=0; Querbohrungen können Stützen/Nacharbeit benötigen. Lange Grundplatten/Zahnstangen müssen zum Druckraum passen; keine automatische Segmentierung. Kaufteile, Passungen, Werkzeugzugang und Funktionsfähigkeit sind physisch noch nicht abgenommen. Kräfte, Knicken, Drehzahlen und Lebensdauer werden nicht ausgelegt.\n`;}

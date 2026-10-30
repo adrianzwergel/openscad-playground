@@ -8,6 +8,7 @@ import {exportGlb} from '../io/export_glb';
 
 export function MotionPanel({motion,onChange,busy,onBusy,projectJSON}:{motion:Motion;onChange:(m:Motion)=>void;busy:boolean;onBusy:(v:boolean)=>void;projectJSON:string}){
  const a=resolveMotion(motion),cad=a.valid?motionCAD(motion):null;
+ const [explosion,setExplosion]=useState(0);
  const [status,setStatus]=useState('Bereit'),[preview,setPreview]=useState(''),[download,setDownload]=useState<{url:string;name:string}>();
  const worker=useRef<Worker>(),reject=useRef<(e:Error)=>void>(),generation=useRef(0);
  useEffect(()=>{setPreview('');setDownload(undefined);setStatus('Vorgaben geändert – Vorschau neu erzeugen.');},[motion]);
@@ -19,7 +20,7 @@ export function MotionPanel({motion,onChange,busy,onBusy,projectJSON}:{motion:Mo
  async function run(part?:string){
   if(!cad)return;const id=++generation.current;onBusy(true);setDownload(undefined);
   try{
-   if(!part){setStatus('OpenSCAD rendert …');setPreview('');const r=await job(cad.source);if(id!==generation.current)return;const mesh=parseOff(r.off);mesh.colors=mesh.colors.map(()=>[0.12,0.3,0.28,1]);const glb=await exportGlb(mesh);if(id!==generation.current)return;setPreview(URL.createObjectURL(glb));setStatus('Vorschau fertig.');}
+   if(!part){setStatus('OpenSCAD rendert …');setPreview('');const r=await job(motionCAD(motion,explosion).source);if(id!==generation.current)return;const mesh=parseOff(r.off);mesh.colors=mesh.colors.map(()=>[0.12,0.3,0.28,1]);const glb=await exportGlb(mesh);if(id!==generation.current)return;setPreview(URL.createObjectURL(glb));setStatus('Vorschau fertig.');}
    else{
     const parts=cad.parts.filter(p=>part==='all'||p.id===part),zip=new JSZip();
     for(const [i,p] of parts.entries()){setStatus(`STL ${i+1}/${parts.length}: ${p.name}`);const r=await job(p.source);if(id!==generation.current)return;zip.file(`${p.id}.stl`,r.stl);}
@@ -45,6 +46,7 @@ export function MotionPanel({motion,onChange,busy,onBusy,projectJSON}:{motion:Mo
  <label>Vorschauposition: {a.q.toFixed(1)} / {motion.stroke} mm<input id="motion-position" type="range" min="0" max="1" step="0.01" value={motion.position} disabled={busy} onChange={e=>onChange({...motion,position:Number(e.target.value)})}/></label><p className="note">Die Prüfung umfasst unabhängig von dieser Ansicht immer den ganzen Hub.</p>
  </>}
  {number('clearance','Mindestfreiraum [mm]',0.5,5,0.5)}
+ <label>CAD-Explosionsabstand [mm]<input id="motion-explosion" type="range" min="0" max="80" value={explosion} disabled={busy} onChange={e=>{setExplosion(Number(e.target.value));setPreview('');}}/><small>0 = Einbaulage. Trennt Grundplatte, Führungsträger/Deckel bzw. obere Riemen-Lagerplatten. Kaufteile bleiben in Einbaulage. Neu rendern.</small></label>
  <div className="actions"><button id="motion-render" disabled={busy||!a.valid} onClick={()=>run()}>Vorschau erzeugen</button><button id="motion-export" disabled={busy||!a.valid} onClick={()=>run('all')}>Druckteile als ZIP</button><button id="motion-cancel" disabled={!busy} onClick={cancel}>Abbrechen</button></div><p id="motion-status" role="status">{status}</p>{download&&<a id="motion-download" href={download.url} download={download.name}>{download.name} herunterladen</a>}
  </aside><div className="viewer">{preview?React.createElement('model-viewer',{src:preview,'camera-controls':true,'camera-orbit':'45deg 60deg auto',loading:'eager',orientation:'0deg -90deg 0deg',style:{width:'100%',height:'100%'}}):<div className="empty">{a.valid?'Vorlage bereit für die Vorschau.':'Vorgaben verletzen Prüfregeln.'}<small>Bewegungs- und Montageprüfung unten.</small></div>}</div></div>
  {motion.kind==='belt'&&<section className="card"><h2>Riemenlängen vergleichen</h2><p>Beispielkatalog für GT2, 6 mm breit. Auswahl nur mit mindestens 2 mm Entspannweg und 1 mm Nachspannreserve. Reserven sind keine berechnete Vorspannung.</p><table id="belt-candidates"><thead><tr><th>Länge / Zähne</th><th>Achsabstand</th><th>Entspannen / Nachspannen</th><th>Auswahl</th></tr></thead><tbody>{a.beltCandidates.map(c=><tr key={c.length}><td>{c.length} mm / {c.length/2}</td><td>{Number.isFinite(c.center)?c.center.toFixed(3):'–'} mm</td><td>{c.release.toFixed(2)} / {c.reserve.toFixed(2)} mm</td><td><button disabled={busy||!c.valid} onClick={()=>onChange({...motion,beltLength:c.length})}>{c.length===motion.beltLength?'Gewählt':'Übernehmen'}</button></td></tr>)}</tbody></table></section>}

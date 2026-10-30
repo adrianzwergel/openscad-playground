@@ -1,4 +1,4 @@
-# Lokaler Start – Etappe F
+# Lokaler Start – Etappe G
 
 Node.js >=22, npm und Git. Keine native OpenSCAD-/Prolog-Installation erforderlich.
 
@@ -55,3 +55,6 @@ und `node scripts/check-spatial-browser.mjs`. Die beiden Browsertests benötigen
 Produktionsbuild auf Port 4001 und Chrome. Sie prüfen echte WASM-Schnittmengen,
 32 unterschiedliche Einzelteil-STLs, Vorschauen, Speicherung und Abbruch/Wiederanlauf.
 Katalog, Lagerung und Grenzen: [SPATIAL-PAIRS.md](SPATIAL-PAIRS.md).
+
+Etappe G: `node scripts/check-workbench.mjs` und `node scripts/check-workbench-browser.mjs`.
+Der Browsertest benötigt ebenfalls den Build auf Port 4001. Details: [WORKBENCH.md](WORKBENCH.md).

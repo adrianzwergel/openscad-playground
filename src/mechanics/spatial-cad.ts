@@ -6,7 +6,8 @@ const head='include <BOSL2/std.scad>\ninclude <BOSL2/gears.scad>\n$fn=48;\n';
 const shift=(v:V)=>`translate([${v.join(',')}])`;
 export const orient=(v:V)=>v[0]?'rotate([0,90,0])':v[1]?'rotate([90,0,0])':v[2]<0?'rotate([180,0,0])':'';
 const ring=(d:number,b:number,h:number)=>`difference(){cylinder(d=${d},h=${h});translate([0,0,-0.1]) cylinder(d=${b},h=${h+0.2});}`;
-export function spatialCAD(input:Spatial,view:'pair'|'housing'|'open'='pair'){
+export function spatialCAD(input:Spatial,view:'pair'|'housing'|'open'|'exploded'='pair',explosion=35){
+ if(!Number.isFinite(explosion)||explosion<0||explosion>80)throw Error('Ungültiger Explosionsabstand.');
  const a=resolveSpatial(input),p=a.p,c=p.clearance,[lo,hi]=[a.lo,a.hi],R=a.R;
  if(!a.valid)throw Error('Räumliche Freiraumprüfung verletzt.');
  const pose=(i:number,z=0)=>shift(a.shafts[i].origin)+orient(a.shafts[i].axis)+`translate([0,0,${z}])`;
@@ -40,7 +41,7 @@ export function spatialCAD(input:Spatial,view:'pair'|'housing'|'open'='pair'){
   const body=`difference(){${shift(start)} cube([${size.join(',')}]);${holes}${auxiliary}${joinXY.map(v=>`${shift([v[0],v[1],lo[2]-T-0.1])} cylinder(d=${axis===2?3.4:2.5},h=${T+10.1});${shift([v[0],v[1],hi[2]-10])} cylinder(d=${axis===2?3.4:2.5},h=${T+10.1});`).join('\n')}}`;
   const rot=axis===0?'rotate([0,-90,0])':axis===1?'rotate([90,0,0])':'';
   panels.push({id:`panel-${axis}-${side}`,name:`Gehäuseplatte ${'XYZ'[axis]}${side?'+':'−'}`,quantity:1,source:head+`translate([0,0,${-start[axis]}]) ${rot} ${body}`});
-  if(view!=='open'||!(axis===2&&side===1||axis===1&&side===0))placed.push(body);
+  if(view!=='open'||!(axis===2&&side===1||axis===1&&side===0))placed.push(view==='exploded'?shift([0,0,0].map((_,i)=>i===axis?(side?explosion:-explosion):0) as V)+body:body);
  }
  const parts:SpatialPart[]=[...panels,{id:'cartridge',name:'Doppellager-Kassette mit Montageflansch',quantity:2,source:head+common+'cartridge();'},{id:'bearing-cap',name:'Lagerdeckel',quantity:p.kind==='worm'?6:4,source:head+common+'cap();'},
   {id:'input-gear',name:p.kind==='worm'?'Schnecke mit Nabe':'Eingangsritzel mit Nabe',quantity:1,source:head+common+`translate([0,0,${p.kind==='internal'?13:p.kind==='bevel'?12:20}]) input_part();`},
