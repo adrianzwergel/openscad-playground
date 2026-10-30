@@ -226,3 +226,10 @@ Element-/Wellenzählung. Eigene 3D-Vorschau pro Kandidat ohne Projektübernahme,
 mit Abbruch veralteter Renderjobs und stabiler Auswahl beim Sortieren.
 Definitionen, Grenzen und Tests: [SPACE-SEARCH.md](SPACE-SEARCH.md).
 Montage und generatives Gehäuse bleiben später.
+
+## Sichtbare räumliche Prüfungen (30.10.2026)
+
+Bauraum, Sperrzonen und konservative Freiraum-/Bewegungshüllen als getrennte transparente
+3D-Ebenen in Kandidaten- und Graphvorschau ergänzt. Umschalten ohne erneute CAD-Berechnung,
+Kamera bleibt erhalten, „Alles einpassen“ verfügbar. Projekt und Teileexport unverändert.
+Details: [SPACE-SEARCH.md](SPACE-SEARCH.md). Montage und generatives Gehäuse weiterhin später.

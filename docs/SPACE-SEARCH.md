@@ -202,3 +202,30 @@ Auswahl beim Sortieren, schnellen Wechsel und Übernahme.
 
 Lokal ansehen: http://localhost:4001/mechanics → Baugruppen-Vorlage „Freier Elementgraph“
 → „Anordnungen suchen“ → „Lösungen vergleichen“ → „In 3D prüfen“.
+
+## Schaltbare 3D-Prüfebenen (30.10.2026)
+
+Lösungsvorschau und Detailansicht des aktuellen Graphen verwenden dieselbe
+3D-Prüfansicht. Drei separat schaltbare Ebenen ergänzen die Bauteilgeometrie:
+Blau zeigt den vorgegebenen Bauraum, Rot die Sperrzonen, Gelb sämtliche konservativen
+Konstruktionshüllen (Bauteile/Wellen, Lager-, Zugangs-, Verbindungs-, Riemen- und
+Bewegungsräume über den gesamten Hub). Die vorhandenen orientierten Rahmen werden
+unverändert verwendet. Ohne Raumvorgaben bleiben die entsprechenden Ebenen leer.
+
+Die Hüllen werden als transparente Quader direkt in die GLB-Ansicht eingefügt.
+Es findet keine zusätzliche OpenSCAD-Berechnung statt. Die Basisgeometrie und das
+Projekt bleiben unverändert; SCAD/STL-Exporte enthalten keine Hilfsgeometrie.
+Bauraum und Sperrzonen zeigen die vorgegebenen Maße, nicht um den Mindestabstand
+vergrößerte Hüllen. Der Solver berücksichtigt diesen Abstand weiterhin unabhängig
+von der Sichtbarkeit. Transparenz ist eine Orientierungshilfe, kein exakter
+Kollisionsnachweis; konservative Quader können sich visuell überschneiden.
+
+Beim Umschalten bleibt der Kameraausschnitt erhalten. „Alles einpassen“ setzt ihn
+auf alle aktuell sichtbaren Geometrien zurück. Die Ansicht gibt alte Blob-URLs frei
+und ignoriert veraltete Konvertierungen bei schnellem Umschalten oder Schließen.
+
+Abnahme: `check-inspection-layers.mjs` prüft getrennte Geometrien, transparente
+Materialien, räumliche Transformationen und Hubhüllen. `check-inspection-layers-browser.mjs`
+prüft die tatsächlich geladenen GLB-Materialien, alle Schalter, unverändertes Projekt
+und unveränderte Anzahl der CAD-Renderjobs. Vergleichsvorschau ebenfalls im Browser
+regressionsgeprüft. Montage und generatives Gehäuse bleiben später.
