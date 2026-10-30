@@ -24,15 +24,15 @@ Suchlösungen können nach erneuter Prüfung von Anschlüssen, Raumvorgaben, Üb
 Kinematik und Freiräumen übernommen werden. Dabei endet die Suche und die realisierte
 Baugruppe wird im Dokument gespeichert. Undo stellt den vorherigen Entwurf wieder her.
 Änderungen machen die Übernahmefreigabe ungültig und entfernen die Baugruppendarstellung;
-Undo kann den geprüften Zustand zurückholen. Die aktuelle Darstellung sind weiterhin
-konservative Hüllen, kein detaillierter CAD-Renderer.
+Undo kann den geprüften Zustand zurückholen. Die Detailvorschau verwendet jetzt OpenSCAD-Geometrie; konservative Prüfhüllen
+sind separat zuschaltbar (siehe Ergänzung unten).
 
 Abnahme: check-studio-model.mjs, check-studio-browser.mjs und
 check-studio-s1-browser.mjs. Letzterer prüft echte Mausinteraktion mit dem 3D-Griff,
 Undo/Redo, Dateiimport, Download, Übernahme und Neuladen im Browser.
 
 Noch getrennt auszubauen: zusätzliche frei anlegbare Anschlüsse/Routen und deren
-interaktive Auswahl, globale Mehrkettensuche sowie genaue CAD-Vorschau im Studio.
+interaktive Auswahl, globale Mehrkettensuche sowie weitere CAD-Details der Kaufteile.
 Die bestehende Mechanics-Ansicht bleibt verfügbar. Montage/Gehäuse bleiben später.
 
 ## Eigenständigkeit und Lizenz
@@ -65,12 +65,32 @@ Quelle: https://www.gnu.org/licenses/gpl-faq.en.html
 - Rechtsklick auf die gestrichelte Verbindung öffnet das Suchmenü. Alternativ startet
   die Schaltfläche im Ergebnisbereich. Suchbudget und Abbruch bleiben erreichbar.
 - Geprüfte Treffer erscheinen während der Suche, sortierbar nach Hüllvolumen,
-  Stufenzahl und Bauteilanzahl. Der erste Treffer wird als Prüfhülle angezeigt;
+  Stufenzahl und Bauteilanzahl. Der erste Treffer wird automatisch als Detailgeometrie geladen;
   Ansehen wechselt die Vorschau, Übernehmen speichert sie als Baugruppe im Projekt.
   Änderungen an den Vorgaben verwerfen die alten Suchergebnisse.
 - Zusätzlicher Browser-Regressionscheck: scripts/check-studio-editor-browser.mjs
   prüft Auswahl durch den Bauraum, Eckauswahl, Inspector/Undo, Katalogfilter und
   tatsächliche Suchfreigaben, Kontextmenü, Ergebnisvorschau, Übernahme und Layout.
 
-Die oben genannten Grenzen bei Mehrfachrouten und detaillierter CAD-Darstellung
-bleiben bestehen. Montage und generatives Gehäuse sind nicht Teil dieser Änderung.
+Die oben genannten Grenzen bei Mehrfachrouten bleiben bestehen. Montage und generatives Gehäuse sind nicht Teil dieser Änderung.
+
+## Detaillierte Studio-Vorschau (30.10.2026)
+
+Suchtreffer und übernommene/importierte Baugruppen werden über mechanismCAD und den
+bestehenden OpenSCAD-WASM-Worker als STL erzeugt und im Three.js-Viewport dargestellt.
+Zahnräder und Wellen folgen den realen CAD-Generatoren inklusive Welttransformationen;
+Riemen erscheinen als durchgehende Bänder mit Scheiben und Naben. GT2-Kaufteile bleiben
+im bestehenden Generator vereinfacht, ohne exaktes Zahnprofil; die Oberfläche nennt
+bei solchen Baugruppen diese Grenze. Keine neue Fertigungs- oder Montagefreigabe.
+
+Die Detailberechnung läuft unabhängig von der Suche. Ladezustand, Fehler und erneutes
+Laden stehen im Explorer. Beim Wechsel/Ändern wird der alte Worker beendet, verspätete
+Antworten werden verworfen. Drei CAD-Ergebnisse werden für erneutes Anzeigen gepuffert.
+Die Prüfhüllen sind standardmäßig aus und lassen sich zusätzlich einschalten.
+Bauraum und jede einzelne Sperrzone haben eigene Sichtbarkeitsschalter. Ausgeblendete
+Räume bleiben Teil der Solver-Vorgaben, sind aber im Viewport nicht anklickbar.
+Sichtbarkeit ist eine Sitzungseinstellung und verändert weder Dokument noch Historie.
+
+Abnahme zusätzlich: check-studio-detail-browser.mjs (echtes OpenSCAD-WASM für Stirnrad/
+Welle und Zahnrad-Riemen-Verbund, Sichtbarkeit, Abbruch bei Änderung, Undo, Renderfehler
+und erneutes Laden). Montage und Gehäuse bleiben ausdrücklich außerhalb dieses Schritts.

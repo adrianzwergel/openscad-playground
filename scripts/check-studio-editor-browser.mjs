@@ -28,7 +28,7 @@ try {
  await page.click('#tab-catalog');assert.equal(await page.$$eval('#catalog details',els=>els.length),6);
  await page.type('#catalog-filter','gt2');assert.equal(await page.$$eval('#catalog details',els=>els.length),1);
  await page.$eval('#catalog-filter',e=>{e.value='';e.dispatchEvent(new Event('input'));});
- await page.evaluate(()=>{for(const d of document.querySelectorAll('#catalog details'))d.open=true;for(const box of document.querySelectorAll('[data-catalog-rule]'))if(box.dataset.catalogRule!=='external-spur')box.click();const Original=window.Worker;window.Worker=class extends Original{postMessage(data,...rest){window.searchRequest=data;super.postMessage(data,...rest);}};});
+ await page.evaluate(()=>{for(const d of document.querySelectorAll('#catalog details'))d.open=true;for(const box of document.querySelectorAll('[data-catalog-rule]'))if(box.dataset.catalogRule!=='external-spur')box.click();const Original=window.Worker;window.Worker=class extends Original{postMessage(data,...rest){if(data.options)window.searchRequest=data;super.postMessage(data,...rest);}};});
  await page.select('#budget','5000');await page.mouse.click(...project([50,0,0]),{button:'right'});await page.waitForSelector('#context-menu:not([hidden])');await page.click('#context-search');await page.waitForSelector('[data-studio-preview]',{timeout:120000});
  const request=await page.evaluate(()=>window.searchRequest);assert.deepEqual(request.options.rules,['external-spur']);assert.equal(request.options.budget,5000);
  if(!await page.$eval('#cancel',e=>e.disabled))await page.click('#cancel');
