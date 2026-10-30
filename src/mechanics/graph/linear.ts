@@ -20,7 +20,7 @@ export function registerLinear(registry:Registry){
   sweeps:c=>[{body:c.elements[1].body,direction:axis(c.frames[1]),min:0,max:c.params.stroke}],
   contactShafts:c=>[{element:c.elements[1].id,body:c.elements[0].body}]
  });
- registry.family({id:'rack-pinion',carrier:'shaft',bore:e=>e.params.bore,
+ registry.family({id:'rack-pinion',carrier:'shaft',compoundRotor:true,bore:e=>e.params.bore,
   validate:p=>{if(![20,30,40].includes(p.teeth)||p.module!==2||p.width!==10||p.bore!==5.1)throw Error('Ritzel fehlt im Katalog.');},
   envelope:e=>({radius:e.params.teeth+2,min:-5,max:5}),
   scad:e=>`spur_gear(mod=2,teeth=${e.params.teeth},thickness=10,shaft_diam=5.1,profile_shift=0,pressure_angle=20,backlash=0.15,gear_spin=${e.phase+180/e.params.teeth});`});

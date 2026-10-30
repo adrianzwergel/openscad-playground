@@ -171,3 +171,13 @@ Auswahl weniger antreibende Zwischenwellen. Tests decken Zwei-/Drei-/Vierstufenf
 eine notwendige Doppelradwelle und eine gemischte Zwischenrad-/Schneckenanordnung ab.
 Führung, Lagerausführung, Montage und Achsbefestigung bleiben später.
 Details: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
+
+
+## Freie Verbünde auf festen Achsen (30.10.2026)
+
+Graphversion 3 ergänzt starre freie Rotorgruppen. Automatische Suche vergleicht
+Doppelzahnrad bzw. gemischten Rotorverbund mit einer Antriebswelle. Gemeinsame
+Drehbewegung, feste relative Phase, unabhängige Achse, Verbindungshüllraum,
+Persistenz und Browserdarstellung implementiert. Katalogfreigaben bleiben explizit;
+keine automatische Konstruktion von Naben, Montage oder Lagerung.
+Abnahme und Grenzen: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).

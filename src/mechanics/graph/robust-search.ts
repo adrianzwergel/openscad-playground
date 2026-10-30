@@ -3,7 +3,7 @@ import {connectionVariants,sameRotor,connectionSummary} from './topology.ts';
 import {registry} from './registry.ts';
 import {identity} from './frames.ts';
 import {parseMechanism,resolveMechanism} from './model.ts';
-import {refineGraph} from './refine.ts';
+import {refineGraph,reflow} from './refine.ts';
 import {assessConstruction} from './construction.ts';
 import type {RouteOptions} from './search.ts';
 export type RobustOptions=RouteOptions&{minStages?:number;seed?:number;rules?:string[]};
@@ -12,12 +12,16 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
  if((source.input.motion??'rotation')!=='rotation'||source.input.element||source.output.element)throw Error('Automatische Suche benötigt Trägeranschlüsse mit rotierendem Eingang; freie Anschlusselemente sind manuell prüfbar.');
  if(!Number.isFinite(o.target)||o.target<=0||o.target>1000||!Number.isFinite(o.tolerance)||o.tolerance<0||o.tolerance>100||!Number.isInteger(min)||min<1||!Number.isInteger(o.maxStages)||o.maxStages<min||o.maxStages>4||!Number.isInteger(o.budget)||o.budget<1||o.budget>100000||(o.seed!==undefined&&!Number.isInteger(o.seed)))throw Error('Ungültige Suchgrenzen.');
  let seed=(o.seed??73421)>>>0;const random=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296;};
- const signature=(g:Mechanism)=>JSON.stringify([g.bodies.map(b=>[b.motion,b.frame.position.map(n=>Math.round(n*10)),b.frame.rotation.map(n=>Math.round(n*1000))]),g.relations.map(r=>[r.rule,r.elements]),g.elements.map(e=>[e.id,e.binding,e.family,e.params,e.pose.position.map(n=>Math.round(n*10))])]);
+ const signature=(g:Mechanism)=>JSON.stringify([g.bodies.map(b=>[b.motion,b.frame.position.map(n=>Math.round(n*10)),b.frame.rotation.map(n=>Math.round(n*1000))]),g.relations.map(r=>[r.rule,r.elements]),g.elements.map(e=>[e.id,e.binding,e.rotorGroup,e.family,e.params,e.pose.position.map(n=>Math.round(n*10))])]);
  const solutions:Mechanism[]=[],reports:ReturnType<typeof assessConstruction>[]=[],rejections:Record<string,number>={};let visited=0,attempts=0;
  const providers=[...registry.rules.values()].filter(r=>r.search&&r.arity===2&&(r.motion?.[0]??'rotation')==='rotation'&&(!o.rules||o.rules.includes(r.id)));
  if(!providers.length||o.rules?.some(id=>!providers.some(r=>r.id===id)))throw Error('Keine gültige Auswahl von Suchprovidern.');
  const allowed=(g:Mechanism)=>g.relations.every(r=>providers.some(p=>p.id===r.rule))&&Math.abs(resolveMechanism(g).value-o.target)/o.target<=o.tolerance/100+1e-9;
- async function attempt(g:Mechanism){if(signal?.aborted)return;const variables=g.relations.reduce((s,r)=>s+(registry.getRule(r.rule).search!.variables.length+1),0),iterations=Math.min(100,Math.floor((o.budget-visited)/Math.max(1,variables+2)));if(iterations<1){visited=o.budget;return;}attempts++;try{const solved=await refineGraph(g,signal,iterations);visited+=Math.max(1,solved.iterations)*(variables+2);onProgress?.(visited);if(solved.cancelled)return;const k=resolveMechanism(solved.graph);if(!k.valid||Math.abs(k.value-o.target)/o.target>o.tolerance/100+1e-9){rejections.closure=(rejections.closure??0)+1;return;}const c=assessConstruction(solved.graph);if(!c.valid){rejections.space=(rejections.space??0)+1;return;}if(!resolveMechanism(c.graph).valid)return;const key=signature(c.graph);if(solutions.some(g=>signature(g)===key))return;solutions.push(c.graph);reports.push(c);}catch{visited+=Math.max(1,variables);rejections.domain=(rejections.domain??0)+1;}}
+ const refined=new Map<string,Awaited<ReturnType<typeof refineGraph>>>();
+ const geometryKey=(g:Mechanism)=>JSON.stringify([g.bodies.map(({motion,...b})=>b),g.elements.map(({binding,rotorGroup,...e})=>e),g.relations,g.input,g.output]);
+ async function attempt(g:Mechanism){if(signal?.aborted)return;const variables=g.relations.reduce((s,r)=>s+(registry.getRule(r.rule).search!.variables.length+1),0),iterations=Math.min(100,Math.floor((o.budget-visited)/Math.max(1,variables+2)));if(iterations<1){visited=o.budget;return;}attempts++;try{const keyGeometry=geometryKey(g),cached=refined.get(keyGeometry);let solved;
+ if(cached){solved=structuredClone(cached);solved.graph.version=g.version;solved.graph.bodies.forEach(b=>{const motion=g.bodies.find(x=>x.id===b.id)!.motion;if(motion===undefined)delete b.motion;else b.motion=motion;});solved.graph.elements.forEach(e=>{const source=g.elements.find(x=>x.id===e.id)!;e.phase=source.phase;if(source.binding===undefined)delete e.binding;else e.binding=source.binding;if(source.rotorGroup===undefined)delete e.rotorGroup;else e.rotorGroup=source.rotorGroup;});solved.graph=reflow(solved.graph);visited++;}
+ else{solved=await refineGraph(g,signal,iterations);if(!solved.cancelled)refined.set(keyGeometry,structuredClone(solved));visited+=Math.max(1,solved.iterations)*(variables+2);}onProgress?.(visited);if(solved.cancelled)return;const k=resolveMechanism(solved.graph);if(!k.valid||Math.abs(k.value-o.target)/o.target>o.tolerance/100+1e-9){rejections.closure=(rejections.closure??0)+1;return;}const c=assessConstruction(solved.graph);if(!c.valid){rejections.space=(rejections.space??0)+1;return;}if(!resolveMechanism(c.graph).valid)return;const key=signature(c.graph);if(solutions.some(g=>signature(g)===key))return;solutions.push(c.graph);reports.push(c);}catch{visited+=Math.max(1,variables);rejections.domain=(rejections.domain??0)+1;}}
  // Group catalog choices by transfer ratio. Memoized feasibility avoids enumerating
  // every belt length / family combination for each topology.
  const groups=new Map<string,{factor:number;motion:Motion;variants:{rule:string;choice:PairChoice}[]}>();
@@ -31,7 +35,7 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
   const key=remaining+':'+ratio.toPrecision(12);if(memo.has(key))return memo.get(key)!;
   const result=ratios.some(r=>{const group=groups.get(r)!;return group.motion===(linear&&remaining===1?'translation':'rotation')&&feasible(remaining-1,ratio*group.factor);});memo.set(key,result);return result;
  };
- if(source.relations.length>=min&&source.relations.length<=o.maxStages&&allowed(source))await attempt(source);
+ if(source.relations.length>=min&&source.relations.length<=o.maxStages&&allowed(source))for(const variant of connectionVariants(source)){if(visited>=o.budget||solutions.length>=8||signal?.aborted)break;await attempt(variant);}
  for(let round=0;round<160&&visited<o.budget&&solutions.length<8;round++)for(let depth=min;depth<=o.maxStages&&visited<o.budget&&solutions.length<8;depth++){
   if(signal?.aborted)return {solutions,reports,rejections,visited,attempts,status:'cancelled'};if(!feasible(depth,1))continue;
   const choices:{rule:string;choice:PairChoice}[]=[];let ratio=1;

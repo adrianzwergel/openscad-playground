@@ -4,6 +4,7 @@ import {identity} from './frames.ts';
 import {reflow} from './refine.ts';
 import {assessConstruction} from './construction.ts';
 import {demoMechanism} from './model.ts';
+import {connectionVariants} from './topology.ts';
 
 /** Builds a reference from individual catalog pairs, never from gearbox modules. */
 export function driveExample(kind:'worm-spur'|'worm-belt'|'spur-belt-worm'='worm-belt'):Mechanism{
@@ -36,4 +37,15 @@ export function freeRotorExample():Mechanism{
  g.elements.push({id:'idler-output',family:'spur',body:g.bodies[2].id,binding:'fixed',pose:identity(),phase:0,params:{teeth:20,module:2,width:10,bore:5.1}});
  g.relations[1]={id:'idler-mesh',rule:'external-spur',elements:[g.elements[1].id,'idler-output'],params:{azimuth:0}};
  g=reflow(g);g.output.target=structuredClone(g.bodies[2].frame);return assessConstruction(g).graph;
+}
+
+export function compoundExample(kind:'double-gear'|'gear-belt'='gear-belt'):Mechanism{
+ let g=driveExample('worm-belt');
+ const rules=kind==='double-gear'?['external-spur','external-spur']:['external-spur','gt2-belt'];
+ rules.forEach((rule,i)=>{const choice=registry.getRule(rule).search!.catalog().find(c=>c.elements[0].params.teeth===20&&c.elements[1].params.teeth===40&&(rule!=='gt2-belt'||c.params.length===300))!;
+  g.relations[i].rule=rule;g.relations[i].params={...choice.params};
+  choice.elements.forEach((e,j)=>{const previous=g.elements[2*i+j];g.elements[2*i+j]={...previous,...structuredClone(e)};});
+ });
+ g=reflow(g);g.output.target=structuredClone(g.bodies.at(-1)!.frame);
+ return assessConstruction(connectionVariants(g).find(v=>v.elements.some(e=>e.rotorGroup))!).graph;
 }

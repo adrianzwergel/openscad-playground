@@ -3,14 +3,14 @@ export type Motion='rotation'|'translation';
 export type Binding='fixed'|'free'|'sliding';
 export type Params=Record<string,number>;
 export type Body={id:string;kind:'shaft'|'rigid';motion?:Motion|'fixed';frame:Frame;shaft?:{diameter:number;start:number;end:number}};
-export type Element={id:string;family:string;body:string;binding?:Binding;pose:Frame;phase:number;params:Params};
+export type Element={id:string;family:string;body:string;binding?:Binding;rotorGroup?:string;pose:Frame;phase:number;params:Params};
 export type Relation={id:string;rule:string;elements:string[];params:Params};
 export type Terminal={body:string;local:Frame;target:Frame;constraint:'frame'|'axis';motion?:Motion;stroke?:number;element?:string};
-export type Mechanism={version:1|2;registryVersion:string;bodies:Body[];elements:Element[];relations:Relation[];input:Terminal;output:Terminal};
+export type Mechanism={version:1|2|3;registryVersion:string;bodies:Body[];elements:Element[];relations:Relation[];input:Terminal;output:Terminal};
 export type Check={id:string;state:'pass'|'fail'|'unknown';message:string};
 export type PairContext={elements:Element[];frames:Frame[];params:Params};
 export type Envelope={radius:number;min:number;max:number;transverse?:[number,number]};
-export interface ElementFamily {id:string;carrier:'shaft'|'any';motion?:Motion;support?:'rear';pairDependent?:boolean;bore?:(e:Element)=>number;validate:(p:Params)=>void;envelope:(e:Element,c?:PairContext)=>Envelope;scad:(e:Element,c?:PairContext)=>string;}
+export interface ElementFamily {id:string;carrier:'shaft'|'any';compoundRotor?:boolean;motion?:Motion;support?:'rear';pairDependent?:boolean;bore?:(e:Element)=>number;validate:(p:Params)=>void;envelope:(e:Element,c?:PairContext)=>Envelope;scad:(e:Element,c?:PairContext)=>string;}
 export type PairChoice={elements:{family:string;params:Params}[];params:Params};
 // Open-chain search providers expose one directed transfer from element 0 to 1.
 // phase() returns the driven element phase; variables only change relation params.

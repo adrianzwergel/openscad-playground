@@ -13,7 +13,7 @@ function placed(c:PairContext,f:ReturnType<typeof identity>,phase:number,period:
 export function beltDimensions(c:PairContext){const [a,b]=c.elements.map(e=>e.params),r=a.teeth/Math.PI,R=b.teeth/Math.PI,center=beltCenter(c.params.length,r,R);return {r,R,center,wrap:Math.PI-2*Math.asin(Math.abs(R-r)/center)};}
 export function registerDrives(registry:Registry){
  const azimuth={key:'azimuth',lo:-360,hi:360};
- registry.family({id:'gt2-pulley',carrier:'shaft',bore:e=>e.params.bore,
+ registry.family({id:'gt2-pulley',carrier:'shaft',compoundRotor:true,bore:e=>e.params.bore,
   validate:p=>{integer(p,'teeth',16,60);range(p,'width',6,6);range(p,'bore',5,10);},
   envelope:e=>({radius:Math.max(e.params.teeth/Math.PI+1.5,8),min:-4,max:12}),
   scad:e=>`rotate([0,0,${e.phase}]) difference(){union(){cylinder(r=${e.params.teeth/Math.PI},h=6,center=true);for(z=[-4,3])translate([0,0,z])cylinder(r=${e.params.teeth/Math.PI+1.5},h=1);translate([0,0,4])cylinder(r=8,h=8);}translate([0,0,-5])cylinder(d=${e.params.bore},h=18);}`});
@@ -30,10 +30,10 @@ export function registerDrives(registry:Registry){
   spaces:c=>{const {r,R,center}=beltDimensions(c),radius=Math.max(r,R)+2;return [{frame:compose(c.frames[0],compose({position:[0,0,0],rotation:axisAngle([0,0,1],c.params.azimuth)},{...identity(),position:[center/2,0,0]})),half:[center/2+radius+c.params.tension,radius,3],exempt:[...c.elements.map(e=>({kind:'rotor' as const,id:e.id})),...c.elements.map(e=>({kind:'shaft' as const,id:e.body}))]}];},
   scad:c=>{const {r,R,center}=beltDimensions(c),f=compose(c.frames[0],{position:[0,0,0],rotation:axisAngle([0,0,1],c.params.azimuth)});return `multmatrix(${JSON.stringify(matrix(f))}) linear_extrude(6,center=true) difference(){hull(){circle(r=${r+.75});translate([${center},0])circle(r=${R+.75});}hull(){circle(r=${r-.75});translate([${center},0])circle(r=${R-.75});}}`;}
  });
- registry.family({id:'worm',carrier:'shaft',bore:e=>e.params.bore,validate:p=>{integer(p,'starts',1,2);range(p,'module',2,2);range(p,'diameter',24,24);range(p,'width',24,24);range(p,'bore',5,10);},
+ registry.family({id:'worm',carrier:'shaft',compoundRotor:true,bore:e=>e.params.bore,validate:p=>{integer(p,'starts',1,2);range(p,'module',2,2);range(p,'diameter',24,24);range(p,'width',24,24);range(p,'bore',5,10);},
   envelope:e=>({radius:e.params.diameter/2+2,min:-e.params.width/2,max:e.params.width/2}),
   scad:e=>`difference(){worm(mod=2,d=24,l=24,starts=${e.params.starts},left_handed=false,pressure_angle=20,backlash=0.15,gear_spin=${e.phase});cylinder(d=${e.params.bore},h=26,center=true);}`});
- registry.family({id:'worm-wheel',carrier:'shaft',pairDependent:true,bore:e=>e.params.bore,validate:p=>{integer(p,'teeth',20,40);integer(p,'starts',1,2);range(p,'module',2,2);range(p,'width',10,10);range(p,'bore',5,10);},
+ registry.family({id:'worm-wheel',carrier:'shaft',compoundRotor:true,pairDependent:true,bore:e=>e.params.bore,validate:p=>{integer(p,'teeth',20,40);integer(p,'starts',1,2);range(p,'module',2,2);range(p,'width',10,10);range(p,'bore',5,10);},
   envelope:e=>({radius:e.params.teeth/Math.sqrt(1-(e.params.starts*2/24)**2)+4,min:-5,max:5}),
   scad:e=>`difference(){worm_gear(mod=2,teeth=${e.params.teeth},thickness=10,worm_diam=24,worm_starts=${e.params.starts},left_handed=false,profile_shift=0,pressure_angle=20,backlash=0.15,slices=8,search_steps=24,gear_spin=${e.phase});cylinder(d=${e.params.bore},h=12,center=true);}`});
  const wormFrame=(c:PairContext)=>{const [a,b]=c.elements,spacing=12+b.params.teeth/Math.sqrt(1-(a.params.starts*2/24)**2);return compose(c.frames[0],compose({position:[0,0,0],rotation:axisAngle([0,0,1],c.params.azimuth)},{position:[0,-spacing,0],rotation:axisAngle([0,1,0],-90)}));};

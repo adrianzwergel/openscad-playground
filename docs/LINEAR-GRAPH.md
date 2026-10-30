@@ -107,3 +107,8 @@ Stichproben sind kein lückenloser Zahnkontakt- oder Fertigungsnachweis.
 Noch offen: konstruktive Führung, Montageverbindungen und Wellenprofile, konkrete
 Lager, Lasten, vollständige Montagewege, frei gekoppelte Mehrkörper-/Gelenksynthese,
 geschlossene Schleifen und lineare Eingänge. Generatives Gehäuse bleibt später.
+
+
+Aktualisierung: Graphversion 3 ergänzt `rotorGroup` für starre freie Verbünde auf
+feststehenden Achsen. Diese sind nun eine Suchalternative zu Antriebswellen.
+Die Versionen 1/2 bleiben lesbar. Details siehe [GRAPH-SEARCH.md](GRAPH-SEARCH.md).

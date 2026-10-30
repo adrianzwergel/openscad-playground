@@ -173,3 +173,53 @@ mit Zahnrad plus Schnecke.
 Übernahme, CAD, Speicherung, unabhängige Drehbewegung sowie tatsächliche
 Zahnüberschneidungen beider Zwischenradkontakte in WASM-Stichproben. Führung,
 Montage, reale Gleit-/Kugellager und Befestigung der festen Achsen bleiben offen.
+
+
+## Freie starre Rotorverbünde (Graphversion 3)
+
+Zwischen zwei Stufen kann die Suche jetzt drei Verbindungen prüfen: ein einzelnes
+freies Zwischenrad, einen starren freien Verbund aus zwei Elementen oder eine
+Antriebswelle. Ein Verbund behält beide Elemente und ihre axialen Plätze. Die
+Elemente tragen `binding: free` und dieselbe `rotorGroup`; die Achse hat
+`motion: fixed`. Ein eigener gemeinsamer Bewegungsknoten überträgt Drehmoment
+zwischen den Mitgliedern, ohne die Achse oder andere lose Elemente anzutreiben.
+Relative Winkelphasen bleiben bei Reflow und Animation konstant.
+
+Neue Gruppen benötigen Graphversion 3. Versionen 1/2 bleiben lesbar. Import lehnt
+Einzelmitglieder, achsübergreifende Gruppen, bewegte Gruppenachsen, feste Bindungen
+innerhalb einer freien Gruppe und nicht freigegebene Familien ab. Eine Gruppe kann
+nicht durch gleichzeitiges Drehen unabhängiger loser Elemente ersetzt werden.
+
+Die Familienfreigabe `compoundRotor` gilt aktuell für Stirnrad, Kegelrad,
+Schnecke/Schneckenrad, GT2-Scheibe und Zahnstangenritzel. Alle besitzen eine
+Wellenbohrung im Modell. Eine massive TR8-Katalogspindel wird nicht stillschweigend
+zu einer hohlen frei drehenden Spindel gemacht. Montage und Herstellbarkeit des
+Verbunds sind durch diese kinematische Freigabe nicht nachgewiesen.
+
+Bei höchstens vier Paarungen entstehen bis zu 27 Verbindungskombinationen. Die
+vollständige Antriebswellenvariante wird unmittelbar nach der ersten freien
+Variante geprüft. Gleiche Anfangsgeometrien nutzen die numerische Lageanpassung
+wieder; Bindungen und Phasen werden anschließend erneut aufgebaut und alle
+Kinematik-/Freiraumbedingungen geprüft. Deduplizierung und Speicherung unterscheiden
+Gruppen von einzelnen freien Rotoren und Antriebswellen. Die begrenzte Suche
+liefert weiterhin keine Vollständigkeits- oder Optimalitätsgarantie.
+
+Zwischen den einander zugewandten Elementflächen wird eine konservative
+Verbindungshülle reserviert: Radius mindestens 8 mm, bei größeren Bohrungen
+mindestens Bohrungsradius plus 2 mm. Sie darf ihre Mitglieder und die eigene Achse
+berühren, aber keine fremden Teile, Riemenkorridore oder Lager-/Werkzeugräume
+schneiden. Der GT2-Stellweg bewegt auch diese Hülle. Die Hülle ist weder eine
+konstruierte Nabe noch ein exportiertes Verbindungsteil. Die CAD-Ansicht zeigt
+weiterhin die einzelnen Komponenten; der Browser benennt ihren Verbund.
+
+Die Referenzen „Freies Doppelzahnrad“ und „Freier Zahnrad-GT2-Verbund“ haben jeweils
+4:1. Diese Untersetzung benötigt zwei starr gekoppelte Elemente, aber nun keine
+zwingend mitdrehende Achse mehr. Die frühere reine Zwischenrad-/Wellen-Gegenprobe
+ist entsprechend erweitert: eine Antriebswelle bleibt eine gültige Alternative.
+
+`check-graph-compounds.mjs` prüft kalte Suche mit beiden Alternativen, feste
+Endanschlüsse, gemeinsame Drehzahlen, konstante Phasendifferenzen, stehende Achsen,
+unabhängige lose Elemente, Verbindungshüllenkollisionen, Versionsprüfung und
+Projekt-Roundtrip. `check-graph-compounds-browser.mjs` prüft beide CAD-Referenzen,
+kalte Suche, Übernahme, Speicherung und gemeinsame Animation. Führung, konkrete
+Verbindung, Lagerung und Montage bleiben später.

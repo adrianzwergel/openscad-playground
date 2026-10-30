@@ -27,15 +27,15 @@ for(const depth of [2,3,4]){
 // A 4:1 two-stage reduction cannot be obtained by a single catalog idler (20..40 teeth).
 const compound=demoMechanism();compound.output.target={...identity(),position:[120,0,30]};
 const driven=await robustRoute(compound,{...options,target:4,minStages:2,maxStages:2});
-assert.ok(driven.solutions.length);for(const g of driven.solutions){assert.equal(connectionSummary(g).freeIdlers,0);assert.equal(connectionSummary(g).driveShafts,1);assert.equal(g.elements.length,4);}
+assert.ok(driven.solutions.length);for(const g of driven.solutions){assert.equal(connectionSummary(g).freeIdlers,0);assert.equal(connectionSummary(g).driveShafts+connectionSummary(g).freeCompounds,1);assert.equal(g.elements.length,4);}
 // Different families / separate belt loops must never be collapsed into one rotor.
-assert.equal(connectionVariants(driveExample('worm-belt')).length,1);
+assert.ok(connectionVariants(driveExample('worm-belt')).every(g=>g.elements.length===4));
 const optedOut=registry.getRule('external-spur').search.sharedRotor;
 const split=freeRotorExample(),incoming=split.elements[1];split.bodies[1].motion='rotation';incoming.binding='fixed';
 split.elements.push({...structuredClone(incoming),id:'separate-gear',pose:{...identity(),position:[0,0,30]}});split.relations[1].elements[0]='separate-gear';
-const original=JSON.stringify(split);assert.equal(connectionVariants(split).length,2);assert.equal(JSON.stringify(split),original);
-try{registry.getRule('external-spur').search.sharedRotor=false;assert.equal(connectionVariants(split).length,1);}finally{registry.getRule('external-spur').search.sharedRotor=optedOut;}
-const mismatch=structuredClone(split);mismatch.elements.at(-1).params.teeth=30;assert.equal(connectionVariants(mismatch).length,1);
+const original=JSON.stringify(split);assert.equal(connectionVariants(split).length,3);assert.equal(JSON.stringify(split),original);
+try{registry.getRule('external-spur').search.sharedRotor=false;assert.equal(connectionVariants(split).length,2);}finally{registry.getRule('external-spur').search.sharedRotor=optedOut;}
+const mismatch=structuredClone(split);mismatch.elements.at(-1).params.teeth=30;assert.equal(connectionVariants(mismatch).length,2);
 // Mixed topology: one free idler, then an actual drive shaft carrying gear + worm.
 let mixed=freeRotorExample();const previous=mixed.output.body;
 mixed.bodies.push({id:'D',kind:'shaft',motion:'rotation',frame:identity(),shaft:{diameter:5,start:-70,end:150}});
