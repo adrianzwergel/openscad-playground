@@ -122,3 +122,54 @@ Kette bilden. Suche und Vergleich verwenden dann Vorschub in mm/U statt :1.
 Neue Graphversion 2 trennt Trägerbewegung und Elementbindung; alte Graphen bleiben
 lesbar. Hub, Bewegungshüllen, Referenzen und bewusst offene Führungsbedingungen:
 [LINEAR-GRAPH.md](LINEAR-GRAPH.md).
+
+
+## Automatische Wahl von Zwischenrad und Antriebswelle
+
+Die Suche variiert nun auch die Verbindung zwischen benachbarten Stufen. Wenn
+beide Provider `search.sharedRotor` freigeben und das getriebene Element der ersten
+Paarung exakt dieselbe Familie und dieselben Katalogparameter wie das treibende
+Element der nächsten Paarung hat, kann **ein einziges Element** beide Eingriffe
+übernehmen. Es erhält `binding: free`; sein Träger wird `motion: fixed`. Die zwei
+Relationen verweisen auf dieselbe Element-ID. Die Übersetzung läuft über diesen
+freien Rotor, nicht über die feststehende Achse.
+
+Aktuell ist diese Fähigkeit für externe Stirnradpaarungen freigegeben. Modul,
+Zähnezahl, Breite, Bohrung und weitere Parameter müssen identisch sein.
+Partnerabhängige Familien, verschiedene Elemente und Träger mit weiteren
+unbeteiligten Elementen werden nicht zusammengelegt. Ein frei drehender starrer
+Verbund verschiedener Elemente auf einer gemeinsamen Lagerhülse ist noch kein
+Suchbaustein. Für solche Übergänge bleibt im aktuellen Modell die gemeinsame
+Antriebswelle erhalten. Kegelrad-Geometrien und mehrere Riemen auf einer Scheibe
+brauchen eigene Freigaberegeln.
+
+`topology.ts` erzeugt die zulässigen Kombinationen unabhängiger Übergänge einer
+geordneten offenen Kette. Bei vier Stufen sind das höchstens acht Varianten.
+Die Variante mit Antriebswellen bleibt als Alternative erhalten. Ein Teil der
+Katalogstarts bevorzugt kompatible Folgeelemente, damit Zwischenradmöglichkeiten
+im begrenzten Budget nicht zufällig untergehen. Beide Topologien werden räumlich
+verfeinert und auf Endanschlüsse, Übersetzung, Zahnphasen und Freiraum geprüft.
+
+Ein gemeinsam verwendetes Element wird axial nicht ein zweites Mal unabhängig
+optimiert. Seine Position und Phase ergeben sich bereits aus dem ersten Eingriff;
+der zweite Eingriff verwendet genau diesen Zustand. Das verhindert einen
+scheinbaren Freiheitsgrad und widersprüchliche Zahnphasen.
+
+Deduplizierung berücksichtigt Bindungen, Trägerbewegung und Relationsanschlüsse.
+Ergebnisse werden innerhalb der gefundenen Auswahl nach weniger antreibenden
+Zwischenwellen, danach nach weniger Elementen geordnet. Der Browser zeigt freie
+Zwischenräder, antreibende Zwischenwellen und Elementzahl je Kandidat. Das ist eine
+kinematische Präferenz, kein Last-/Montageoptimum und keine Vollständigkeitsgarantie.
+
+`node scripts/check-graph-idlers.mjs` prüft kalte Zwei-/Drei-/Vierstufensuchen mit
+freien Zwischenrädern in gedrehten Weltkoordinaten, echte gemeinsame Element-IDs,
+feststehende Achsen bei drehenden Rädern, feste Endanschlüsse, Freiräume und
+Speicherung. Gegenproben: Zwei-Stufen-Untersetzung 4:1 benötigt mit diesem Katalog
+eine Antriebswelle; verschiedene Teile und nicht freigegebene Provider bleiben
+getrennt. Eine weitere kalte Suche kombiniert freies Zwischenrad und eine Welle
+mit Zahnrad plus Schnecke.
+
+`node scripts/check-graph-idlers-browser.mjs` prüft Suche, Ergebnisanzeige,
+Übernahme, CAD, Speicherung, unabhängige Drehbewegung sowie tatsächliche
+Zahnüberschneidungen beider Zwischenradkontakte in WASM-Stichproben. Führung,
+Montage, reale Gleit-/Kugellager und Befestigung der festen Achsen bleiben offen.

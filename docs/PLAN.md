@@ -159,3 +159,15 @@ Hub und Bewegungshüllen werden separat geprüft. Feste Kataloge bleiben bestehe
 UI, schematische Bewegung, Referenzen und Persistenz angepasst. Die konkrete
 Führung, Verdrehsicherung, D-Wellen/Montageprofile und Lagerauslegung bleiben
 bewusst offen. Details: [LINEAR-GRAPH.md](LINEAR-GRAPH.md).
+
+
+## Automatische Zwischenrad-/Wellenwahl (30.10.2026)
+
+Freigegebene identische Stirnräder können jetzt als einzelner freier Rotor zwei
+benachbarte Eingriffe übernehmen. Feste Achse und drehender Rotor bleiben getrennte
+Bewegungsknoten. Verschiedene Elemente behalten ihre gemeinsame Antriebswelle.
+Die Suche prüft beide Verbindungsvarianten und priorisiert innerhalb der gültigen
+Auswahl weniger antreibende Zwischenwellen. Tests decken Zwei-/Drei-/Vierstufenfälle,
+eine notwendige Doppelradwelle und eine gemischte Zwischenrad-/Schneckenanordnung ab.
+Führung, Lagerausführung, Montage und Achsbefestigung bleiben später.
+Details: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).

@@ -37,9 +37,10 @@ statt neue Freiheitsgrade unbemerkt zu verwerfen.
 Die Bewegungsgleichungen verwenden separate Knoten für freie Rotoren. Ein freies
 Zahnrad auf einer feststehenden Achse kann daher als Zwischenrad wirken, ohne die
 Achse anzutreiben. `Terminal.element` kann einen solchen Rotor ausdrücklich als
-Anschluss auswählen. Die automatische Suche erzeugt weiterhin feste Verbindungen
-auf gemeinsamen Trägern; freie/slidende Bindungen sind manuell konfigurierbar und
-prüfbar. Die Suche nimmt Trägeranschlüsse entgegen, keine freien Elementanschlüsse.
+Anschluss auswählen. Die automatische Suche kann inzwischen identische Stirnräder als freie
+Zwischenräder auf festen Achsen verbinden. Andere Übergänge verwenden gemeinsame
+Antriebswellen; weitere freie/slidende Bindungen sind manuell konfigurierbar und
+prüfbar. Siehe [GRAPH-SEARCH.md](GRAPH-SEARCH.md). Die Suche nimmt Trägeranschlüsse entgegen, keine freien Elementanschlüsse.
 
 D-Profil, Rundwelle, Passfeder, Klemmnabe, Lager und Sicherung sind noch keine neuen
 Montagekataloge. Die Bindung beschreibt zunächst die kinematische Absicht. Die

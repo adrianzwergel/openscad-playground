@@ -1,4 +1,5 @@
 import type {Mechanism,PairChoice,Motion} from './contracts.ts';
+import {connectionVariants,sameRotor,connectionSummary} from './topology.ts';
 import {registry} from './registry.ts';
 import {identity} from './frames.ts';
 import {parseMechanism,resolveMechanism} from './model.ts';
@@ -11,7 +12,7 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
  if((source.input.motion??'rotation')!=='rotation'||source.input.element||source.output.element)throw Error('Automatische Suche benötigt Trägeranschlüsse mit rotierendem Eingang; freie Anschlusselemente sind manuell prüfbar.');
  if(!Number.isFinite(o.target)||o.target<=0||o.target>1000||!Number.isFinite(o.tolerance)||o.tolerance<0||o.tolerance>100||!Number.isInteger(min)||min<1||!Number.isInteger(o.maxStages)||o.maxStages<min||o.maxStages>4||!Number.isInteger(o.budget)||o.budget<1||o.budget>100000||(o.seed!==undefined&&!Number.isInteger(o.seed)))throw Error('Ungültige Suchgrenzen.');
  let seed=(o.seed??73421)>>>0;const random=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296;};
- const signature=(g:Mechanism)=>JSON.stringify([g.bodies.map(b=>[b.frame.position.map(n=>Math.round(n*10)),b.frame.rotation.map(n=>Math.round(n*1000))]),g.relations.map(r=>r.rule),g.elements.map(e=>[e.family,e.params,e.pose.position.map(n=>Math.round(n*10))])]);
+ const signature=(g:Mechanism)=>JSON.stringify([g.bodies.map(b=>[b.motion,b.frame.position.map(n=>Math.round(n*10)),b.frame.rotation.map(n=>Math.round(n*1000))]),g.relations.map(r=>[r.rule,r.elements]),g.elements.map(e=>[e.id,e.binding,e.family,e.params,e.pose.position.map(n=>Math.round(n*10))])]);
  const solutions:Mechanism[]=[],reports:ReturnType<typeof assessConstruction>[]=[],rejections:Record<string,number>={};let visited=0,attempts=0;
  const providers=[...registry.rules.values()].filter(r=>r.search&&r.arity===2&&(r.motion?.[0]??'rotation')==='rotation'&&(!o.rules||o.rules.includes(r.id)));
  if(!providers.length||o.rules?.some(id=>!providers.some(r=>r.id===id)))throw Error('Keine gültige Auswahl von Suchprovidern.');
@@ -36,7 +37,9 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
   const choices:{rule:string;choice:PairChoice}[]=[];let ratio=1;
   for(let i=0;i<depth;i++){const possible=ratios.filter(r=>groups.get(r)!.motion===(linear&&i===depth-1?'translation':'rotation')&&feasible(depth-i-1,ratio*groups.get(r)!.factor)),r=possible[Math.floor(random()*possible.length)],variants=groups.get(r)!.variants;
    // Pick families first, so nine belt lengths do not crowd out gears.
-   const rules=[...new Set(variants.map(v=>v.rule))],rule=rules[Math.floor(random()*rules.length)],same=variants.filter(v=>v.rule===rule);
+   let pool=variants;
+   if(round%2===0&&choices.length){const previous=choices.at(-1)!;const compatible=variants.filter(v=>registry.getRule(previous.rule).search?.sharedRotor&&registry.getRule(v.rule).search?.sharedRotor&&sameRotor(previous.choice.elements[1],v.choice.elements[0]));if(compatible.length)pool=compatible;}
+   const rules=[...new Set(pool.map(v=>v.rule))],rule=rules[Math.floor(random()*rules.length)],same=pool.filter(v=>v.rule===rule);
    choices.push(same[Math.floor(random()*same.length)]);ratio*=groups.get(r)!.factor;
   }
   const g:Mechanism={version:2,registryVersion:registry.version,bodies:Array.from({length:depth+1},(_,i)=>({id:`r${i}`,kind:linear&&i===depth?'rigid':'shaft',motion:linear&&i===depth?'translation':'rotation',frame:identity(),...(linear&&i===depth?{}:{shaft:{diameter:5,start:-40,end:150}})})),elements:[],relations:[],input:{...source.input,body:'r0'},output:{...source.output,body:`r${depth}`}};
@@ -44,7 +47,8 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
    choice.elements.forEach((e,j)=>g.elements.push({...structuredClone(e),id:`${j?'b':'a'}${i}`,body:`r${i+j}`,pose:{...identity(),position:[0,0,j?0:i?25+random()*40:random()*10]},phase:0,binding:'fixed'}));
    const params={...choice.params};for(const v of registry.getRule(rule).search!.variables)params[v.key]=v.lo+random()*(v.hi-v.lo);
    g.relations.push({id:`p${i}`,rule,elements:[`a${i}`,`b${i}`],params});
-  });await attempt(g);
+  });for(const variant of connectionVariants(g)){if(visited>=o.budget||solutions.length>=8||signal?.aborted)break;await attempt(variant);}
  }
+ const ranked=solutions.map((g,i)=>({g,report:reports[i],score:connectionSummary(g)})).sort((a,b)=>a.score.driveShafts-b.score.driveShafts||a.score.elements-b.score.elements);solutions.splice(0,solutions.length,...ranked.map(x=>x.g));reports.splice(0,reports.length,...ranked.map(x=>x.report));
  return {solutions,reports,rejections,visited,attempts,status:signal?.aborted?'cancelled':solutions.length>=8?'solution-limit':visited>=o.budget-20?'budget':'starts-exhausted'};
 }

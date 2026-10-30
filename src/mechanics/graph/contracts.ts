@@ -14,7 +14,7 @@ export interface ElementFamily {id:string;carrier:'shaft'|'any';motion?:Motion;s
 export type PairChoice={elements:{family:string;params:Params}[];params:Params};
 // Open-chain search providers expose one directed transfer from element 0 to 1.
 // phase() returns the driven element phase; variables only change relation params.
-export type SearchProvider={catalog:(request?:{stroke?:number})=>PairChoice[];variables:{key:string;lo:number;hi:number}[];phase:(c:PairContext)=>number};
+export type SearchProvider={sharedRotor?:boolean;catalog:(request?:{stroke?:number})=>PairChoice[];variables:{key:string;lo:number;hi:number}[];phase:(c:PairContext)=>number};
 export type ReservedSpace={frame:Frame;half:[number,number,number];exempt:{kind:'rotor'|'shaft';id:string}[]};
 export type Residual={id:string;value:number;unit:'mm'|'deg'|'ratio'|'unitless';sense:'eq'|'gte'|'lte';tolerance:number};
 export interface RelationRule {id:string;category:'transmission'|'joint'|'loop';arity:number;dofs:number;motion?:[Motion,Motion];search?:SearchProvider;contactShafts?:(c:PairContext)=>{element:string;body:string}[];bearingSpans?:(c:PairContext)=>{body:string;min:number;max:number}[];sweeps?:(c:PairContext)=>{body:string;direction:V;min:number;max:number}[];spaces?:(c:PairContext)=>ReservedSpace[];scad?:(c:PairContext)=>string;validate:(c:PairContext)=>void;evaluate:(c:PairContext)=>Check[];residuals?:(c:PairContext)=>Residual[];transfers?:(c:PairContext)=>{from:number;to:number;gain:number}[];mateFrames?:(c:PairContext)=>Frame[];}
