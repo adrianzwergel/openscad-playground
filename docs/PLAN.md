@@ -135,3 +135,16 @@ Stirnradpakete; Kegelwellen vorläufig mit zwei rückwärtigen Lagerplätzen, de
 überhängende Anordnung noch konstruktiv/physikalisch auszulegen ist.
 Nächste Arbeiten: vollständige Montagepfade, feinere Kollisionsprüfung und weitere
 Paarungsprovider im Elementgraph. Generative Tragstruktur weiterhin später.
+
+
+## Freie Paarungsprovider: Schnecke und GT2 (30.10.2026)
+
+Suchkatalog, kontinuierliche Freiheitsgrade und Phasenfortschreibung in die
+Paarungsprovider verlagert. Schnecke/Schneckenrad und GT2 als Einzelkomponenten auf
+gemeinsamen Wellen integriert, einschließlich Katalogriemenlänge, Entspann- und
+Nachspannreserve sowie Lager-/Riemenkorridor-Hüllen. Keine neuen kompletten
+Getriebemodule. Referenzen und kalte Suchtests für gemischte Zwei-/Dreistufenketten.
+Details und Grenzen: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
+Noch offen: konkrete Axiallager und Spannvorrichtungen, vollständige Montagewege,
+gezielte Hindernisumgehung, vorgegebene Bauräume und Sperrzonen, weitere Provider.
+Generatives Gehäuse bleibt zurückgestellt.

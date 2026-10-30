@@ -1,4 +1,4 @@
-import type {Frame} from './frames.ts';
+import type {Frame,V} from './frames.ts';
 export type Params=Record<string,number>;
 export type Body={id:string;kind:'shaft'|'rigid';frame:Frame;shaft?:{diameter:number;start:number;end:number}};
 export type Element={id:string;family:string;body:string;pose:Frame;phase:number;params:Params};
@@ -8,9 +8,14 @@ export type Mechanism={version:1;registryVersion:string;bodies:Body[];elements:E
 export type Check={id:string;state:'pass'|'fail'|'unknown';message:string};
 export type PairContext={elements:Element[];frames:Frame[];params:Params};
 export type Envelope={radius:number;min:number;max:number};
-export interface ElementFamily {id:string;carrier:'shaft'|'any';pairDependent?:boolean;bore?:(e:Element)=>number;validate:(p:Params)=>void;envelope:(e:Element,c?:PairContext)=>Envelope;scad:(e:Element,c?:PairContext)=>string;}
+export interface ElementFamily {id:string;carrier:'shaft'|'any';support?:'rear';pairDependent?:boolean;bore?:(e:Element)=>number;validate:(p:Params)=>void;envelope:(e:Element,c?:PairContext)=>Envelope;scad:(e:Element,c?:PairContext)=>string;}
+export type PairChoice={elements:{family:string;params:Params}[];params:Params};
+// Open-chain search providers expose one directed transfer from element 0 to 1.
+// phase() returns the driven element phase; variables only change relation params.
+export type SearchProvider={catalog:()=>PairChoice[];variables:{key:string;lo:number;hi:number}[];phase:(c:PairContext)=>number};
+export type ReservedSpace={frame:Frame;half:[number,number,number];exempt:{kind:'rotor'|'shaft';id:string}[]};
 export type Residual={id:string;value:number;unit:'mm'|'deg'|'ratio'|'unitless';sense:'eq'|'gte'|'lte';tolerance:number};
-export interface RelationRule {id:string;category:'transmission'|'joint'|'loop';arity:number;dofs:number;validate:(c:PairContext)=>void;evaluate:(c:PairContext)=>Check[];residuals?:(c:PairContext)=>Residual[];transfers?:(c:PairContext)=>{from:number;to:number;gain:number}[];mateFrames?:(c:PairContext)=>Frame[];}
+export interface RelationRule {id:string;category:'transmission'|'joint'|'loop';arity:number;dofs:number;search?:SearchProvider;bearingSpans?:(c:PairContext)=>{body:string;min:number;max:number}[];sweeps?:(c:PairContext)=>{body:string;direction:V;min:number;max:number}[];spaces?:(c:PairContext)=>ReservedSpace[];scad?:(c:PairContext)=>string;validate:(c:PairContext)=>void;evaluate:(c:PairContext)=>Check[];residuals?:(c:PairContext)=>Residual[];transfers?:(c:PairContext)=>{from:number;to:number;gain:number}[];mateFrames?:(c:PairContext)=>Frame[];}
 // Extensions are registered by application code, never executed from imported project files.
 export class Registry {
  readonly families=new Map<string,ElementFamily>();readonly rules=new Map<string,RelationRule>();

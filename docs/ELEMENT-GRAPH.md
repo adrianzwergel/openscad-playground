@@ -121,3 +121,8 @@ nichts daran, dass Lager- und Montageplatz bereits während der Suche reserviert
 Aktualisierung 30.10.2026: Offene Drei-/Vierstufenketten haben jetzt eine Mehrstart-
 Suche mit kontinuierlicher Anpassung und konservativen Lager-/Montageraumfiltern.
 Der aktuelle Prüfstand und verbleibende Grenzen stehen in [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
+
+
+Aktualisierung 30.10.2026: GT2 und Schnecke sind nun über Suchprovider angebunden.
+Diese liefern Katalog, numerische Parameter, Phasen, zusätzliche Raumhüllen und
+Lager-Freihaltezonen. Aktueller Stand: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
