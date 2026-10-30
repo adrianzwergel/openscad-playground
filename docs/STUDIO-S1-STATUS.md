@@ -47,3 +47,30 @@ und Prüfung der verbleibenden Abhängigkeiten nötig; insbesondere Browser-WASM
 bei Auslieferung nicht einfach nur ein interner Serverprozess.
 
 Quelle: https://www.gnu.org/licenses/gpl-faq.en.html
+
+## Editor-Aufteilung und Auswahl (30.10.2026)
+
+- Explorer und Suchkatalog links, 3D-Arbeitsfläche in der Mitte, Eigenschaften rechts,
+  Suchergebnisse in einem eigenen scrollbaren Bereich unten. Projektaktionen oben,
+  Rückmeldungen in der Statusleiste. Einstieg: http://localhost:4001/studio.
+- Räume sind Linien mit acht Eckgriffen. Nur diese Ecken sind im Viewport anklickbar
+  (11 Pixel Toleranz); Raumflächen und Kanten blockieren keine Anschlüsse. Anschlüsse
+  haben beim Anklicken Vorrang. Alle Objekte sind auch im Explorer auswählbar.
+- Position und XYZ-Drehung lassen sich im Inspector numerisch ändern, Raumgrößen
+  zusätzlich skalieren. Räume können angelegt und entfernt werden. Diese Änderungen
+  verwenden dieselbe Undo/Redo-Historie wie die 3D-Griffe.
+- Der durchsuchbare Katalog liest die tatsächlichen Paarungsangebote aus der Registry.
+  Familien können für die nächste Suche aktiviert/deaktiviert werden. Diese Auswahl
+  gilt für die Sitzung; neue Katalogdatensätze werden hier noch nicht angelegt.
+- Rechtsklick auf die gestrichelte Verbindung öffnet das Suchmenü. Alternativ startet
+  die Schaltfläche im Ergebnisbereich. Suchbudget und Abbruch bleiben erreichbar.
+- Geprüfte Treffer erscheinen während der Suche, sortierbar nach Hüllvolumen,
+  Stufenzahl und Bauteilanzahl. Der erste Treffer wird als Prüfhülle angezeigt;
+  Ansehen wechselt die Vorschau, Übernehmen speichert sie als Baugruppe im Projekt.
+  Änderungen an den Vorgaben verwerfen die alten Suchergebnisse.
+- Zusätzlicher Browser-Regressionscheck: scripts/check-studio-editor-browser.mjs
+  prüft Auswahl durch den Bauraum, Eckauswahl, Inspector/Undo, Katalogfilter und
+  tatsächliche Suchfreigaben, Kontextmenü, Ergebnisvorschau, Übernahme und Layout.
+
+Die oben genannten Grenzen bei Mehrfachrouten und detaillierter CAD-Darstellung
+bleiben bestehen. Montage und generatives Gehäuse sind nicht Teil dieser Änderung.
