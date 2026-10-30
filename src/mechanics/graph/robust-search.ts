@@ -43,6 +43,12 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
   const result=ratios.some(r=>{const group=groups.get(r)!;return group.motion===(linear&&remaining===1?'translation':'rotation')&&feasible(remaining-1,ratio*group.factor);});memo.set(key,result);return result;
  };
  const active=()=>visited<o.budget&&solutions.length<8&&!signal?.aborted;
+ // Directed starts must use the same connection alternatives as random starts.
+ // First try the compact shared-rotor form, then retain the separate-layer form.
+ async function attemptConnections(g:Mechanism){
+  const variants=connectionVariants(g);
+  for(const candidate of variants.slice(0,2)){if(!active())break;await attempt(candidate);}
+ }
  async function explore(g:Mechanism,round:number,warm=false){
   const variants=connectionVariants(g);
   if(!g.environment){for(const variant of variants){if(!active())break;await attempt(variant);}return;}
@@ -58,7 +64,7 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
   }
   if(active()&&variants.length>1)await attempt(variants[1+round%(variants.length-1)]);
  }
- if(source.relations.length>=min&&source.relations.length<=o.maxStages&&allowed(source))await (source.relations.length>=3?explore(source,0,true):attempt(source));
+ if(source.relations.length>=min&&source.relations.length<=o.maxStages&&allowed(source))await (source.relations.length>=3?explore(source,0,true):attemptConnections(source));
  // Budgeted, directed starts before the random tail. Enumerate pair families
  // and ratio-compatible catalogs, then vary signed layers on both sides of a shaft.
  // This also avoids belt lengths dominating the choice of transmission families.
@@ -78,17 +84,20 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
   const dot=(a:number[],b:number[])=>a.reduce((sum,n,i)=>sum+n*b[i],0);
   const catalogs=new Map(providers.map(p=>[p.id,[...groups.values()].flatMap(g=>g.variants.filter(v=>v.rule===p.id).map(v=>({...v,factor:g.factor}))).sort((a,b)=>Math.abs(Math.log(a.factor))-Math.abs(Math.log(b.factor))||Math.max(...a.choice.elements.map(e=>e.params.teeth??0))-Math.max(...b.choice.elements.map(e=>e.params.teeth??0)))]));
   const routes:{rule:string;choice:PairChoice}[][]=[],fallbackRoutes:typeof routes=[];
-  for(const pattern of patterns){let count=0,fallbackCount=0;
+  for(const pattern of patterns){let count=0,fallbackCount=0,sharedCount=0;
+   const canShare=pattern.some((id,i)=>i>0&&registry.getRule(id).search?.sharedRotor&&registry.getRule(pattern[i-1]).search?.sharedRotor);
+   const enough=()=>count>=2&&(!canShare||sharedCount>0);
    function choose(i:number,ratio:number,path:{rule:string;choice:PairChoice}[]){
-    if(count>=2)return;
+    if(enough())return;
     if(i===pattern.length){if(Math.abs(ratio-o.target)/o.target<=o.tolerance/100+1e-9){
      if(path.every(v=>registry.getRule(v.rule).search?.changesAxis===false)){
       const distances=path.map(v=>{const c={elements:v.choice.elements.map((e,j)=>({...e,id:String(j),body:String(j),pose:identity(),phase:0})),frames:[identity(),identity()],params:v.choice.params};return norm(registry.getRule(v.rule).mateFrames!(c)[0].position);});
       const distance=Math.hypot(chord[0],chord[1]),sum=distances.reduce((a,b)=>a+b,0);if(distance>sum+(source.output.tolerance?.position??0)+1e-6||distance<2*Math.max(...distances)-sum-(source.output.tolerance?.position??0)-1e-6||needsAxisChange){if(o.includeNearMisses&&fallbackCount<3){fallbackRoutes.push(path);fallbackCount++;}return;}
      }
-     routes.push(path);count++;
+     const reusable=path.some((p,i)=>i>0&&registry.getRule(p.rule).search?.sharedRotor&&registry.getRule(path[i-1].rule).search?.sharedRotor&&sameRotor(path[i-1].choice.elements[1],p.choice.elements[0]));
+     if(count<2||reusable&&sharedCount===0){routes.push(path);count++;if(reusable)sharedCount++;}
     }return;}
-    for(const c of catalogs.get(pattern[i])??[]){if(count>=2)break;if(feasible(pattern.length-i-1,ratio*c.factor))choose(i+1,ratio*c.factor,[...path,c]);}
+    for(const c of catalogs.get(pattern[i])??[]){if(enough())break;if(feasible(pattern.length-i-1,ratio*c.factor))choose(i+1,ratio*c.factor,[...path,c]);}
    }choose(0,1,[]);
   }
   routes.push(...fallbackRoutes);
@@ -111,7 +120,7 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
     last.pose.position[2]=Math.max(-150,Math.min(150,dot(add(end.position,scale(desired.position,-1)),axis(end))));
     start=reflow(start);const shift=dot(add(desired.position,scale(start.bodies.at(-1)!.frame.position,-1)),axis(inputFrame));
     start.elements.find(e=>e.id===start.relations[0].elements[0])!.pose.position[2]=Math.max(-150,Math.min(150,shift));
-    await attempt(start);
+    await attemptConnections(start);
    }catch{rejections.seed=(rejections.seed??0)+1;visited++;}
   }
  }
@@ -133,6 +142,6 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
    g.relations.push({id:`p${i}`,rule,elements:[`a${i}`,`b${i}`],params});
   });await explore(g,round);
  }
- const ranked=solutions.map((g,i)=>({g,report:reports[i],score:connectionSummary(g)})).sort((a,b)=>a.score.driveShafts-b.score.driveShafts||a.score.elements-b.score.elements);solutions.splice(0,solutions.length,...ranked.map(x=>x.g));reports.splice(0,reports.length,...ranked.map(x=>x.report));
+ const ranked=solutions.map((g,i)=>({g,report:reports[i],score:connectionSummary(g)})).sort((a,b)=>a.score.elements-b.score.elements||a.score.driveShafts-b.score.driveShafts);solutions.splice(0,solutions.length,...ranked.map(x=>x.g));reports.splice(0,reports.length,...ranked.map(x=>x.report));
  return {solutions,reports,nearMisses,rejections,visited,attempts,detourStarts,status:signal?.aborted?'cancelled':solutions.length>=8?'solution-limit':visited>=o.budget-20?'budget':'starts-exhausted'};
 }

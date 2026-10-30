@@ -149,3 +149,25 @@ bereits gefundenen Kandidaten, Änderungen an Vorgaben verwerfen sie.
 
 Abnahme: check-near-misses.mjs; check-studio-near-browser.mjs (echter Worker,
 Warnkennzeichnung, keine Übernahme, OpenSCAD-Vorschau und Verwerfen bei Änderung).
+
+## Wiederverwendung des getriebenen Rads zwischen Stufen
+
+Auch gerichtete Katalog-Startanordnungen und kurze übernommene Ketten prüfen jetzt
+connectionVariants: Das getriebene Rad einer Stufe kann unmittelbar das antreibende
+Rad der Folgestufe sein. Beide Paarungsrelationen referenzieren dieselbe Element-ID,
+sodass die CAD-Ausgabe das Rad genau einmal erzeugt. Die kompakte Variante wird vor
+der Alternative mit getrennten Rädern geprüft; die Ergebnisrangfolge berücksichtigt
+zunächst die Elementzahl. Die Studio-Sortierung nach Bauraum/Stufen/Bauteilen bleibt.
+
+Die gerichtete Katalogauswahl reserviert zusätzlich eine Kombination mit kompatiblen
+Anschlussrädern, statt nur die ersten zwei beliebigen Übersetzungsfolgen zu betrachten.
+Wiederverwendung erfordert die explizite sharedRotor-Freigabe beider Paarungsprovider,
+identische Familie und vollständige Katalogparameter sowie einen geeigneten gemeinsamen
+Träger. Beide Eingriffe, Zahnphasen, Endanschlüsse und Freiräume werden erneut geprüft.
+Unterschiedliche Zähnezahlen oder Familien werden nicht zusammengelegt. Getrennte
+Räder bleiben zulässig, wenn die räumliche Anordnung verschiedene Ebenen erfordert.
+
+Abnahme: check-shared-output-gear.mjs prüft eine kalte Suche mit drei statt vier
+Zahnrädern, drei CAD-Elementen, unveränderten Anschlüssen/Übersetzung und gültigen
+Freiräumen sowie die Ablehnung unpassender Zusammenlegungen. Bestehende Verbund- und
+Mehrstufentests prüfen weiterhin Alternativen mit getrennten Rädern.
