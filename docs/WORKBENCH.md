@@ -63,7 +63,7 @@ Zum dauerhaften Wiederöffnen als aktives Projekt weiterhin „Lokal speichern�
 Einzelne Varianten lassen sich entfernen. JSON-Export/Import überträgt die gesamte Ablage;
 Import ersetzt sie nach erfolgreicher Prüfung. Maximal acht Projekte und 800 KB.
 Ungültige Importe ändern die Ablage nicht. Defekter lokaler Speicher wird gemeldet und
-beim Laden nicht überschrieben. Aktuelles Projektformat ist Version 5, Varianten sind ein Array
+beim Laden nicht überschrieben. Aktuelles Projektformat ist Version 6, Varianten sind ein Array
 solcher Projektdateien; ältere Versionen werden migriert. Die Ablage ist wie der Projektspeicher an den Browser-Origin gebunden.
 
 ## Prüfung und Grenzen

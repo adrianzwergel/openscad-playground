@@ -3,12 +3,24 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+H1 implementiert, H2 begonnen: erweiterbarer Element-/Relationsgraph, gemeinsame Wellen,
+Quaternion-Rahmen, gerichtete feste Anschlüsse, Registry-Vertrag für Übertragungen,
+Umläufe und Gelenke. Erste Stirnrad-/Kegelradadapter, analytische Lagevorschläge und
+Browser-Referenzaufbau mit drei Wellen. Noch kein allgemeiner Autorouter.
+Details und Grenzen: [ELEMENT-GRAPH.md](ELEMENT-GRAPH.md).
+
+**Prioritätskorrektur:** Suche und räumliche Anordnung zuerst ausreifen, inklusive
+Familienerweiterungen, Lager-/Montageplatz und Hindernissen. Generative Tragstrukturen
+(H5) und Topologieoptimierung (H7) werden hinter diese Arbeiten einschließlich H6 gestellt.
+„Näher zum Ziel“ ist keine vorgegebene Heuristik; Suchverfahren werden nach Eignung gewählt.
+
 **Neue Zielrichtung, nur geplant:** Freie räumliche Getriebesynthese aus einzelnen
 Paarungen und gemeinsam belegten Wellen statt weiterer verketteter Fertigmodule.
 Freie Anschlussrahmen, Suchräume/Hindernisse, Montage und eine aus Mountings abgeleitete
 Tragstruktur gehören zum neuen Konzept. Architektur, fehlende Grundlagen und Etappen
 H1–H7: [TRANSMISSION-SYNTHESIS-3D.md](TRANSMISSION-SYNTHESIS-3D.md).
-Nächster Implementierungsschritt wäre H1/H2; diese Planänderung enthält keinen neuen Code.
+Der ursprüngliche Architekturplan wurde ohne Codeänderung erstellt; der Stand der
+inzwischen begonnenen Umsetzung ist oben und in ELEMENT-GRAPH.md dokumentiert.
 
 Gemischte Kettensuche ergänzt: Schnecke → Stirnräder oder GT2, diskrete Prolog-Suche,
 analytische Platzierung entlang einer festen Eingangsachse und feste Ausgangsachse.

@@ -25,7 +25,7 @@ Wellen-/Nabenkorridore. Fehler verhindern den Geometrieexport. Lager, Gehäuse u
 bleiben unbekannt. Details und Suchgrenzen: [SPATIAL-SEARCH.md](SPATIAL-SEARCH.md).
 
 ## Projektdatei
-JSON: `format: mechanics10`, `version: 5`, `catalogVersion: mechanics10-spur-1`.
+JSON: `format: mechanics10`, `version: 6`, `catalogVersion: mechanics10-spur-1`.
 Gespeichert werden Name, Soll-Untersetzung, Komponenten-IDs, Katalogreferenzen, Positionen,
 Eingang/Ausgang, Verbindungen, feste Achsen (`axes`) und Suchvorgaben (`search`).
 Berechnete Werte, Code, Worker-Zustand, Meshes und Blob-URLs werden nicht gespeichert.
@@ -35,8 +35,8 @@ Strukturell gültige Projekte mit geometrischen Regelverletzungen dürfen zur Ko
 und gespeichert werden, sind bis zur Korrektur aber nicht renderbar.
 
 Version-1-Dateien werden beim Laden migriert: Achsen aus den bisherigen Anschlusspositionen,
-Standardsuchvorgaben, anschließend Speicherung als Version 5. Auch Versionen 2 und 3 werden
-in Version 5 übernommen. Der localStorage-Schlüssel bleibt
+Standardsuchvorgaben, anschließend Speicherung als Version 6. Auch Versionen 2 und 3 werden
+in Version 6 übernommen. Der localStorage-Schlüssel bleibt
 `mechanics10.project.v1`, damit vorhandene Projekte automatisch gefunden werden.
 
 `Lokal speichern` speichert einen Projektstand im localStorage der jeweiligen Browser-Origin.
@@ -64,7 +64,7 @@ als abgeleitete Konstruktion. Gehäusefehler blockieren dessen STL-Export, nicht
 Verzahnungsansicht. Konstruktion und Grenzen: [HOUSING.md](HOUSING.md).
 
 ## Projektformat 3 / Etappe E
-Version 3 führte `motion` ein; aktuell wird als Version 5 gespeichert. Das optionale
+Version 3 führte `motion` ein; aktuell wird als Version 6 gespeichert. Das optionale
 `motion`-Objekt aktiviert eine Riemen-, Spindel- oder Rack-Vorlage;
 die Stirnradkomponenten bleiben erhalten, bilden aber keine automatisch angekoppelte Kette.
 Die Anschlüsse unterscheiden Wellenrotation und linearen Hub, mit passenden Einheiten.
@@ -85,3 +85,8 @@ Katalog, Achskonventionen und Montage: [SPATIAL-PAIRS.md](SPATIAL-PAIRS.md).
 Oberstufe, axialen Platzierungsbereich und optional die gewählte Kette mit Position.
 `motion`, `spatial` und `mixed` schließen sich gegenseitig aus. Auch Version 4 wird
 migriert. Konstruktion und Suchraum: [MIXED-SEARCH.md](MIXED-SEARCH.md).
+
+## Projektformat 6 / Elementgraph
+`graph` ergänzt das erweiterbare Träger-/Element-/Relationsmodell. Versionen 1–5
+bleiben lesbar. Aktive Vorlagen schließen sich gegenseitig aus; Legacy wird nicht
+stillschweigend umgebaut. Schema, Registry und Umfang: [ELEMENT-GRAPH.md](ELEMENT-GRAPH.md).

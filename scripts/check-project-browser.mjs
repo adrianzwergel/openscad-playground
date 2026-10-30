@@ -25,7 +25,7 @@ try{
  const exported=path.join(directory,'mechanics10-project.json');
  for(let i=0;i<100;i++){try{await fs.access(exported);break;}catch{await new Promise(r=>setTimeout(r,100));}}
  const saved=JSON.parse(await fs.readFile(exported,'utf8'));
- assert.deepEqual(saved.components[1].position,[0,60,0]);assert.equal(saved.version,5);
+ assert.deepEqual(saved.components[1].position,[0,60,0]);assert.equal(saved.version,6);
  await field('[aria-label="output Y"]','61');
  assert.equal(await page.$eval('#render',e=>e.disabled),true);assert.equal(await page.$('a[download]'),null);assert.equal(await page.$('model-viewer'),null);
  await field('[aria-label="output Y"]','60');assert.equal(await page.$eval('#render',e=>e.disabled),false);

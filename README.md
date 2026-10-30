@@ -20,6 +20,9 @@ independent of view settings. See [the browser workbench](docs/WORKBENCH.md).
 Mixed-chain search now combines a worm stage with spur gears or GT2 belts between fixed
 shaft axes, including separate bearing supports, a coupling, a bolted housing bridge and
 individual STL exports. See [scope and construction checks](docs/MIXED-SEARCH.md).
+A new element-graph workbench begins the general architecture: shared shafts, quaternion
+frames, extensible relation providers and initial spur/bevel rules. This foundation does
+not yet perform automatic graph routing. See [element graph](docs/ELEMENT-GRAPH.md).
 See [the project plan](docs/PLAN.md) and [development instructions](docs/DEVELOPMENT.md).
 The [component model](docs/COMPONENT-MODEL.md) describes the shared model and current project format.
 

@@ -19,5 +19,5 @@ for(const kind of ['internal','bevel','worm'])for(const teeth of kind==='interna
 const two=resolveSpatial({...defaultSpatial('worm'),starts:2});assert.equal(two.ratio,15);assert.equal(two.outputGain,2/30);
 for(const patch of [{kind:'unknown'},{teeth:21},{starts:0},{clearance:0},{phase:Infinity}])assert.throws(()=>parseSpatial({...defaultSpatial('worm'),...patch}));
 assert.throws(()=>parseProject(JSON.stringify({...initialProject(),spatial:defaultSpatial('worm'),motion:defaultMotion('belt')})));
-for(const version of [1,2,3]){const legacy={...initialProject(),version};assert.equal(parseProject(JSON.stringify(legacy)).version,5);}
+for(const version of [1,2,3]){const legacy={...initialProject(),version};assert.equal(parseProject(JSON.stringify(legacy)).version,6);}
 console.log('Spatial model passed: catalog, perpendicular/parallel axes, cone apex, worm spacing and starts, shaft endpoints, supports, parts, invalid input and migrations.');

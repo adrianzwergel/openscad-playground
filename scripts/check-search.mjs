@@ -36,5 +36,5 @@ direct.axes.output[0]=61;assert.equal(placeCandidates(direct,[{kind:'direct',ids
 assert.equal(intersections([0,0,0],[10,0,0],5,5).length,1);
 assert.equal(intersections([0,0,0],[0,0,0],5,5).length,0);
 const legacy=JSON.parse(readFileSync('examples/mechanics-pair.json','utf8'));
-assert.equal(parseProject(JSON.stringify(legacy)).version,5);
+assert.equal(parseProject(JSON.stringify(legacy)).version,6);
 console.log('Spatial model passed: fixed axes, exact/tangent/mirrored placement, phases, 4 topologies, ratios, direction, layers, collisions, unreachable axes, v1 migration, roundtrip.');

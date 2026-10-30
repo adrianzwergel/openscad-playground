@@ -12,5 +12,5 @@ for(const kind of ['spur','belt']){const m=defaultMixed();m.allow=kind;if(kind==
 }
 assert.ok(searchMixed(defaultMixed(),candidates).solutions.some(a=>a.c.kind==='belt'));
 assert.throws(()=>parseMixed({...defaultMixed(),selected:null}));
-assert.throws(()=>parseMixed({...defaultMixed(),input:[Infinity,0,0]}));assert.throws(()=>parseMixed({...defaultMixed(),selected:{kind:'spur',wheel:99}}));for(const version of [1,2,3,4])assert.equal(parseProject(JSON.stringify({...initialProject(),version})).version,5);
+assert.throws(()=>parseMixed({...defaultMixed(),input:[Infinity,0,0]}));assert.throws(()=>parseMixed({...defaultMixed(),selected:{kind:'spur',wheel:99}}));for(const version of [1,2,3,4])assert.equal(parseProject(JSON.stringify({...initialProject(),version})).version,6);
 console.log('Mixed model passed: enumeration, fixed axes, ratios, both families, mounting constraints, impossible cases, translation, roundtrip and migrations.');

@@ -3,6 +3,12 @@
 Status: Plan, keine Implementierung. Grundlage: Commit `f70778c`, Branch `mechanics10`.
 Der bisherige Stand war bei Erstellung sauber und mit origin synchronisiert.
 
+Fortschreibung: H1 und erste H2-Bausteine sind inzwischen begonnen; siehe
+[ELEMENT-GRAPH.md](ELEMENT-GRAPH.md). Die Nutzerpriorität lautet jetzt: Suche und
+Anordnung einschließlich Familienerweiterungen ausreifen, dann erst generative
+Tragstrukturen. H5 wird daher hinter die Such-/Anordnungsarbeiten H6 gestellt;
+H7 folgt später. Lager- und Montagebedingungen bleiben Teil der frühen Suche.
+
 ## 1. Korrektur der bisherigen Richtung
 
 Die aktuelle gemischte Suche verkettet zwei fertig konstruierte Getriebemodule mit

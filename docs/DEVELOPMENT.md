@@ -62,3 +62,8 @@ Der Browsertest benötigt ebenfalls den Build auf Port 4001. Details: [WORKBENCH
 Gemischte Suche: `node scripts/check-mixed.mjs`, `node scripts/check-mixed-contact.mjs`
 und `node scripts/check-mixed-browser.mjs`. Browserprüfungen verwenden denselben Server
 und echte Prolog-/OpenSCAD-WASM-Laufzeiten. Siehe [MIXED-SEARCH.md](MIXED-SEARCH.md).
+
+Elementgraph: `node scripts/check-element-graph.mjs`,
+`node scripts/check-element-graph-contact.mjs` und
+`node scripts/check-element-graph-browser.mjs`. Browser weiterhin auf Port 4001.
+Registry-Vertrag und aktueller Umfang: [ELEMENT-GRAPH.md](ELEMENT-GRAPH.md).
