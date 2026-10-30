@@ -2,7 +2,7 @@ import type {Mechanism,PairChoice,Motion} from './contracts.ts';
 import {connectionVariants,sameRotor,connectionSummary} from './topology.ts';
 import {registry} from './registry.ts';
 import {detourSeed} from './detours.ts';
-import {identity} from './frames.ts';
+import {identity,compose,inverse,axis,add,scale,norm,rotationError} from './frames.ts';
 import {parseMechanism,resolveMechanism} from './model.ts';
 import {refineGraph,reflow} from './refine.ts';
 import {assessConstruction} from './construction.ts';
@@ -18,6 +18,8 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
  const providers=[...registry.rules.values()].filter(r=>r.search&&r.arity===2&&(r.motion?.[0]??'rotation')==='rotation'&&(!o.rules||o.rules.includes(r.id)));
  if(!providers.length||o.rules?.some(id=>!providers.some(r=>r.id===id)))throw Error('Keine gültige Auswahl von Suchprovidern.');
  const allowed=(g:Mechanism)=>g.relations.every(r=>providers.some(p=>p.id===r.rule))&&Math.abs(resolveMechanism(g).value-o.target)/o.target<=o.tolerance/100+1e-9;
+ const inputFrame=compose(source.input.target,inverse(source.input.local)),parallelOutput=compose(inputFrame,source.output.local);
+ const needsAxisChange=!linear&&(source.output.constraint==='frame'?rotationError(parallelOutput.rotation,source.output.target.rotation)>1e-5:norm(add(axis(parallelOutput),scale(axis(source.output.target),-1)))>1e-7);
  const refined=new Map<string,Awaited<ReturnType<typeof refineGraph>>>();
  const geometryKey=(g:Mechanism)=>g.environment?JSON.stringify(g):JSON.stringify([g.bodies.map(({motion,...b})=>b),g.elements.map(({binding,rotorGroup,...e})=>e),g.relations,g.input,g.output]);
  async function attempt(g:Mechanism){if(signal?.aborted)return;const variables=g.relations.reduce((s,r)=>s+(registry.getRule(r.rule).search!.variables.length+1),0),iterations=Math.min(100,Math.floor((o.budget-visited)/Math.max(1,variables+2)));if(iterations<1){visited=o.budget;return;}attempts++;try{const keyGeometry=geometryKey(g),cached=refined.get(keyGeometry);let solved;
@@ -63,6 +65,7 @@ export async function robustRoute(input:Mechanism,o:RobustOptions,signal?:AbortS
    const rules=[...new Set(pool.map(v=>v.rule))],rule=rules[Math.floor(random()*rules.length)],same=pool.filter(v=>v.rule===rule);
    choices.push(same[Math.floor(random()*same.length)]);ratio*=groups.get(r)!.factor;
   }
+  if(source.environment&&needsAxisChange&&choices.every(c=>registry.getRule(c.rule).search?.changesAxis===false)){visited++;rejections.orientation=(rejections.orientation??0)+1;continue;}
   const g:Mechanism={version:source.environment?4:2,...(source.environment?{environment:structuredClone(source.environment)}:{}),registryVersion:registry.version,bodies:Array.from({length:depth+1},(_,i)=>({id:`r${i}`,kind:linear&&i===depth?'rigid':'shaft',motion:linear&&i===depth?'translation':'rotation',frame:identity(),...(linear&&i===depth?{}:{shaft:{diameter:5,start:-40,end:150}})})),elements:[],relations:[],input:{...source.input,body:'r0'},output:{...source.output,body:`r${depth}`}};
   choices.forEach(({rule,choice},i)=>{
    choice.elements.forEach((e,j)=>g.elements.push({...structuredClone(e),id:`${j?'b':'a'}${i}`,body:`r${i+j}`,pose:{...identity(),position:[0,0,j?0:i?25+random()*40:random()*10]},phase:0,binding:'fixed'}));

@@ -200,3 +200,12 @@ Lageoptimierung. Drei-/Vierstufentests, gedrehter Bauraum, alternative Seiten un
 zusätzlich gesperrte Umfahrung ergänzen die Abnahme. Suchbericht zeigt Umfahrungsstarts.
 Verfahren und verbleibende Grenzen: [SPACE-SEARCH.md](SPACE-SEARCH.md).
 Montage und generatives Gehäuse weiterhin später.
+
+## Hindernisse bei gemischten Ketten (30.10.2026)
+
+Umfahrungsstarts berücksichtigen jetzt auch den vorhergesagten Ausgangsrahmen und
+verfolgen bei Achswechseln mehrere Zwischenlagen. Provider kennzeichnen Änderungen
+der Achsausrichtung; nachweislich ungeeignete achsparallele Ketten werden früh verworfen.
+Tests für Stirnrad, GT2, Schnecke und Kegelrad mit räumlichen Anschlussrahmen und
+blockierten Bauteil-/Riemenräumen ergänzt. Details: [SPACE-SEARCH.md](SPACE-SEARCH.md).
+Montage und generatives Gehäuse weiterhin später.

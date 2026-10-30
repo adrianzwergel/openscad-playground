@@ -92,3 +92,40 @@ Diese Testfälle verbessern die Abdeckung, sind aber kein Vollständigkeitsnachw
 Komplexe Labyrinthe mit mehreren aufeinanderfolgenden Richtungswechseln können
 weiterhin zusätzliche Suchstrategien benötigen. Montage und generatives Gehäuse
 bleiben außerhalb dieses Schritts.
+
+## Gemischte räumliche Umfahrungen (30.10.2026)
+
+Suchprovider können mit `changesAxis` angeben, ob sie den Trägerrahmen drehen:
+Kegelrad und Schnecke melden `true`, Stirnrad und GT2 `false`. Ein fehlender Wert
+bleibt unbekannt und darf keine frühe Ablehnung rechtfertigen. Bei fest geforderten
+unterschiedlichen Anschlussausrichtungen werden ausschließlich Ketten aus explizit
+achsparallelen Providern vor der lokalen Optimierung verworfen. Lokale Anschlussrahmen
+und die freie Rollrichtung einer reinen Achsvorgabe werden dabei berücksichtigt.
+
+Bei Ketten mit Achswechsel verfolgt jeder Umfahrungsstart bis zu drei verschiedene
+Zwischenlagen. Die diskreten Winkelproben verwenden weiterhin die Paarungsprovider.
+Neben dem Zwischenpunkt bewertet die Auswahl die vom verbleibenden Kettenende
+vorhergesagte Position/Ausrichtung sowie die Raumverletzungen der bereits platzierten
+Trägerhüllen. Doppelte Lagen durch periodische Winkel werden zusammengefasst.
+Die nachfolgende kontinuierliche Optimierung korrigiert Azimut, Kegelwinkel und axiale
+Sitze gemeinsam. Katalogzähne und Katalogriemenlängen bleiben unverändert.
+
+Abnahme ergänzt um:
+
+- `node scripts/check-mixed-detours.mjs`: blockierte Dreistufenkette mit
+  Stirnrad/GT2/Schnecke und Vierstufenkette mit zusätzlichem Kegelrad (73°),
+  gedrehte Welt-/Anschlussrahmen, zusätzlicher blockierter Riemenraum, feste Ziele,
+  Kinematik, vollständige Hüllraumprüfung, Speicherung und Abbruch. Zusätzlich
+  Dreistufensuche aus einem unpassenden Ausgangsmodell und Prüfung der frühen
+  Ausrichtungsablehnung.
+- `node scripts/check-mixed-detours-cold.mjs`: Vierstufensuche aus einem anderen
+  Ausgangsmodell, nicht parallele feste Anschlüsse und zwei Sperrzonen. Die Suche
+  darf auch eine andere zulässige Mischung aus dem freigegebenen Katalog wählen.
+- `node scripts/check-mixed-detours-browser.mjs`: Vierstufensuche im Browser,
+  Übernahme und Speicherung der geprüften Lösung.
+
+Die Orientierungsvorschau ist eine Heuristik, kein vollständiger räumlicher
+Erreichbarkeitsbeweis. Die Suche kann bei mehreren Achswechseln deutlich länger
+laufen als bei Stirnradketten. Gleiche Endausrichtung garantiert keinen geometrisch
+möglichen Aufbau; nur die abschließende Gesamtprüfung gibt einen Kandidaten frei.
+Montage und generatives Gehäuse bleiben spätere Schritte.
