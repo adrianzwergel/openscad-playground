@@ -3,6 +3,13 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+**Neue Zielrichtung, nur geplant:** Freie räumliche Getriebesynthese aus einzelnen
+Paarungen und gemeinsam belegten Wellen statt weiterer verketteter Fertigmodule.
+Freie Anschlussrahmen, Suchräume/Hindernisse, Montage und eine aus Mountings abgeleitete
+Tragstruktur gehören zum neuen Konzept. Architektur, fehlende Grundlagen und Etappen
+H1–H7: [TRANSMISSION-SYNTHESIS-3D.md](TRANSMISSION-SYNTHESIS-3D.md).
+Nächster Implementierungsschritt wäre H1/H2; diese Planänderung enthält keinen neuen Code.
+
 Gemischte Kettensuche ergänzt: Schnecke → Stirnräder oder GT2, diskrete Prolog-Suche,
 analytische Platzierung entlang einer festen Eingangsachse und feste Ausgangsachse.
 Getrennte Lagerungen, koaxiale Kupplung, gemeinsame Gehäusebrücke, Montageansicht und
