@@ -3,6 +3,12 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+Etappe C abgeschlossen: feste parallele Anschlussachsen, vier Kettenvorlagen mit Zwischen-
+und Doppelzahnrädern, bis zu zwei Ebenen, konservative Freiraumprüfung, Variantenvergleich
+und Projektformat 2 mit Migration. Prolog enumeriert, ein TypeScript-Worker positioniert.
+Grenzen, Beispiel und Abnahme: [SPATIAL-SEARCH.md](SPATIAL-SEARCH.md).
+Modell-/Suchtests, TypeScript, Produktionsbuild und Browserprüfungen bestanden.
+
 Etappe B abgeschlossen: versionierter Katalog, Komponenteninstanzen, Wellen-/Verzahnungsports,
 explizite Paarungsbeziehungen, manuelle XYZ-Positionierung bei parallelen +Z-Achsen,
 gemeinsame Geometrieauflösung und Paarungsprüfung. Projekte werden lokal gespeichert und

@@ -12,6 +12,12 @@ self.onmessage = async ({data}) => {
       pl.prolog.query(`assertz(gear(${g.index},${g.teeth},${g.module},${g.pressureAngle})).`).once();
     }
     const version = pl.prolog.query('current_prolog_flag(version, Version).').once().Version;
+    if(data.search){
+      const {maxLayers,direction,maxError}=data.search;
+      if(![1,2].includes(maxLayers)||!['any','same','opposite'].includes(direction)||!Number.isFinite(maxError)||maxError<0||maxError>1000||!Number.isFinite(data.span)||data.span<0)throw Error('Ungültige Suchgrenzen.');
+      const result=pl.prolog.query(`findall(candidate{kind:Kind,ids:Ids},candidate(${data.target},${maxLayers},${direction},${maxError/100},${data.span},Kind,Ids),Candidates).`).once();
+      self.postMessage({candidates:result.Candidates,version});return;
+    }
     const solution = pl.prolog.query(`best_pair(${data.target}, IdA, IdB, A, B, Actual, Distance, Error).`).once();
     if (!solution) throw Error('Keine Lösung im Katalog.');
     self.postMessage({solution, version});

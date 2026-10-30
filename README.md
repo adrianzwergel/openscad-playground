@@ -1,11 +1,12 @@
 # OpenSCAD Playground
 
-## Mechanics-10 – Etappe B
+## Mechanics-10 – Etappe C
 
 This fork adds a browser-local Prolog → OpenSCAD workflow with a shared component catalog,
-shaft/gear ports, mating rules, manual placement and local/JSON project persistence.
+shaft/gear ports, fixed-axis spatial search with idlers and compound gears on two planes,
+clearance rules, solution comparison and local/JSON project persistence.
 See [the project plan](docs/PLAN.md) and [development instructions](docs/DEVELOPMENT.md).
-The [component model](docs/COMPONENT-MODEL.md) describes the stage-B scope and file format.
+The [component model](docs/COMPONENT-MODEL.md) describes the stage-C scope and file format.
 
 ```sh
 npm ci

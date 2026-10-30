@@ -1,4 +1,4 @@
-# Lokaler Start – Etappe B
+# Lokaler Start – Etappe C
 
 Node.js >=22, npm und Git. Keine native OpenSCAD-/Prolog-Installation erforderlich.
 
@@ -33,11 +33,11 @@ Siehe zusätzlich LICENSE.md im Repository.
 `npm run build:mechanics`, in einem zweiten Terminal `npx serve dist -l 4001`,
 dann `node scripts/check-browser.mjs`.
 Der Test verwendet Chrome unter dem Windows-Standardpfad; alternativ `CHROME_PATH` setzen.
-Er prüft Soll 2,1 → Ist 2 mit 20/40 Zähnen, geladenes GLB, STL-Dreiecke,
-Abbruch während Prolog und OpenSCAD sowie Neustart mit 20/30 für Soll 1,5.
-WASM-Größenwarnungen beim Build sind erwartbar. Keine mechanische Validierung durch diesen Test.
+Der Test prüft die Etappe-C-Suche und ein gerendertes Doppelzahnradgetriebe, feste Achsen,
+GLB/STL, Vergleich, unmögliche Vorgaben sowie Abbruch und Neustart. WASM-Größenwarnungen
+beim Build sind erwartbar. Keine mechanische Fertigungsfreigabe durch diesen Test.
 
-Für Etappe B zusätzlich `node scripts/check-model.mjs` und
-`node scripts/check-project-browser.mjs` (gleicher statischer Server auf Port 4001).
+Zusätzlich `node scripts/check-model.mjs`, `node scripts/check-search.mjs` und
+`node scripts/check-project-browser.mjs` (Browser mit statischem Server auf Port 4001).
 Die Modelltests verwenden Node Type Stripping; getestet mit Node 24.19.
 Projektformat und Speicherverhalten: [COMPONENT-MODEL.md](COMPONENT-MODEL.md).

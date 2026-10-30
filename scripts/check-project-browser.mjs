@@ -13,7 +13,7 @@ try{
  await page.goto('http://localhost:4001/mechanics');
  async function field(selector,value){await page.$eval(selector,(el,value)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));},value);}
  await field('[aria-label="Projektname"]','Gespeicherte Testachse');
- await field('[aria-label="output X"]','0');await field('[aria-label="output Y"]','60');
+ await field('[aria-label="output axis X"]','0');await field('[aria-label="output axis Y"]','60');
  assert.equal(await page.$eval('#render',e=>e.disabled),false);
  await page.click('#save-project');await page.reload();
  assert.equal(await page.$eval('[aria-label="Projektname"]',e=>e.value),'Gespeicherte Testachse');
@@ -25,11 +25,11 @@ try{
  const exported=path.join(directory,'mechanics10-project.json');
  for(let i=0;i<100;i++){try{await fs.access(exported);break;}catch{await new Promise(r=>setTimeout(r,100));}}
  const saved=JSON.parse(await fs.readFile(exported,'utf8'));
- assert.deepEqual(saved.components[1].position,[0,60,0]);assert.equal(saved.version,1);
+ assert.deepEqual(saved.components[1].position,[0,60,0]);assert.equal(saved.version,2);
  await field('[aria-label="output Y"]','61');
  assert.equal(await page.$eval('#render',e=>e.disabled),true);assert.equal(await page.$('a[download]'),null);assert.equal(await page.$('model-viewer'),null);
- await page.click('#align');assert.equal(await page.$eval('[aria-label="output X"]',e=>e.value),'60');
- await page.select('[aria-label="output Katalog"]','spur-m3-z40');await page.click('#align');
+ await field('[aria-label="output Y"]','60');assert.equal(await page.$eval('#render',e=>e.disabled),false);
+ await page.select('[aria-label="output Katalog"]','spur-m3-z40');
  assert.equal(await page.$eval('#render',e=>e.disabled),true);assert.match(await page.$eval('#checks [data-state=fail]',e=>e.textContent),/Modul/);
  await page.click('#new-project');
  await (await page.$('#project-file')).uploadFile(exported);
@@ -42,7 +42,7 @@ try{
  await page.evaluate(()=>localStorage.setItem('mechanics10.project.v1','broken'));
  await page.reload();assert.match(await page.$eval('#storage-status',e=>e.textContent),/konnte nicht geladen/);
  assert.equal(await page.evaluate(()=>localStorage.getItem('mechanics10.project.v1')),'broken');
- const fixture=initialProject();fixture.components[1].position=[0,60,0];fixture.name='Manuelle Anordnung';
+ const fixture=initialProject();fixture.components[1].position=[0,60,0];fixture.axes.output=[0,60,0];fixture.name='Manuelle Anordnung';
  const file=path.join(directory,'manual.json');await fs.writeFile(file,serializeProject(fixture));await (await page.$('#project-file')).uploadFile(file);
  await page.waitForFunction(()=>document.querySelector('#storage-status').textContent.includes('Projektdatei geladen'));await page.click('#render');
  await page.waitForFunction(()=>document.querySelector('model-viewer')?.loaded,{timeout:120000});
