@@ -167,3 +167,38 @@ Abnahme:
 - Bestehende Tests für Hindernisumfahrung und räumliche gemischte Ketten bleiben relevant.
 
 Montage und generatives Gehäuse weiterhin später.
+
+## Suchlösungen vergleichen und in 3D prüfen (30.10.2026)
+
+Die Live-Ergebnisse erscheinen als Vergleichstabelle. Sortiert werden kann auf- oder
+absteigend nach benötigtem Hüllvolumen, Stufenzahl oder Bauteilanzahl. Stabile
+Lösungsnummern halten die Zuordnung auch bei neuen Treffern, Abschluss-Rangfolge und
+Umsortieren fest. Eine bereits gewählte Vorschau bleibt beim Sortieren ausgewählt.
+
+Die Bauraumkennzahl ist die umschließende Box aller vorhandenen Konstruktionshüllen,
+ausgerichtet am festen Eingangsrahmen. Sie enthält Wellen/Achsen, reservierte
+Lager-/Zugangsbereiche, Riemenräume und den vollständigen linearen Hub. Angezeigt
+werden drei Maße in mm und das Hüllvolumen in cm³. Es ist weder Materialvolumen
+noch die Größe des vom Benutzer vorgegebenen Bauraums. Eine gemeinsame räumliche
+Drehung von Mechanik und Anschlüssen verändert die Kennzahl nicht.
+
+Bauteile zählen hier Katalogelemente plus Wellen/feste Achsen. Reservierte Lager,
+Naben und Gehäuse werden nicht als fertige Teile gezählt; freie Verbundmitglieder
+bleiben einzelne Katalogelemente. Dies ist noch keine Fertigungsstückliste.
+
+„In 3D prüfen“ erzeugt eine separate OpenSCAD/GLB-Vorschau des gewählten Kandidaten.
+Drehen und Zoomen erfolgen im vorhandenen model-viewer. Das Projekt wird dabei nicht
+geändert und eine laufende Suche wird nicht beendet. Ein Wechsel/Schließen beendet
+einen noch laufenden Renderworker; verspätete Ergebnisse werden ignoriert und
+Blob-URLs freigegeben. Erst „Übernehmen“ ändert das Projekt. Die 3D-Ansicht zeigt
+Bauteilgeometrie, keine zusätzlichen Körper für Sperrzonen und reservierte Räume;
+diese Einschränkung steht direkt an der Ansicht. Montage und generatives Gehäuse
+bleiben weiterhin später.
+
+Abnahme: `node scripts/check-solution-comparison.mjs` prüft Maße, Zählung,
+Drehungsinvarianz und Hubberücksichtigung. `node scripts/check-solution-comparison-browser.mjs`
+prüft Sortierung, tatsächlich geladenes 3D-Modell, unverändertes Projekt bei Vorschau,
+Auswahl beim Sortieren, schnellen Wechsel und Übernahme.
+
+Lokal ansehen: http://localhost:4001/mechanics → Baugruppen-Vorlage „Freier Elementgraph“
+→ „Anordnungen suchen“ → „Lösungen vergleichen“ → „In 3D prüfen“.

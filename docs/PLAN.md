@@ -218,3 +218,11 @@ sichtbare Ergebnisse. Suchbudget auswählbar, Standard 25.000; Fortschritt und
 Lösungsanzahl sichtbar. Doppelte Winkelproben bei der Starterzeugung entfernt.
 Details und Abnahme: [SPACE-SEARCH.md](SPACE-SEARCH.md). Montage und generatives
 Gehäuse bleiben später.
+
+## Vergleich und 3D-Prüfung der Suchergebnisse (30.10.2026)
+
+Live-Ergebnisse als sortierbare Tabelle mit Hüllmaßen/-volumen, Stufen und
+Element-/Wellenzählung. Eigene 3D-Vorschau pro Kandidat ohne Projektübernahme,
+mit Abbruch veralteter Renderjobs und stabiler Auswahl beim Sortieren.
+Definitionen, Grenzen und Tests: [SPACE-SEARCH.md](SPACE-SEARCH.md).
+Montage und generatives Gehäuse bleiben später.
