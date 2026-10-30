@@ -3,6 +3,11 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+Etappe D als Softwareentwurf implementiert: zwei Lager je Welle, zwei abnehmbare Lagerplatten,
+Abstandshalter, Nabenfixierung und axiale Hülsen, Freiraumprüfungen, Montageansicht,
+Stückliste und Einzelteil-STLs/ZIP. Der reale Druck-/Montageversuch ist noch offen;
+Etappe D ist deshalb konstruktiv noch nicht abgenommen. Siehe [HOUSING.md](HOUSING.md).
+
 Etappe C abgeschlossen: feste parallele Anschlussachsen, vier Kettenvorlagen mit Zwischen-
 und Doppelzahnrädern, bis zu zwei Ebenen, konservative Freiraumprüfung, Variantenvergleich
 und Projektformat 2 mit Migration. Prolog enumeriert, ein TypeScript-Worker positioniert.

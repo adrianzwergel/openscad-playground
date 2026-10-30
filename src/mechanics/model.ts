@@ -9,9 +9,11 @@ export type Instance = {id:string; catalogId:string; position:Vec3};
 export type Endpoint = {component:string; port:'shaft'|'teeth'};
 export type Connection = {kind:'external-spur-mesh'|'rigid-shaft'; a:Endpoint; b:Endpoint};
 export type SearchSettings = {maxLayers:1|2; layerSpacing:number; margin:number; maxError:number; direction:'any'|'same'|'opposite'};
+export type HousingSettings={plateThickness:number;clearance:number;bearingFit:number;endplay:number};
+export const DEFAULT_HOUSING:HousingSettings={plateThickness:6,clearance:2,bearingFit:0.15,endplay:0.3};
 export type Project = {format:'mechanics10'; version:2; catalogVersion:typeof CATALOG_VERSION; name:string;
   targetRatio:number; components:Instance[]; input:Endpoint; output:Endpoint; connections:Connection[];
-  axes:{input:Vec3; output:Vec3}; search:SearchSettings};
+  axes:{input:Vec3; output:Vec3}; search:SearchSettings;housing?:HousingSettings};
 export type Check = {id:string; state:'pass'|'fail'|'unknown'; message:string};
 export const gear = (id:string) => {const g=CATALOG.find(g=>g.id===id);if(!g)throw Error(`Unbekannter Katalogeintrag: ${id}`);return g;};
 export function initialProject():Project {
@@ -56,8 +58,11 @@ export function parseProject(text:string):Project {
   const layerSpacing=number(s.layerSpacing),margin=number(s.margin),maxError=number(s.maxError);
   if(layerSpacing<10||layerSpacing>100||margin<0||margin>20||maxError<0||maxError>1000)throw Error('Ungültige Suchgrenzen.');
   const axes=p.version===1?{input:components.find(c=>c.id===input.component)!.position,output:components.find(c=>c.id===output.component)!.position}:object(p.axes);
+  let housing:HousingSettings|undefined;
+  if(p.housing!==undefined){const h=object(p.housing);housing={plateThickness:number(h.plateThickness),clearance:number(h.clearance),bearingFit:number(h.bearingFit),endplay:number(h.endplay)};
+    if(housing.plateThickness<4||housing.plateThickness>15||housing.clearance<1||housing.clearance>20||housing.bearingFit<0||housing.bearingFit>0.5||housing.endplay<0.1||housing.endplay>0.8)throw Error('Ungültige Gehäuseparameter.');}
   return {format:'mechanics10',version:2,catalogVersion:CATALOG_VERSION,name:string(p.name),targetRatio,components,input,output,connections,
-    axes:{input:vector(axes.input),output:vector(axes.output)},search:{maxLayers:s.maxLayers,layerSpacing,margin,maxError,direction:s.direction as SearchSettings['direction']}};
+    axes:{input:vector(axes.input),output:vector(axes.output)},search:{maxLayers:s.maxLayers,layerSpacing,margin,maxError,direction:s.direction as SearchSettings['direction']},...(housing?{housing}:{})};
 }
 export function serializeProject(p:Project){return JSON.stringify(parseProject(JSON.stringify(p)),null,2)+'\n';}
 export const distanceXY=(a:Vec3,b:Vec3)=>Math.hypot(a[0]-b[0],a[1]-b[1]);

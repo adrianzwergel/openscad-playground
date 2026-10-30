@@ -55,3 +55,9 @@ fehlerhafte Dateien. `node scripts/check-search.mjs`: räumliche Suche und Migra
 `node scripts/check-project-browser.mjs`: manuelles Rendern, lokale Wiederherstellung,
 tatsächlicher JSON-Download/Import, unbekannte Version, inkompatible Module, veraltete
 Ergebnisse und defekter Speicher. Such-/Renderablauf: `node scripts/check-search-browser.mjs`.
+
+## Erweiterung Etappe D
+Optionale Gehäuseparameter `housing` bleiben im Version-2-Projekt erhalten. Fehlende Werte
+verwenden das Standardprofil. `housing.ts` ergänzt Lager, Platten, Naben, Hülsen und Hardware
+als abgeleitete Konstruktion. Gehäusefehler blockieren dessen STL-Export, nicht die bisherige
+Verzahnungsansicht. Konstruktion und Grenzen: [HOUSING.md](HOUSING.md).

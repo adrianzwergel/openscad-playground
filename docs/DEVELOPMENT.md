@@ -1,4 +1,4 @@
-# Lokaler Start – Etappe C
+# Lokaler Start – Etappe D
 
 Node.js >=22, npm und Git. Keine native OpenSCAD-/Prolog-Installation erforderlich.
 
@@ -41,3 +41,7 @@ Zusätzlich `node scripts/check-model.mjs`, `node scripts/check-search.mjs` und
 `node scripts/check-project-browser.mjs` (Browser mit statischem Server auf Port 4001).
 Die Modelltests verwenden Node Type Stripping; getestet mit Node 24.19.
 Projektformat und Speicherverhalten: [COMPONENT-MODEL.md](COMPONENT-MODEL.md).
+
+Etappe D: `node scripts/check-housing.mjs` und `node scripts/check-housing-browser.mjs`.
+Letzterer prüft die tatsächlichen Einzelteil-STLs aus dem ZIP einschließlich geschlossener
+Netze, Zusammenhang und Drucklage. Details: [HOUSING.md](HOUSING.md).
