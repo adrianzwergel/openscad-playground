@@ -1,4 +1,4 @@
-# Lokaler Start – Etappe E
+# Lokaler Start – Etappe F
 
 Node.js >=22, npm und Git. Keine native OpenSCAD-/Prolog-Installation erforderlich.
 
@@ -49,3 +49,9 @@ Netze, Zusammenhang und Drucklage. Details: [HOUSING.md](HOUSING.md).
 Etappe E: `node scripts/check-motion.mjs` und `node scripts/check-motion-browser.mjs`.
 Browserprüfung einschließlich aller drei Vorlagen, Zahneingriffs-Schnittprüfung,
 Einzelteilnetze und durchgängiger Hub-/Sperrraumprüfung. Siehe [MOTION.md](MOTION.md).
+
+Etappe F: `node scripts/check-spatial.mjs`, `node scripts/check-spatial-contact.mjs`
+und `node scripts/check-spatial-browser.mjs`. Die beiden Browsertests benötigen den
+Produktionsbuild auf Port 4001 und Chrome. Sie prüfen echte WASM-Schnittmengen,
+32 unterschiedliche Einzelteil-STLs, Vorschauen, Speicherung und Abbruch/Wiederanlauf.
+Katalog, Lagerung und Grenzen: [SPATIAL-PAIRS.md](SPATIAL-PAIRS.md).

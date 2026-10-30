@@ -3,6 +3,13 @@
 Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
 
 ## Aktueller Stand
+Etappe F als Softwareentwurf implementiert: Innenverzahnung, 90°-Kegelräder und rechtwinklige
+Schneckenpaare mit Katalogvarianten, expliziten Portachsen, radialer/axialer Lagerung,
+abnehmbaren Gehäusen und Einzelteil-/ZIP-Export. Rotationshüllen und endliche Wellen werden
+geprüft; OpenSCAD-Schnittproben ergänzen die Prüfung. Projektformat 4 migriert Versionen 1–3.
+Eigenständige Vorlagen, noch keine gemischte Kettensuche. Hohl-/Kegelräder sind rückseitig
+zweifach und überhängend gelagert; physische Abnahme offen. Siehe [SPATIAL-PAIRS.md](SPATIAL-PAIRS.md).
+
 Etappe E als Softwareentwurf implementiert: GT2-Kataloglängen mit exakter Teilkreislänge und
 freigegebenem Stellweg; separat geführte TR8-/Zahnstangenachsen, vollständige Bewegungshüllen,
 Sperrraumprüfung, Montagevorlagen und Einzelteil-/ZIP-Exporte. Projektformat 3 migriert ältere

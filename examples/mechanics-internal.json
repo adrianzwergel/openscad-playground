@@ -1,0 +1,75 @@
+{
+  "format": "mechanics10",
+  "version": 4,
+  "catalogVersion": "mechanics10-spur-1",
+  "name": "Mechanics-10 internal",
+  "targetRatio": 2.1,
+  "components": [
+    {
+      "id": "input",
+      "catalogId": "spur-m2-z20",
+      "position": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "output",
+      "catalogId": "spur-m2-z40",
+      "position": [
+        60,
+        0,
+        0
+      ]
+    }
+  ],
+  "input": {
+    "component": "input",
+    "port": "shaft"
+  },
+  "output": {
+    "component": "output",
+    "port": "shaft"
+  },
+  "connections": [
+    {
+      "kind": "external-spur-mesh",
+      "a": {
+        "component": "input",
+        "port": "teeth"
+      },
+      "b": {
+        "component": "output",
+        "port": "teeth"
+      }
+    }
+  ],
+  "axes": {
+    "input": [
+      0,
+      0,
+      0
+    ],
+    "output": [
+      60,
+      0,
+      0
+    ]
+  },
+  "search": {
+    "maxLayers": 2,
+    "layerSpacing": 15,
+    "margin": 1,
+    "maxError": 100,
+    "direction": "any"
+  },
+  "spatial": {
+    "kind": "internal",
+    "teeth": 60,
+    "starts": 1,
+    "clearance": 2,
+    "phase": 0
+  }
+}
+

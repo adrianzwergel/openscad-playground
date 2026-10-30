@@ -25,7 +25,7 @@ Wellen-/Nabenkorridore. Fehler verhindern den Geometrieexport. Lager, Gehäuse u
 bleiben unbekannt. Details und Suchgrenzen: [SPATIAL-SEARCH.md](SPATIAL-SEARCH.md).
 
 ## Projektdatei
-JSON: `format: mechanics10`, `version: 3`, `catalogVersion: mechanics10-spur-1`.
+JSON: `format: mechanics10`, `version: 4`, `catalogVersion: mechanics10-spur-1`.
 Gespeichert werden Name, Soll-Untersetzung, Komponenten-IDs, Katalogreferenzen, Positionen,
 Eingang/Ausgang, Verbindungen, feste Achsen (`axes`) und Suchvorgaben (`search`).
 Berechnete Werte, Code, Worker-Zustand, Meshes und Blob-URLs werden nicht gespeichert.
@@ -35,7 +35,8 @@ Strukturell gültige Projekte mit geometrischen Regelverletzungen dürfen zur Ko
 und gespeichert werden, sind bis zur Korrektur aber nicht renderbar.
 
 Version-1-Dateien werden beim Laden migriert: Achsen aus den bisherigen Anschlusspositionen,
-Standardsuchvorgaben, anschließend Speicherung als Version 3. Der localStorage-Schlüssel bleibt
+Standardsuchvorgaben, anschließend Speicherung als Version 4. Auch Versionen 2 und 3 werden
+in Version 4 übernommen. Der localStorage-Schlüssel bleibt
 `mechanics10.project.v1`, damit vorhandene Projekte automatisch gefunden werden.
 
 `Lokal speichern` speichert einen Projektstand im localStorage der jeweiligen Browser-Origin.
@@ -63,8 +64,18 @@ als abgeleitete Konstruktion. Gehäusefehler blockieren dessen STL-Export, nicht
 Verzahnungsansicht. Konstruktion und Grenzen: [HOUSING.md](HOUSING.md).
 
 ## Projektformat 3 / Etappe E
-Die aktuelle Speicherung verwendet Version 3. Version 1 und 2 werden weiterhin eingelesen
-und migriert. Das optionale `motion`-Objekt aktiviert eine Riemen-, Spindel- oder Rack-Vorlage;
+Version 3 führte `motion` ein; aktuell wird als Version 4 gespeichert. Das optionale
+`motion`-Objekt aktiviert eine Riemen-, Spindel- oder Rack-Vorlage;
 die Stirnradkomponenten bleiben erhalten, bilden aber keine automatisch angekoppelte Kette.
 Die Anschlüsse unterscheiden Wellenrotation und linearen Hub, mit passenden Einheiten.
 Details, Maßvorlagen und Grenzen: [MOTION.md](MOTION.md).
+
+## Projektformat 4 / Etappe F
+Das optionale `spatial`-Objekt aktiviert Innenverzahnung (`internal`), Kegelräder (`bevel`)
+oder Schneckenpaare (`worm`). Es enthält `teeth`, `starts`, `clearance` und `phase`.
+`motion` und `spatial` dürfen nicht gleichzeitig gesetzt sein. Die Stirnradkette bleibt
+als inaktiver Arbeitsstand erhalten; ihre festen Achsen bestimmen diese Vorlagen nicht.
+`resolveSpatial` leitet eigene Weltanschlüsse, endliche Wellen, Übersetzung, Rotationshüllen
+und Prüfungen ab. `spatialCAD` verwendet dieselben Maße für Baugruppe und Einzelteile.
+Beispiele: `examples/mechanics-internal.json`, `mechanics-bevel.json`, `mechanics-worm.json`.
+Katalog, Achskonventionen und Montage: [SPATIAL-PAIRS.md](SPATIAL-PAIRS.md).
