@@ -1,0 +1,18 @@
+import type {Mechanism,Check} from './contracts.ts';
+import {registry} from './registry.ts';
+import {worldElement} from './model.ts';
+import {axis,rotate,add,scale,norm,cross} from './frames.ts';
+import type {Frame,V} from './frames.ts';
+type Box={id:string;owner:string;kind:'rotor'|'shaft'|'bearing'|'access';center:V;axes:V[];half:V};
+const dot=(a:V,b:V)=>a.reduce((s,n,i)=>s+n*b[i],0);
+function box(id:string,owner:string,kind:Box['kind'],f:Frame,r:number,lo:number,hi:number):Box{return {id,owner,kind,center:add(f.position,scale(axis(f),(lo+hi)/2)),axes:[rotate(f.rotation,[1,0,0]),rotate(f.rotation,[0,1,0]),axis(f)],half:[r,r,(hi-lo)/2]};}
+export function separated(a:Box,b:Box,margin:number){const candidates=[...a.axes,...b.axes,...a.axes.flatMap(x=>b.axes.map(y=>cross(x,y)))],delta=add(b.center,scale(a.center,-1));return candidates.some(v=>{const len=norm(v);if(len<1e-9)return false;const u=scale(v,1/len),radius=(x:Box)=>x.axes.reduce((s,t,i)=>s+Math.abs(dot(t,u))*x.half[i],0);return Math.abs(dot(delta,u))>=radius(a)+radius(b)+margin-1e-7;});}
+export function assessConstruction(input:Mechanism,margin=1,resize=true){if(!Number.isFinite(margin)||margin<0||margin>10)throw Error('Ungültiger Freiraum.');const graph=structuredClone(input),boxes:Box[]=[],checks:Check[]=[],supports:{body:string;positions:number[];overhung:boolean}[]=[];
+ for(const e of graph.elements){const h=registry.getFamily(e.family).envelope(e);boxes.push(box(e.id,e.body,'rotor',worldElement(graph,e),h.radius,h.min,h.max));}
+ for(const b of graph.bodies){if(!b.shaft)continue;const es=graph.elements.filter(e=>e.body===b.id);if(!es.length)continue;const lo=Math.min(...es.map(e=>e.pose.position[2]+registry.getFamily(e.family).envelope(e).min)),hi=Math.max(...es.map(e=>e.pose.position[2]+registry.getFamily(e.family).envelope(e).max)),overhung=es.some(e=>e.family==='bevel'),positions=overhung?[lo-26,lo-10]:[lo-10,hi+10];supports.push({body:b.id,positions,overhung});if(resize){b.shaft.start=positions[0]-12;b.shaft.end=overhung?hi+3:positions[1]+12;}else if(b.shaft.start>positions[0]-2.5||b.shaft.end<positions[1]+2.5)checks.push({id:b.id+'/bearing-length',state:'fail',message:'Welle reicht nicht über beide reservierten Lagersitze.'});boxes.push(box(b.id,b.id,'shaft',b.frame,b.shaft.diameter/2,b.shaft.start,b.shaft.end));for(const [i,z] of positions.entries())boxes.push(box(`${b.id}-bearing-${i}`,b.id,'bearing',b.frame,10,z-4,z+4));boxes.push(box(`${b.id}-access`,b.id,'access',b.frame,14,positions[0]-24,positions[0]-5));}
+ const contacts=new Set(graph.relations.map(r=>[...r.elements].sort().join('/')));
+ for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++){const a=boxes[i],b=boxes[j];if(a.owner===b.owner&&(a.kind==='shaft'||b.kind==='shaft'))continue;if(a.kind==='rotor'&&b.kind==='rotor'&&contacts.has([a.id,b.id].sort().join('/')))continue;
+ if(!separated(a,b,margin))checks.push({id:`space/${a.id}/${b.id}`,state:'fail',message:`Konservative Freiraumprüfung: ${a.id} / ${b.id} (${margin} mm). Genauere Geometrie könnte den Kandidaten noch freigeben.`});}
+ if(!checks.length)checks.push({id:'reserved-spaces',state:'pass',message:'Nicht kämmende Rotoren, endliche Wellen, Lager-/Deckelhüllen und axialer Werkzeugzugang geometrisch getrennt.'});
+ checks.push({id:'assembly-scope',state:'unknown',message:'Reservierter Lager-/Werkzeugraum; vollständiger Einfädelpfad, Nabenbefestigung, Axiallager und Lastnachweis bleiben offen.'});return {graph,checks,supports,valid:checks.every(c=>c.state!=='fail'),boxes};
+}

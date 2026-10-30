@@ -124,3 +124,14 @@ Prolog wählt minimale relative Übersetzungsabweichung, dann minimale Summe der
 Achsabstand wird daraus abgeleitet, nicht als feste Vorgabe gelöst. 5,1-mm-Bohrung und
 0,15-mm-Backlash sind Demo-Parameter, keine validierten Fertigungsempfehlungen.
 Keine Lager, kein Gehäuse, keine Kollisions-/Montagefreigabe. STL enthält beide Räder.
+
+
+## Freie Graphsuche: numerische Verfeinerung (30.10.2026)
+
+Drei-/Vierstufen-Mehrstarts, kontinuierliche Winkel-/Sitzanpassung und konservative
+Rotor-/Wellen-/Lager-/Werkzeugräume implementiert. Details, Suchgrenzen und
+Abnahmeszenarien: [GRAPH-SEARCH.md](GRAPH-SEARCH.md). Beidseitige Lagerplätze für
+Stirnradpakete; Kegelwellen vorläufig mit zwei rückwärtigen Lagerplätzen, deren
+überhängende Anordnung noch konstruktiv/physikalisch auszulegen ist.
+Nächste Arbeiten: vollständige Montagepfade, feinere Kollisionsprüfung und weitere
+Paarungsprovider im Elementgraph. Generative Tragstruktur weiterhin später.

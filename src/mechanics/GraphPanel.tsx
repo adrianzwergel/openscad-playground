@@ -1,3 +1,4 @@
+import {assessConstruction} from './graph/construction';
 import {GraphSearch} from './GraphSearch';
 import React,{useEffect,useRef,useState} from 'react';
 import type {Mechanism} from './graph/contracts';
@@ -7,6 +8,7 @@ import {axisAngle} from './graph/frames';
 import {parseOff} from '../io/import_off';
 import {exportGlb} from '../io/export_glb';
 export function GraphPanel({graph,onChange,busy,onBusy}:{graph:Mechanism;onChange:(g:Mechanism)=>void;busy:boolean;onBusy:(v:boolean)=>void}){
+ const construction=assessConstruction(graph,1,false);
  const a=resolveMechanism(graph),[draft,setDraft]=useState(JSON.stringify(graph,null,2)),[message,setMessage]=useState(''),[preview,setPreview]=useState('');
  const worker=useRef<Worker>(),generation=useRef(0),reject=useRef<(e:Error)=>void>();
  useEffect(()=>{setDraft(JSON.stringify(graph,null,2));setPreview('');setMessage('Graph geändert; Detailvorschau neu erzeugen.');},[graph]);
@@ -21,6 +23,7 @@ export function GraphPanel({graph,onChange,busy,onBusy}:{graph:Mechanism;onChang
  <div className="actions"><button id="graph-render" disabled={busy||!a.valid} onClick={render}>Detailvorschau erzeugen</button><button id="graph-scad" disabled={busy||!a.valid} onClick={exportScad}>SCAD exportieren</button><button id="graph-cancel" disabled={!busy||!worker.current} onClick={cancel}>Abbrechen</button></div><p id="graph-status" role="status">{message}</p><p>Geometrischer Prüfaufbau: keine Nabenfixierung, Lager oder Montagefreigabe. Generative Tragstrukturen bleiben zurückgestellt.</p>
  </aside><div className="viewer">{preview?React.createElement('model-viewer',{src:preview,'camera-controls':true,orientation:'0deg -90deg 0deg',style:{width:'100%',height:'100%'}}):<div className="empty">Gemeinsame Welle B:<small>Stirnrad und Kegelritzel auf derselben Welle, ohne Zwischenkupplung.</small></div>}</div></div>
  <section className="card"><h2>Wellenbelegung</h2><table id="graph-bodies"><thead><tr><th>Träger</th><th>Elemente</th><th>Drehzahl / Eingang</th></tr></thead><tbody>{graph.bodies.map(b=><tr key={b.id}><td>{b.id} · {b.kind}</td><td>{graph.elements.filter(e=>e.body===b.id).map(e=>`${e.id} (${e.family}, z=${e.pose.position[2]} mm)`).join(' + ')}</td><td>{a.speeds[b.id]?.toFixed(4)??'Unbestimmt'}</td></tr>)}</tbody></table><ul id="graph-checks">{a.checks.map((c,i)=><li key={c.id+i} data-state={c.state}>{c.state==='pass'?'✓':c.state==='fail'?'✕':'?'} {c.id}: {c.message}</li>)}</ul>
+ <h3>Lager- und Montageräume</h3><ul id="graph-construction-checks">{construction.checks.map(c=><li key={c.id} data-state={c.state}>{c.message}</li>)}</ul><details><summary>Reservierte Lagerpositionen (lokale Wellenkoordinaten)</summary><pre>{JSON.stringify(construction.supports,null,2)}</pre></details>
  <h3>Paarungen und Platzierungsvorschläge</h3><p>Ein Vorschlag setzt den Gegenkörper auf eine zulässige Paarungslage. Andere Paarungen und feste Endanschlüsse werden danach erneut geprüft; dies ist noch kein Autorouter.</p>{graph.relations.map(rel=><p key={rel.id}>{rel.id} · {rel.rule} · {rel.elements.join(' ↔ ')} <button disabled={busy||!registry.getRule(rel.rule).mateFrames} data-graph-align={rel.id} onClick={()=>{try{const p=proposeMate(graph,rel.id)[0];onChange({...graph,bodies:graph.bodies.map(b=>b.id===p.body?{...b,frame:p.frame}:b)});}catch(e){setMessage(String(e));}}}>Lagevorschlag übernehmen</button></p>)}
  <details><summary>Graph bearbeiten (validiertes JSON)</summary><textarea id="graph-json" value={draft} disabled={busy} spellCheck={false} onChange={e=>setDraft(e.target.value)} style={{width:'100%',height:420}}/><button id="graph-apply" disabled={busy} onClick={()=>{try{if(draft.length>80000)throw Error('Graph zu groß.');onChange(parseMechanism(JSON.parse(draft)));}catch(e){setMessage(`Graph abgelehnt: ${e}`);}}}>Graph übernehmen</button><p>Unbekannte Familien/Regeln werden abgelehnt. Erweiterungen werden als Anwendungscode registriert; Projektdateien enthalten keine ausführbaren Plugins.</p></details>
  </section></section>;

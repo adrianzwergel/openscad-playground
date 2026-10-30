@@ -1,36 +1,66 @@
-# Räumliche Graphsuche – erster begrenzter Suchlauf
+# Räumliche Graphsuche mit kontinuierlicher Anpassung
 
-Im Elementgraph-Modus lassen sich jetzt Anordnungen zwischen den festen Zielrahmen
-suchen. Die Auswahl verwendet zwei bis vier Paarungen (auch eine ist einstellbar),
-gemeinsame Wellen und die vorhandenen Stirnrad-/Kegelradprovider. Referenzabnahme:
-zweistufige Mischketten in frei gedrehten Weltkoordinaten, einschließlich eines
-73°-Kegelwinkels außerhalb des ursprünglichen Rasters. Drei/vier Stufen sind ein
-experimenteller Suchraum, noch kein umfassend abgenommener Autorouter.
+Die Browser-Suche erzeugt offene Ketten aus ein bis vier Stirnrad-/Kegelradpaarungen
+auf gemeinsamen Wellen. Ein- und Ausgang behalten ihre festen Zielrahmen; frei
+orientierte Weltkoordinaten sind möglich. Minimale und maximale Stufenzahl sind
+getrennt einstellbar. Generative Gehäuse bleiben zurückgestellt.
 
-Die Suche baut neue Graphen auf; sie verändert die Zielrahmen nicht. Einzelne Stufen
-werden über analytische Provider-Vorschläge platziert. Zähnezahlen 20/30/40, Modul 2,
-Winkelraster und axiale Sitzvorschläge werden mit aus dem Zielrahmen abgeleiteten
-Winkeln und axialen Positionen kombiniert. Keine kontinuierliche Optimierung und
-keine Vollständigkeitsgarantie. Allgemeine Anschlussorientierungen sind als Vorgabe
-zulässig, aber nicht jede Orientierung ist mit diesem Suchraum erreichbar.
+## Suchverfahren
 
-Eine begrenzte Beam-Suche bewertet Endlagenfehler und Restübersetzung. Unterschiedliche
-erste Paarungen, Zähnezahlen und axiale Sitze werden bei der Auswahl berücksichtigt.
-Budget wird auf die Stufentiefen verteilt. Status budget/beam-exhausted bedeutet
-nicht, dass keine Lösung existiert. Maximal zwölf Lösungen werden angezeigt. Ein
-Kandidat wird nur mit gültigen Paarungs-/Phasenregeln, axialer Belegung, bestimmter
-Übersetzung und eingehaltenen Endanschlüssen angeboten. Die UI verwendet 1 %
-Übersetzungstoleranz, 100.000 Versuche und eine Beam-Breite von 120.
+`robust-search.ts` enumeriert passende Zähnezahlprodukte (20/30/40, Modul 2) für die
+Soll-Untersetzung. Reproduzierbare Mehrstarts wechseln fair zwischen Stufentiefen
+und Typenfolgen. Ein vorhandener passender Graph ist ein zusätzlicher Startwert.
+Die UI erlaubt 1 % Übersetzungsabweichung und maximal acht geprüfte Kandidaten.
 
-Die Suche ist kooperativ unterbrechbar und gibt regelmäßig an den Browser zurück.
-Übernommene Graphen werden mit Projektformat 6 gespeichert und können mit der
-vorhandenen CAD-Vorschau und Animation geprüft werden.
+`refine.ts` passt Azimute, Kegel-Achswinkel (60–120°) und axiale Sitze gemeinsam
+kontinuierlich an. Gedämpfte kleinste Quadrate mit numerischer Jacobi-Matrix
+minimieren den Anschlussfehler. Jede Auswertung baut die Kette mit analytischen
+Paarungsregeln neu auf; Kontaktgeometrie und Zahnphasen bleiben dadurch gekoppelt.
+Zielrahmen werden nicht zur Fehlerkorrektur verschoben. Axiale Suchgrenzen:
+erster Sitz 0–150 mm, weitere treibende Sitze 20–150 mm.
 
-Wichtig: Kinematisch passende Kandidaten sind keine Fertigungsfreigabe. Vollständige
-3D-Kollisionen, Lagerplatz, Wellenkreuzungen, Befestigung und Montage sind weiterhin
-ungeprüft. Die Oberfläche kennzeichnet das ausdrücklich. Generative Gehäuse bleiben
-zurückgestellt. Nächste Schritte sind kontinuierliche Anpassung, bessere mehrstufige
-Suche und konstruktive Ausschlussprüfungen, bevor weitere Familien integriert werden.
+Diskrete Übersetzung und kontinuierliche Endlage werden getrennt gelöst. Gültige
+Kinematik, feste Anschlüsse und konstruktive Hüllräume sind abschließende Filter.
+Kollisionen werden derzeit durch andere Starts umgangen, nicht über Gradienten
+im Optimierungsziel. Keine globale Vollständigkeitsgarantie: budget und
+starts-exhausted bedeuten nicht, dass keine Lösung existiert. Das Budget von
+100.000 zählt approximierte numerische Rechenarbeit, nicht verschiedene Graphen.
+Kooperative Unterbrechung lässt Abbruch und Browserinteraktion zu.
 
-Tests: `node scripts/check-graph-search.mjs` und
-`node scripts/check-graph-search-browser.mjs` (Produktionsbuild auf Port 4001).
+## Konstruktive Filter
+
+`construction.ts` prüft orientierte Hüllquader mittels Separating-Axis-Test mit
+1 mm Mindestabstand. Die Hüllen umfassen drehende Rotoren, endliche Wellen,
+Lager-/Deckelplätze (Radius 10 mm, axiale Breite 8 mm) und axialen Werkzeugzugang
+(Radius 14 mm, Länge 19 mm). Wellenlängen werden an die reservierten Lagerstellen
+angepasst. Bei späterer manueller Änderung prüft die UI die tatsächlich gespeicherte
+Wellenlänge, ohne sie still zu ändern. Lagerpositionen und Ausschlussgründe werden
+angezeigt und aus dem gespeicherten Graphen wieder berechnet.
+
+Stirnradwellen erhalten Lagerplätze vor und hinter dem Elementpaket. Wellen mit
+Kegelrädern verwenden vorerst zwei rückwärtige Lagerplätze mit überhängender
+Verzahnung. Das ist eine geometrische Reservierung, kein Lastnachweis und keine
+allgemein geeignete Lagerauslegung. Lager-/Werkzeughüllen werden nicht als fertige
+CAD-Bauteile ausgegeben. Eigenwelle und zugehörige Sitze dürfen sich berühren;
+ausdrücklich gepaarte Verzahnungen sind vom Rotor-Hüllvergleich ausgenommen.
+Alle übrigen Hüllpaare müssen frei bleiben. Quadratische Hüllen sind konservativ
+und können tatsächlich passende Anordnungen ablehnen.
+
+Vollständige Einfädel-/Montagepfade, detaillierte Zahnkontaktprüfung über den
+Bewegungszyklus, Nabenfixierung, Axiallager und Festigkeit bleiben ungeklärt und
+werden so ausgewiesen. Kein Fertigungsnachweis. GT2 und Schnecken sind noch nicht
+in diesem neuen Graph-Suchprovider integriert. Geschlossene Schleifen sind nicht
+Teil dieser offenen Kettensuche. Der alte Beam-Solver bleibt als Regression erhalten.
+
+## Abnahme
+
+`node scripts/check-robust-graph-search.mjs`: kalte Drei-/Vierstufensuche mit 8:1
+und 16:1 in gedrehten Weltkoordinaten; kalte gemischte 6:1-/12:1-Suche mit schrägem
+Ausgangsanschluss; gemischte Ketten mit gestörten Winkeln und
+Positionen; feste Endanschlüsse, Übersetzung, Lagerlänge, Kollision und Abbruch.
+Diese bekannten Fälle sind Regressionen, kein Vollständigkeitsbeweis.
+`node scripts/check-graph-search-browser.mjs`: Übernahme, Speicherung und Abbruch
+im Produktionsbuild auf Port 4001. `check-robust-graph-browser.mjs` prüft zusätzlich
+die kalte Drei-/Vierstufensuche und gespeicherte Freiraumberichte im Browser.
+`check-element-graph.mjs` und
+`check-graph-search.mjs` sichern vorhandene Graph-/Paarungsfunktionen ab.

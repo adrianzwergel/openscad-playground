@@ -116,3 +116,8 @@ Priorität gemäß Nutzerentscheidung: Autorouting, räumliche Anordnung, erweit
 Familien und belastbare geometrische/montageseitige Prüfungen ausreifen. Generative
 Tragstruktur und physikalische Topologieoptimierung beginnen erst danach. Das ändert
 nichts daran, dass Lager- und Montageplatz bereits während der Suche reserviert werden müssen.
+
+
+Aktualisierung 30.10.2026: Offene Drei-/Vierstufenketten haben jetzt eine Mehrstart-
+Suche mit kontinuierlicher Anpassung und konservativen Lager-/Montageraumfiltern.
+Der aktuelle Prüfstand und verbleibende Grenzen stehen in [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
