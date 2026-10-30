@@ -1,3 +1,4 @@
+import {regionCorners,regionEdges} from './graph/space';
 import React,{useEffect,useRef,useState} from 'react';
 import type {Project,Vec3} from './model';
 import {resolveMotion} from './motion';
@@ -20,8 +21,10 @@ export function Workbench({project,onChange,busy,axisEdit}:{project:Project;onCh
  const ports=metrics(current).ports.map(p=>graphLinear&&p.name==='output'?{...p,position:p.position.map((n,i)=>n+graphLinear.axis[i]*graphLinear.q) as Vec3}:p);
  const rs=rotors(project,angle).filter(r=>r.position.every(Number.isFinite));
  const pos=(v:Vec3)=>projectPoint(v,view);
+ const environment=project.graph?.environment,regions=environment?[...(environment.bounds?[{region:environment.bounds,bounds:true}]:[]),...environment.obstacles.map(region=>({region,bounds:false}))]:[];
+ const spaceLines=regions.map(r=>({...r,points:regionCorners(r.region).map(pos)}));
  const outlines=rs.map((r,i)=>Array.from({length:49},(_,n)=>pos(rim(r,n*Math.PI/24,explode*(i+1)))));
- const points=[...outlines.flat(),...ports.filter(p=>p.position.every(Number.isFinite)).map(p=>pos(p.position)),...(linear?[pos([0,0,24]),pos([stroke,0,24])]:[]),...(graphLinear?[pos(graphLinear.origin),pos(graphLinear.origin.map((n,i)=>n+graphLinear.axis[i]*graphLinear.stroke) as Vec3)]:[])];
+ const points=[...spaceLines.flatMap(r=>r.points),...outlines.flat(),...ports.filter(p=>p.position.every(Number.isFinite)).map(p=>pos(p.position)),...(linear?[pos([0,0,24]),pos([stroke,0,24])]:[]),...(graphLinear?[pos(graphLinear.origin),pos(graphLinear.origin.map((n,i)=>n+graphLinear.axis[i]*graphLinear.stroke) as Vec3)]:[])];
  const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);const left=Math.min(-30,...xs)-35,top=Math.min(-30,...ys)-35,width=Math.max(60,...xs)-left+35,height=Math.max(60,...ys)-top+35;
  const field=(key:'center'|'travel'|'stroke',label:string,min:number,max:number)=><label>{label}<input aria-label={label} type="number" min={min} max={max} disabled={busy} value={project.motion![key]} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&n>=min&&n<=max)onChange({...project,motion:{...project.motion!,[key]:n}});}}/></label>;
  return <section className="card workbench" id="workbench"><h2>Baugruppe konfigurieren & prüfen</h2>
@@ -36,6 +39,7 @@ export function Workbench({project,onChange,busy,axisEdit}:{project:Project;onCh
  {linear&&<p id="linear-position">Schlitten {q.toFixed(2)} / {stroke} mm; Rücklauf an den Hubenden. Eingangsvorschub {linear.mmPerTurn.toFixed(3)} mm/U.</p>}
  {graphLinear&&<p id="graph-linear-position">Linearer Ausgang {graphLinear.q.toFixed(2)} / {graphLinear.stroke} mm · {graphLinear.gain.toFixed(3)} mm/U (vorzeichenbehaftet). Schematischer Hin-/Rücklauf; der Eingang dreht entsprechend mit. Führung ist nicht dargestellt.<input id="graph-travel" aria-label="Hubvorschau" type="range" min="0" max={graphLinear.stroke} step="0.1" value={graphLinear.q} onChange={e=>{setPlaying(false);setAngle(Number(e.target.value)/Math.abs(graphLinear.gain)*360);}}/></p>}
  <svg id="kinematic-view" role="img" aria-label="Kinematische Baugruppenansicht" viewBox={`${left} ${top} ${width} ${height}`}>
+ {spaceLines.map(({region,bounds,points})=><g key={(bounds?'bounds:':'obstacle:')+region.id} data-space-zone={region.id} data-space-kind={bounds?'bounds':'obstacle'}>{regionEdges.map(([a,b],i)=><line key={i} x1={points[a][0]} y1={points[a][1]} x2={points[b][0]} y2={points[b][1]} stroke={bounds?'#78a9db':'#ee7b72'} strokeWidth="1.2" strokeDasharray={bounds?'4 3':undefined}/>)}<text x={points[0][0]} y={points[0][1]-4} fill={bounds?'#78a9db':'#ee7b72'} fontSize="8">{bounds?'Bauraum':region.id}</text></g>)}
  {linear&&<><line x1={pos([0,0,24])[0]} y1={pos([0,0,24])[1]} x2={pos([stroke,0,24])[0]} y2={pos([stroke,0,24])[1]} stroke="#778c9a" strokeWidth="8"/><rect x={pos([q,0,24+explode])[0]-12} y={pos([q,0,24+explode])[1]-8} width="24" height="16" fill="#70dfc1"/></>}
  {rs.map((r,i)=>{const centre=pos(r.position.map((n,k)=>n+r.axis[k]*explode*(i+1)) as Vec3),end=pos(rim(r,r.angle*Math.PI/180,explode*(i+1)));return <g key={r.id} data-rotor={r.id} data-angle={r.angle} data-position={r.position.join(",")} data-motion={r.linear?"translation":"rotation"}><polyline points={outlines[i].map(p=>p.join(',')).join(' ')} fill="none" stroke={i%2?'#e5b879':'#70dfc1'} strokeWidth="1.5"/><line x1={centre[0]} y1={centre[1]} x2={end[0]} y2={end[1]} stroke="#e6edf4"/><text x={centre[0]} y={centre[1]-5} fontSize="7" fill="#e6edf4">{r.id}</text></g>;})}
  {ports.filter(p=>p.position.every(Number.isFinite)).map(p=>{const c=pos(p.position),end=pos(p.position.map((v,i)=>v+p.axis[i]*25) as Vec3);return <g key={p.name} onClick={()=>setSelected(p.name)} style={{cursor:'pointer'}}><circle cx={c[0]} cy={c[1]} r={selected===p.name?4:2} fill="#ffac9f"/><line x1={c[0]} y1={c[1]} x2={end[0]} y2={end[1]} stroke="#ffac9f"/><text x={end[0]+3} y={end[1]} fontSize="7" fill="#ffac9f">{p.name}</text></g>;})}</svg>

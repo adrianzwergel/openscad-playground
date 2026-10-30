@@ -181,3 +181,13 @@ Drehbewegung, feste relative Phase, unabhängige Achse, Verbindungshüllraum,
 Persistenz und Browserdarstellung implementiert. Katalogfreigaben bleiben explizit;
 keine automatische Konstruktion von Naben, Montage oder Lagerung.
 Abnahme und Grenzen: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
+
+## Bauraum und Sperrzonen (30.10.2026)
+
+Graphversion 4 ergänzt optionale orientierte Raumquader und verbotene Zonen mit
+Mindestabstand. Editor, Speicherung und schematische Darstellung sind angebunden.
+Die kontinuierliche Lageoptimierung berücksichtigt diese Vorgaben; die Endprüfung
+umfasst die vollständigen Bauteil- und Bewegungsräume einschließlich vorhandener
+Lager-/Zugangsreservierungen. Katalog und feste Anschlüsse bleiben unverändert.
+Montage und generatives Gehäuse weiterhin später. Verfahren, Grenzen und Abnahme:
+[SPACE-SEARCH.md](SPACE-SEARCH.md).

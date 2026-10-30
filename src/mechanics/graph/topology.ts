@@ -34,7 +34,7 @@ export function connectionVariants(input:Mechanism):Mechanism[]{
   if(index===joins.length){variants.push(g);return;}
   const join=joins[index],prev=g.relations[join.index-1],next=g.relations[join.index];
   if(join.shared){const copy=structuredClone(g),keep=copy.elements.find(e=>e.id===prev.elements[1])!,remove=next.elements[0];copy.version=Math.max(copy.version,2) as Mechanism['version'];copy.relations[join.index].elements[0]=keep.id;keep.binding='free';copy.bodies.find(b=>b.id===keep.body)!.motion='fixed';copy.elements=copy.elements.filter(e=>e.id!==remove);expand(copy,index+1);}
-  if(join.compound){const copy=structuredClone(g),members=copy.elements.filter(e=>[prev.elements[1],next.elements[0]].includes(e.id));copy.version=3;let group='rotor-'+join.index;while(copy.elements.some(e=>e.rotorGroup===group))group+='-next';members.forEach(e=>{e.binding='free';e.rotorGroup=group;});copy.bodies.find(b=>b.id===members[0].body)!.motion='fixed';expand(copy,index+1);}
+  if(join.compound){const copy=structuredClone(g),members=copy.elements.filter(e=>[prev.elements[1],next.elements[0]].includes(e.id));copy.version=Math.max(copy.version,3) as Mechanism['version'];let group='rotor-'+join.index;while(copy.elements.some(e=>e.rotorGroup===group))group+='-next';members.forEach(e=>{e.binding='free';e.rotorGroup=group;});copy.bodies.find(b=>b.id===members[0].body)!.motion='fixed';expand(copy,index+1);}
   expand(structuredClone(g),index+1);
  }
  expand(structuredClone(input),0);

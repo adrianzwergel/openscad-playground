@@ -1,4 +1,6 @@
 import type {Mechanism} from './contracts.ts';
+import {assessConstruction} from './construction.ts';
+import {spaceViolations} from './space.ts';
 import {registry} from './registry.ts';
 import {parseMechanism,proposeMate,context} from './model.ts';
 import {compose,inverse,multiply,inverseQ,axis,add,scale,cross} from './frames.ts';
@@ -8,8 +10,14 @@ function solve(a:number[][],b:number[]){const m=a.map((r,i)=>[...r,b[i]]),n=b.le
 export async function refineGraph(input:Mechanism,signal?:AbortSignal,iterations=100){
  const initial=parseMechanism(input),variables:{read:(g:Mechanism)=>number;write:(g:Mechanism,v:number)=>void;lo:number;hi:number}[]=[];
  initial.relations.forEach(r=>{for(const {key,lo,hi} of registry.getRule(r.rule).search!.variables)variables.push({read:g=>g.relations.find(x=>x.id===r.id)!.params[key],write:(g,v)=>{g.relations.find(x=>x.id===r.id)!.params[key]=v;},lo,hi});const element=r.elements[0];if(initial.relations.some(other=>other.elements[1]===element))return;variables.push({read:g=>g.elements.find(e=>e.id===element)!.pose.position[2],write:(g,v)=>{g.elements.find(e=>e.id===element)!.pose.position[2]=v;},lo:element===initial.relations[0].elements[0]?0:20,hi:150});});
- let best=reflow(initial),res=endResidual(best),cost=res.reduce((s,n)=>s+n*n,0),lambda=.01,used=0;
- for(;used<iterations&&cost>1e-14;used++){if(signal?.aborted)break;if(used%5===0)await new Promise(r=>setTimeout(r,0));const jac:number[][]=[];for(const v of variables){const perturbed=structuredClone(best),old=v.read(best),step=old+.001<=v.hi?.001:-.001;v.write(perturbed,old+step);try{const next=endResidual(reflow(perturbed));jac.push(next.map((n,k)=>(n-res[k])/step));}catch{jac.push(res.map(()=>0));}}
- const normal=jac.map((a,i)=>jac.map((b,j)=>a.reduce((s,x,k)=>s+x*b[k],0)+(i===j?lambda:0))),rhs=jac.map(a=>-a.reduce((s,x,k)=>s+x*res[k],0)),d=solve(normal,rhs);if(!d)break;const trial=structuredClone(best);variables.forEach((v,i)=>v.write(trial,Math.min(v.hi,Math.max(v.lo,v.read(best)+Math.min(20,Math.max(-20,d[i]))))));try{const next=reflow(trial),r=endResidual(next),value=r.reduce((s,n)=>s+n*n,0);if(value<cost){best=next;res=r;cost=value;lambda=Math.max(1e-9,lambda*.3);}else lambda=Math.min(1e9,lambda*10);}catch{lambda*=10;}}
+ // Keep residual dimensions stable even when a short compound has no gap hull yet.
+ const hullKeys=initial.environment?[...new Set([...assessConstruction(initial).boxes.map(b=>b.kind+':'+b.id),...initial.elements.filter(e=>e.rotorGroup).map(e=>'coupling:coupling-'+e.rotorGroup)])].sort():[];
+ const residual=(g:Mechanism)=>{const end=endResidual(g);if(!g.environment)return end;
+  const hulls=new Map(assessConstruction(g).boxes.map(b=>[b.kind+':'+b.id,b])),width=g.environment.bounds?7:1;
+  return [...end,...hullKeys.flatMap(key=>{const hull=hulls.get(key);return hull?spaceViolations(hull,g.environment!):Array(width).fill(0);})];
+ };
+ let best=reflow(initial),res=residual(best),cost=res.reduce((s,n)=>s+n*n,0),lambda=.01,used=0;
+ for(;used<iterations&&cost>1e-14;used++){if(signal?.aborted)break;if(used%5===0)await new Promise(r=>setTimeout(r,0));const jac:number[][]=[];for(const v of variables){const perturbed=structuredClone(best),old=v.read(best),step=old+.001<=v.hi?.001:-.001;v.write(perturbed,old+step);try{const next=residual(reflow(perturbed));jac.push(next.map((n,k)=>(n-res[k])/step));}catch{jac.push(res.map(()=>0));}}
+ const normal=jac.map((a,i)=>jac.map((b,j)=>a.reduce((s,x,k)=>s+x*b[k],0)+(i===j?lambda:0))),rhs=jac.map(a=>-a.reduce((s,x,k)=>s+x*res[k],0)),d=solve(normal,rhs);if(!d)break;const trial=structuredClone(best);variables.forEach((v,i)=>v.write(trial,Math.min(v.hi,Math.max(v.lo,v.read(best)+Math.min(20,Math.max(-20,d[i]))))));try{const next=reflow(trial),r=residual(next),value=r.reduce((s,n)=>s+n*n,0);if(value<cost){best=next;res=r;cost=value;lambda=Math.max(1e-9,lambda*.3);}else lambda=Math.min(1e9,lambda*10);}catch{lambda*=10;}}
  return {graph:best,error:Math.sqrt(cost),iterations:used,cancelled:!!signal?.aborted};
 }

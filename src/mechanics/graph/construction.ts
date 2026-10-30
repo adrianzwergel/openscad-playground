@@ -1,12 +1,13 @@
 import type {Mechanism,Check,ReservedSpace} from './contracts.ts';
+import {separation,containment,regionHull} from './space.ts';
 import {registry} from './registry.ts';
 import {worldElement,context} from './model.ts';
 import {axis,rotate,add,scale,norm,cross} from './frames.ts';
 import type {Frame,V} from './frames.ts';
-type Box={id:string;owner:string;kind:'rotor'|'shaft'|'bearing'|'access'|'drive'|'coupling';center:V;axes:V[];half:V;exempt?:ReservedSpace['exempt']};
+export type Box={id:string;owner:string;kind:'rotor'|'shaft'|'bearing'|'access'|'drive'|'coupling';center:V;axes:V[];half:V;exempt?:ReservedSpace['exempt']};
 const dot=(a:V,b:V)=>a.reduce((s,n,i)=>s+n*b[i],0);
 function box(id:string,owner:string,kind:Box['kind'],f:Frame,r:number,lo:number,hi:number):Box{return {id,owner,kind,center:add(f.position,scale(axis(f),(lo+hi)/2)),axes:[rotate(f.rotation,[1,0,0]),rotate(f.rotation,[0,1,0]),axis(f)],half:[r,r,(hi-lo)/2]};}
-export function separated(a:Box,b:Box,margin:number){const candidates=[...a.axes,...b.axes,...a.axes.flatMap(x=>b.axes.map(y=>cross(x,y)))],delta=add(b.center,scale(a.center,-1));return candidates.some(v=>{const len=norm(v);if(len<1e-9)return false;const u=scale(v,1/len),radius=(x:Box)=>x.axes.reduce((s,t,i)=>s+Math.abs(dot(t,u))*x.half[i],0);return Math.abs(dot(delta,u))>=radius(a)+radius(b)+margin-1e-7;});}
+export function separated(a:Box,b:Box,margin:number){return separation(a,b)>=margin-1e-7;}
 export function assessConstruction(input:Mechanism,margin=1,resize=true){if(!Number.isFinite(margin)||margin<0||margin>10)throw Error('Ungültiger Freiraum.');const graph=structuredClone(input),boxes:Box[]=[],checks:Check[]=[],supports:{body:string;positions:number[];overhung:boolean}[]=[];
  for(const e of graph.elements){const h=registry.getFamily(e.family).envelope(e);const b=box(e.id,e.body,'rotor',worldElement(graph,e),h.radius,h.min,h.max);if(h.transverse){b.half[0]=h.transverse[0];b.half[1]=h.transverse[1];}boxes.push(b);}
  for(const group of new Set(graph.elements.map(e=>e.rotorGroup).filter(Boolean))){
@@ -21,6 +22,10 @@ export function assessConstruction(input:Mechanism,margin=1,resize=true){if(!Num
  const contacts=new Set(graph.relations.map(r=>JSON.stringify([...r.elements].sort())));
  for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++){const a=boxes[i],b=boxes[j];if(a.exempt?.some(e=>e.id===b.id&&e.kind===b.kind)||b.exempt?.some(e=>e.id===a.id&&e.kind===a.kind))continue;if(shaftContacts.some(c=>(a.kind==='rotor'&&a.id===c.element&&b.kind==='shaft'&&b.owner===c.body)||(b.kind==='rotor'&&b.id===c.element&&a.kind==='shaft'&&a.owner===c.body)))continue;if(a.owner===b.owner&&(a.kind==='shaft'||b.kind==='shaft'))continue;if(a.kind==='rotor'&&b.kind==='rotor'&&contacts.has(JSON.stringify([a.id,b.id].sort())))continue;
  if(!separated(a,b,margin))checks.push({id:`space/${a.id}/${b.id}`,state:'fail',message:`Konservative Freiraumprüfung: ${a.id} / ${b.id} (${margin} mm). Genauere Geometrie könnte den Kandidaten noch freigeben.`});}
+ if(graph.environment){const env=graph.environment;for(const b of boxes){
+  if(env.bounds&&containment(b,regionHull(env.bounds),env.margin).some(n=>n>1e-7))checks.push({id:'bounds/'+b.id,state:'fail',message:`${b.id}: Hülle überschreitet den Bauraum oder dessen Randabstand (${env.margin} mm).`});
+  for(const obstacle of env.obstacles)if(separation(b,regionHull(obstacle))<env.margin-1e-7)checks.push({id:'obstacle/'+obstacle.id+'/'+b.id,state:'fail',message:`${b.id}: Sperrzone ${obstacle.id} verletzt (${env.margin} mm Abstand).`});
+ }if(!checks.some(c=>c.id.startsWith('bounds/')||c.id.startsWith('obstacle/')))checks.push({id:'environment',state:'pass',message:'Alle Bauteil-, Bewegungs-, Verbindungs- und reservierten Lagerräume liegen im Bauraum und außerhalb der Sperrzonen.'});}
  if(!checks.length)checks.push({id:'reserved-spaces',state:'pass',message:'Nicht kämmende Rotoren, endliche Wellen, Lager-/Deckelhüllen und axialer Werkzeugzugang geometrisch getrennt.'});
  checks.push({id:'assembly-scope',state:'unknown',message:'Reservierter Lager-/Werkzeugraum; vollständiger Einfädelpfad, Nabenbefestigung, Axiallager und Lastnachweis bleiben offen.'});return {graph,checks,supports,valid:checks.every(c=>c.state!=='fail'),boxes};
 }

@@ -49,3 +49,12 @@ export function compoundExample(kind:'double-gear'|'gear-belt'='gear-belt'):Mech
  g=reflow(g);g.output.target=structuredClone(g.bodies.at(-1)!.frame);
  return assessConstruction(connectionVariants(g).find(v=>v.elements.some(e=>e.rotorGroup))!).graph;
 }
+
+/** Deliberately blocked upper route; a lower route exists with the same catalog. */
+export function spaceExample():Mechanism{
+ let g=freeRotorExample();const angle=Math.acos(5/6)*180/Math.PI;
+ g.relations[0].params.azimuth=angle;g.relations[1].params.azimuth=-angle;
+ g=reflow(g);g.output.target=structuredClone(g.bodies.at(-1)!.frame);g.version=4;
+ g.environment={margin:1,bounds:{id:'workspace',frame:{...identity(),position:[50,0,10]},size:[200,220,200]},obstacles:[{id:'upper-block',frame:{...identity(),position:[50,45,0]},size:[20,20,180]}]};
+ return assessConstruction(g).graph;
+}
