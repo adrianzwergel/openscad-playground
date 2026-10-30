@@ -36,8 +36,10 @@ export function detourSeed(input:Mechanism,sector:number):Mechanism{
    const angle=provider.variables.find(v=>v.key==='angle'),angles=angle?[r.params.angle,angle.lo,(angle.lo+angle.hi)/2,angle.hi]:[undefined];
    let best=Infinity,params={...r.params};
    const original={...r.params};
+   const sampled=new Set<string>();
    for(const a of angles)for(let k=0;k<24;k++){
     r.params.azimuth=az.lo+(az.hi-az.lo)*k/24;if(a!==undefined)r.params.angle=a;
+    const sample=JSON.stringify([((r.params.azimuth%360)+360)%360,a]);if(sampled.has(sample))continue;sampled.add(sample);
     try{const proposed=proposeMate(g,r.id)[0],distance=norm(add(proposed.frame.position,scale(waypoint,-1)));
      if(!mixed){if(distance<best){best=distance;params={...r.params};}continue;}
      const trial=reflow(g),tail=endResidual(trial),placed=new Set(trial.relations.slice(0,i+1).flatMap(rel=>[rel.id,...rel.elements.map(id=>trial.elements.find(e=>e.id===id)!.body)]));

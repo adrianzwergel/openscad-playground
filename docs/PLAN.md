@@ -209,3 +209,12 @@ der Achsausrichtung; nachweislich ungeeignete achsparallele Ketten werden früh 
 Tests für Stirnrad, GT2, Schnecke und Kegelrad mit räumlichen Anschlussrahmen und
 blockierten Bauteil-/Riemenräumen ergänzt. Details: [SPACE-SEARCH.md](SPACE-SEARCH.md).
 Montage und generatives Gehäuse weiterhin später.
+
+## Live-Suche und Suchsteuerung (30.10.2026)
+
+Graphsuche in separaten Browser-Worker verlagert. Geprüfte Lösungen werden laufend
+angezeigt und können sofort übernommen werden. Abbruch beendet den Worker und erhält
+sichtbare Ergebnisse. Suchbudget auswählbar, Standard 25.000; Fortschritt und
+Lösungsanzahl sichtbar. Doppelte Winkelproben bei der Starterzeugung entfernt.
+Details und Abnahme: [SPACE-SEARCH.md](SPACE-SEARCH.md). Montage und generatives
+Gehäuse bleiben später.

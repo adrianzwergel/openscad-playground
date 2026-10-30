@@ -12,6 +12,8 @@ export default [
     ]})]},
   {...base[1], entry:'./src/mechanics/render-worker.ts',
     output:{...base[1].output, filename:'mechanics-render-worker.js'}},
+  {...base[1], entry:'./src/mechanics/graph-search-worker.ts',
+    output:{...base[1].output, filename:'mechanics-graph-search-worker.js'}},
   {...base[1], entry:'./src/mechanics/search-worker.ts',
     output:{...base[1].output, filename:'mechanics-search-worker.js'}}
 ];

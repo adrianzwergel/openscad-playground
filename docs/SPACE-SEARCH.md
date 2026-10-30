@@ -129,3 +129,41 @@ Erreichbarkeitsbeweis. Die Suche kann bei mehreren Achswechseln deutlich länger
 laufen als bei Stirnradketten. Gleiche Endausrichtung garantiert keinen geometrisch
 möglichen Aufbau; nur die abschließende Gesamtprüfung gibt einen Kandidaten frei.
 Montage und generatives Gehäuse bleiben spätere Schritte.
+
+## Bedienbare Hintergrundsuche und Live-Ergebnisse (30.10.2026)
+
+Die Graphsuche läuft im Browser nun in einem eigenen Web Worker. Der Hauptthread
+rendert weiterhin die Oberfläche; auch synchrone Katalog-/Umfahrungsarbeit blockiert
+nicht mehr die Abbruchschaltfläche. Abbruch und Übernahme terminieren diesen Worker
+sofort. Bereits an die Oberfläche gelieferte, vollständig geprüfte Lösungen bleiben
+nach einem Abbruch auswählbar. Nachrichten eines alten Workers werden nach einem
+Neustart oder Projektwechsel ignoriert; beim Entfernen der Ansicht wird er beendet.
+
+Die Solver-API besitzt einen optionalen Callback für jede neu akzeptierte Lösung.
+Er wird erst nach Kinematik-, Übersetzungs- und vollständiger Freiraumprüfung aufgerufen.
+Graph und Prüfbericht werden als Kopien übergeben. Der Worker sendet Lösungen sofort,
+Fortschrittszahlen höchstens etwa zehnmal pro Sekunde und zum Abschluss den gesamten
+sortierten Bericht. Während der Suche lässt sich eine Lösung mit „Übernehmen & Suche
+beenden“ direkt übernehmen. Laufende Ablehnungsstatistiken werden noch nicht übertragen.
+
+Das Suchbudget ist vor jedem Start wählbar: 5.000, 10.000, 25.000 (Standard), 50.000
+oder 100.000 Rechenschritte. Es bleibt eine algorithmische Budgetgröße, keine Zeitangabe.
+Fortschritt und Zahl der geprüften Lösungen werden laufend angezeigt. Kleinere Budgets
+können weniger oder keine Lösungen liefern. Fehler beim Worker-Start entsperren die
+Oberfläche ebenfalls.
+
+Zusätzlich entfallen doppelte periodische Azimutproben und doppelt angebotene Kegelwinkel
+bei Umfahrungsstarts. Ein lokaler Vergleich für vier gemischte Starts ergab etwa
+1,08 s vorher und 0,56 s danach. Das betrifft die Starterzeugung, nicht die gesamte
+Suchzeit; die Dauer der anschließenden Optimierung hängt weiterhin von der Aufgabe ab.
+
+Abnahme:
+
+- `node scripts/check-live-graph-search.mjs`: Nur geprüfte Lösungen werden gemeldet,
+  API-Abbruch erhält Ergebnisse, Callback-Kopien schützen den internen Suchzustand.
+- `node scripts/check-live-graph-search-browser.mjs`: Ergebnisse vor Suchende,
+  bedienbare Oberfläche, sofortiger Abbruch mit erhaltenen Ergebnissen, Übernahme
+  während der Suche, Neustart, gewähltes Budget und Worker-Ladefehler.
+- Bestehende Tests für Hindernisumfahrung und räumliche gemischte Ketten bleiben relevant.
+
+Montage und generatives Gehäuse weiterhin später.
