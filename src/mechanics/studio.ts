@@ -1,0 +1,38 @@
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {TransformControls} from 'three/addons/controls/TransformControls.js';
+import {spaceExample} from './graph/examples';
+import {parseMechanism} from './graph/model';
+import {constructionHulls} from './graph/construction';
+import type {Mechanism} from './graph/contracts';
+type StudioDocument={version:1;assemblies:{id:string;graph:Mechanism}[];routes:{id:string;assembly:string;source:'input';target:'output';ratio?:number}[]};
+const fresh:StudioDocument={version:1,assemblies:[{id:'main',graph:spaceExample()}],routes:[{id:'route-1',assembly:'main',source:'input',target:'output'}]};
+let doc=fresh;try{const saved=JSON.parse(localStorage.getItem('mechanics-studio')||'null');if(saved?.version===1&&saved.assemblies?.length===1){saved.assemblies[0].graph=parseMechanism(saved.assemblies[0].graph);doc=saved;}}catch{}
+const graph=()=>doc.assemblies[0].graph,host=document.getElementById('view')!,status=document.getElementById('status')!,list=document.getElementById('objects') as HTMLSelectElement;
+const renderer=new THREE.WebGLRenderer({antialias:true});host.appendChild(renderer.domElement);const scene=new THREE.Scene();scene.background=new THREE.Color('#15212b');scene.add(new THREE.AmbientLight(0xffffff,2));
+const camera=new THREE.PerspectiveCamera(50,1,.1,10000);camera.position.set(280,240,330);const orbit=new OrbitControls(camera,renderer.domElement);orbit.target.set(50,0,0);orbit.update();
+const transform=new TransformControls(camera,renderer.domElement);scene.add(transform.getHelper());transform.addEventListener('dragging-changed',e=>{orbit.enabled=!e.value;});
+const group=new THREE.Group();scene.add(group);const preview=new THREE.Group();scene.add(preview);let worker:Worker|undefined,revision=0,line:THREE.Line,objects:THREE.Object3D[]=[];
+function clear(g:THREE.Group){for(const o of [...g.children]){g.remove(o);if(o instanceof THREE.Mesh||o instanceof THREE.Line){o.geometry.dispose();const materials=Array.isArray(o.material)?o.material:[o.material];materials.forEach(m=>m.dispose());}}}
+function stop(){worker?.terminate();worker=undefined;}
+function invalidate(){revision++;stop();clear(preview);document.getElementById('results')!.replaceChildren();status.textContent='Vorgaben geändert. Erneut suchen.';}
+function draw(){transform.detach();clear(group);objects=[];list.replaceChildren();const g=graph();
+ for(const key of ['input','output'] as const){const mesh=new THREE.Mesh(new THREE.CylinderGeometry(3,3,24),new THREE.MeshStandardMaterial({color:key==='input'?0x55dda8:0xffbb55}));mesh.geometry.rotateX(Math.PI/2);mesh.position.fromArray(g[key].target.position);mesh.quaternion.fromArray(g[key].target.rotation);mesh.name=key;group.add(mesh);objects.push(mesh);const axes=new THREE.AxesHelper(22);mesh.add(axes);}
+ for(const region of [g.environment?.bounds,...(g.environment?.obstacles??[])].filter(Boolean)){const r=region!;const mesh=new THREE.Mesh(new THREE.BoxGeometry(...r.size),new THREE.MeshBasicMaterial({color:r===g.environment?.bounds?0x4488ff:0xff5555,wireframe:true}));mesh.position.fromArray(r.frame.position);mesh.quaternion.fromArray(r.frame.rotation);mesh.name=r.id;group.add(mesh);objects.push(mesh);}
+ line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([objects[0].position,objects[1].position]),new THREE.LineDashedMaterial({color:0xffffff,dashSize:5,gapSize:3}));line.computeLineDistances();group.add(line);
+ objects.forEach(o=>list.add(new Option(o.name,o.name)));select(objects[0]);}
+function select(o:THREE.Object3D){list.value=o.name;transform.setMode('translate');transform.attach(o);}
+transform.addEventListener('objectChange',()=>{const o=transform.object;if(!o)return;invalidate();const g=graph();const frame={position:o.position.toArray() as [number,number,number],rotation:o.quaternion.toArray() as [number,number,number,number]};if(o.name==='input'||o.name==='output'){g[o.name].target=frame;}else{const r=[g.environment?.bounds,...(g.environment?.obstacles??[])].find(r=>r?.id===o.name);if(r){r.frame=frame;}}
+ line.geometry.setFromPoints([objects[0].position,objects[1].position]);line.computeLineDistances();});
+transform.addEventListener('mouseUp',()=>{const o=transform.object;if(o&&transform.mode==='scale'){const r=[graph().environment?.bounds,...(graph().environment?.obstacles??[])].find(r=>r?.id===o.name);if(r){r.size=r.size.map((v,i)=>Math.max(1,v*o.scale.getComponent(i))) as typeof r.size;draw();}}});
+list.onchange=()=>select(objects.find(o=>o.name===list.value)!);
+for(const [id,mode] of [['move','translate'],['rotate','rotate'],['size','scale']] as const)document.getElementById(id)!.onclick=()=>{if(mode==='scale'&&['input','output'].includes(list.value))return;transform.setMode(mode);};
+document.getElementById('zone')!.onclick=()=>{invalidate();graph().environment!.obstacles.push({id:'zone-'+Date.now(),frame:{position:[50,0,0],rotation:[0,0,0,1]},size:[20,20,20]});draw();select(objects.at(-1)!);};
+document.getElementById('save')!.onclick=()=>{try{parseMechanism(graph());localStorage.setItem('mechanics-studio',JSON.stringify(doc));status.textContent='Studio lokal gespeichert.';}catch(e){status.textContent=String(e);}};
+function search(){stop();const token=revision,w=new Worker('./mechanics-graph-search-worker.js');worker=w;document.getElementById('results')!.replaceChildren();status.textContent='Suche läuft …';w.onmessage=({data})=>{if(worker!==w||token!==revision)return;if(data.type==='solution'){const b=document.createElement('button');b.textContent='Lösung als Hüllen prüfen';b.onclick=()=>{clear(preview);for(const h of constructionHulls(data.graph,false).boxes){const m=new THREE.Mesh(new THREE.BoxGeometry(...h.half.map(n=>n*2) as [number,number,number]),new THREE.MeshBasicMaterial({color:0x55dda8,wireframe:true}));m.position.fromArray(h.center);const matrix=new THREE.Matrix4().makeBasis(...h.axes.map(a=>new THREE.Vector3(...a)) as [THREE.Vector3,THREE.Vector3,THREE.Vector3]);m.quaternion.setFromRotationMatrix(matrix);preview.add(m);}};document.getElementById('results')!.appendChild(b);}if(data.type==='done'||data.type==='error'){status.textContent=data.type==='done'?`${data.result.solutions.length} Lösungen` : data.message;stop();}};w.onerror=()=>{status.textContent='Suchprozess fehlgeschlagen';stop();};w.postMessage({graph:graph(),options:{target:doc.routes[0].ratio??1,tolerance:1,minStages:2,maxStages:4,budget:25000,beam:120}});}
+document.getElementById('search')!.onclick=search;document.getElementById('cancel')!.onclick=()=>{stop();status.textContent='Abgebrochen';};
+const ray=new THREE.Raycaster();ray.params.Line={threshold:4};function hits(e:MouseEvent){const r=renderer.domElement.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);return ray;}
+renderer.domElement.addEventListener('pointerdown',e=>{if(e.button!==0||transform.dragging||transform.axis)return;const hit=hits(e).intersectObjects(objects,false)[0];if(hit)select(hit.object);});renderer.domElement.addEventListener('contextmenu',e=>{e.preventDefault();if(hits(e).intersectObject(line).length)search();});
+new ResizeObserver(()=>{const w=host.clientWidth,h=host.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}).observe(host);draw();renderer.setAnimationLoop(()=>renderer.render(scene,camera));
+
+const ratio=document.getElementById('ratio') as HTMLInputElement;ratio.value=String(doc.routes[0].ratio??1);ratio.onchange=()=>{const v=Number(ratio.value);if(v>0&&v<=1000){invalidate();doc.routes[0].ratio=v;}};

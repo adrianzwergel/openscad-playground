@@ -1,6 +1,7 @@
 import base from './webpack.config.js';
 import CopyPlugin from 'copy-webpack-plugin';
 export default [
+  {...base[0], entry:'./src/mechanics/studio.ts', output:{...base[0].output,filename:'studio.js'},plugins:[]},
   {...base[0], entry:'./src/mechanics/app.tsx',
     devServer:{...base[0].devServer, hot:false, liveReload:false, client:false},
     output:{...base[0].output, filename:'mechanics.js'},
