@@ -24,7 +24,8 @@ import {refineChain} from './refine.ts';
 import type {RouteSolution} from './search/route.ts';
 
 export type RouteOptions={target:number;tolerance:number;maxStages:number;budget:number;beam:number};
-export type RobustOptions=RouteOptions&{catalog?:SearchCatalog;minStages?:number;seed?:number;rules?:string[];includeNearMisses?:boolean};
+/** `axialGap`: target and minimum clearance between parts on one shaft, at least the element graph's 1 mm. */
+export type RobustOptions=RouteOptions&{catalog?:SearchCatalog;minStages?:number;seed?:number;rules?:string[];includeNearMisses?:boolean;axialGap?:number};
 type Report=ReturnType<typeof assessConstruction>;
 
 const sameParams=(a:Record<string,number>,b:Record<string,number>)=>Object.keys(a).length===Object.keys(b).length&&Object.entries(a).every(([k,v])=>b[k]===v);
@@ -87,6 +88,7 @@ export async function robustRoute(input:Old,o:RobustOptions,signal?:AbortSignal,
  const source=parseMechanism(input),min=o.minStages??1,linear=source.output.motion==='translation';
  if((source.input.motion??'rotation')!=='rotation'||source.input.element||source.output.element)throw Error('Automatische Suche benötigt Trägeranschlüsse mit rotierendem Eingang; freie Anschlusselemente sind manuell prüfbar.');
  if(!Number.isFinite(o.target)||o.target<=0||o.target>1000||!Number.isFinite(o.tolerance)||o.tolerance<0||o.tolerance>100||!Number.isInteger(min)||min<1||!Number.isInteger(o.maxStages)||o.maxStages<min||o.maxStages>4||!Number.isInteger(o.budget)||o.budget<1||o.budget>100000||(o.seed!==undefined&&!Number.isInteger(o.seed)))throw Error('Ungültige Suchgrenzen.');
+ if(o.axialGap!==undefined&&!(o.axialGap>=1&&o.axialGap<=50))throw Error('Axialer Abstand: 1–50 mm.');
  const rules=o.rules??providers.filter(p=>!['generated-mate'].includes(p.id)).map(p=>p.id);
  const extra=rules.filter(id=>!providers.some(p=>p.id===id)).map(id=>legacyProvider(id));
  if(extra.some(p=>!p))throw Error('Keine gültige Auswahl von Suchprovidern.');
@@ -105,7 +107,7 @@ export async function robustRoute(input:Old,o:RobustOptions,signal?:AbortSignal,
  const start=source.relations.length>=min&&source.relations.length<=o.maxStages?chainFromGraph(source):undefined;
  const nearMisses:OldNearMiss[]=[];
  const r=await route({input:terminal(source.input),output:terminal(source.output),...(source.environment?{environment:source.environment}:{}),...(linear?{motion:'translation' as const,stroke:source.output.stroke}:{})},
-  {target:o.target,tolerance:o.tolerance,minStages:min,maxStages:o.maxStages,budget:o.budget,seed:o.seed,rules,extraProviders:extra as Provider[],includeNearMisses:o.includeNearMisses,filter:inStock,accept,starts:start?[start]:[],
+  {target:o.target,tolerance:o.tolerance,minStages:min,maxStages:o.maxStages,budget:o.budget,seed:o.seed,rules,axialGap:o.axialGap??1,extraProviders:extra as Provider[],includeNearMisses:o.includeNearMisses,filter:inStock,accept,starts:start?[start]:[],
    onNearMisses:list=>{nearMisses.length=0;for(const n of list){const c=assessNearMiss(toGraph(n.chain,source));if(c)nearMisses.push(c);}onNearMisses?.(structuredClone(nearMisses));}},
   signal,onProgress,(s,stats)=>{const {graph,report}=graphs.get(s)!;onSolution?.(structuredClone(graph),structuredClone(report),stats);});
  const solved=r.solutions.map(s=>graphs.get(s)!);

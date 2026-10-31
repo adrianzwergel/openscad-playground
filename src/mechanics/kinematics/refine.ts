@@ -5,7 +5,8 @@ import type {Chain} from './chain.ts';
 import {cloneChain,reflow,endResidual,place} from './chain.ts';
 import {hulls,violations} from './construction.ts';
 
-export type RefineOptions={clearance?:number;iterations?:number;signal?:AbortSignal;yield?:boolean};
+/** `pull` draws the two parts on every intermediate shaft to `gap` mm apart; closure is weighted up meanwhile. */
+export type RefineOptions={clearance?:number;iterations?:number;signal?:AbortSignal;yield?:boolean;pull?:{gap:number}};
 export type Refined={chain:Chain;error:number;iterations:number;cancelled:boolean};
 let lastYield=0;
 async function yieldSometimes(){if(performance.now()-lastYield<16)return;await new Promise(r=>setTimeout(r,0));lastYield=performance.now();}
@@ -33,9 +34,13 @@ export async function refineChain(input:Chain,o:RefineOptions={}):Promise<Refine
  const width=initial.environment?(initial.environment.bounds?6:0)+initial.environment.obstacles.length+1:1;
  // Keep residual dimensions stable even when a short compound has no gap hull yet.
  const hullKeys=spatial?[...new Set(hulls(place(initial)).boxes.map(b=>b.kind+':'+b.id))].sort():[];
- const residual=(c:Chain)=>{const r=reflow(c),end=endResidual(c,r);if(!spatial)return end;
+ // Seat at which the driver on shaft i sits exactly `gap` from the driven part, on its current side.
+ const pulls=(c:Chain)=>o.pull?c.stages.slice(1).map((s,k)=>{if(s.join==='shared')return 0;const b=c.stages[k].choice.b.envelope,a=s.choice.a.envelope,target=s.seat>=0?b.max+o.pull!.gap-a.min:b.min-o.pull!.gap-a.max;return s.seat-target;}):[];
+ const scale=o.pull?100:1;
+ const residual=(c:Chain)=>{const r=reflow(c),end=endResidual(c,r).map(x=>x*scale);
+  if(!spatial)return [...end,...pulls(c)];
   const p=place(c,r),v=violations(p,hulls(p).boxes,aim);
-  return [...end,...hullKeys.flatMap(key=>v.get(key)??Array(width).fill(0))];
+  return [...end,...hullKeys.flatMap(key=>(v.get(key)??Array(width).fill(0)).map(x=>x*(o.pull?10:1))),...pulls(c)];
  };
  let best=initial,res=residual(best),cost=res.reduce((s,n)=>s+n*n,0),lambda=.01,used=0,stalled=0,cancelled=false;
  for(;used<iterations&&cost>1e-14;used++){

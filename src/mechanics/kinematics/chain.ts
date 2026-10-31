@@ -89,10 +89,10 @@ export function place(c:Chain,r:Reflow=reflow(c)):Placed{
   b.shaft={diameter:5,start:(overhung?lo-26:lo-10)-12,end:overhung?hi+3:hi+10+12};}
  return {bodies,elements,contacts,couplings,environment:c.environment};
 }
-/** Elements on one shaft must keep 1 mm between their axial envelopes. */
-export function axialChecks(c:Chain,p:Placed=place(c)):Check[]{
+/** Elements on one shaft keep at least `gap` mm between their axial envelopes (default 1 mm). */
+export function axialChecks(c:Chain,p:Placed=place(c),gap=1):Check[]{
  const checks:Check[]=[];
- for(const b of p.bodies){const es=p.elements.filter(e=>e.body===b.id);for(let i=0;i<es.length;i++)for(let j=i+1;j<es.length;j++){const a=es[i],d=es[j];checks.push({id:`${a.id}/${d.id}/axial`,state:Math.max(a.z+a.envelope.min,d.z+d.envelope.min)-Math.min(a.z+a.envelope.max,d.z+d.envelope.max)>=1?'pass':'fail',message:'Axiale Elementhüllen auf gemeinsamer Welle mindestens 1 mm getrennt'});}}
+ for(const b of p.bodies){const es=p.elements.filter(e=>e.body===b.id);for(let i=0;i<es.length;i++)for(let j=i+1;j<es.length;j++){const a=es[i],d=es[j];checks.push({id:`${a.id}/${d.id}/axial`,state:Math.max(a.z+a.envelope.min,d.z+d.envelope.min)-Math.min(a.z+a.envelope.max,d.z+d.envelope.max)>=gap-1e-6?'pass':'fail',message:`Axiale Elementhüllen auf gemeinsamer Welle mindestens ${gap} mm getrennt`});}}
  return checks;
 }
 export const specKey=(s:ElementSpec)=>s.key;
@@ -101,10 +101,10 @@ export function signature(c:Chain){
  return JSON.stringify([r.shafts.map(f=>[f.position.map(n=>Math.round(n*10)),f.rotation.map(n=>Math.round(n*1000))]),c.stages.map(s=>[s.choice.rule,s.choice.a.key,s.choice.b.key,s.join,Math.round(s.seat*10)]),Math.round(c.lastSeat*10)]);
 }
 export function summary(c:Chain){
- const elements=c.stages.reduce((n,s)=>n+(s.join==='shared'?1:2),0);
+ const elements=c.stages.reduce((n,s)=>n+(s.join==='shared'?1:2),0),p=place(c),length=p.bodies.reduce((n,b)=>n+(b.shaft?b.shaft.end-b.shaft.start:0),0);
  const freeIdlers=c.stages.filter(s=>s.join==='shared'&&s.choice.a.mount!=='technic-cross').length,freeCompounds=c.stages.filter(s=>s.join==='compound').length;
  const driveShafts=c.stages.length-1-freeIdlers-freeCompounds;
- return {elements,freeIdlers,freeCompounds,driveShafts};
+ return {elements,freeIdlers,freeCompounds,driveShafts,length};
 }
 /** The chain as a kinematics-1 document with revolute shafts, rotor bodies for free elements and contacts. */
 export function toMechanism(c:Chain,r:Reflow=reflow(c)):Mechanism{

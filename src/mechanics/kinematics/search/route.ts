@@ -18,7 +18,7 @@ import type {Check} from '../conjugate.ts';
 
 /** `motion: 'translation'` asks for a sliding output; `target` is then millimetres per input turn. */
 export type RouteRequest={input:FrameTerminal;output:FrameTerminal;environment?:Environment;motion?:'rotation'|'translation';stroke?:number};
-export type RouteOptions={target:number;tolerance:number;minStages?:number;maxStages:number;budget:number;seed?:number;rules?:string[];includeNearMisses?:boolean;yield?:boolean;input?:ElementSpec;mateTeeth?:[number,number];filter?:(c:PairChoice)=>boolean;extraProviders?:Provider[];starts?:Chain[];accept?:(s:RouteSolution)=>string|undefined;onNearMisses?:(n:NearMiss[])=>void;trace?:(event:{phase:string;chain:Chain;outcome:string;error?:number})=>void};
+export type RouteOptions={target:number;tolerance:number;minStages?:number;maxStages:number;budget:number;seed?:number;rules?:string[];includeNearMisses?:boolean;yield?:boolean;input?:ElementSpec;mateTeeth?:[number,number];filter?:(c:PairChoice)=>boolean;extraProviders?:Provider[];axialGap?:number;starts?:Chain[];accept?:(s:RouteSolution)=>string|undefined;onNearMisses?:(n:NearMiss[])=>void;trace?:(event:{phase:string;chain:Chain;outcome:string;error?:number})=>void};
 export type RouteSolution={chain:Chain;mechanism:Mechanism;checks:Check[];ratio:number;summary:ReturnType<typeof summary>};
 export type NearMiss={chain:Chain;mechanism:Mechanism;deviation:{position:number;angle:number};score:number};
 export type RouteResult={solutions:RouteSolution[];nearMisses:NearMiss[];rejections:Record<string,number>;visited:number;attempts:number;detourStarts:number;status:'cancelled'|'solution-limit'|'budget'|'starts-exhausted'};
@@ -27,6 +27,7 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
  const min=o.minStages??1;
  if(!Number.isFinite(o.target)||o.target<=0||o.target>1000||!Number.isFinite(o.tolerance)||o.tolerance<0||o.tolerance>100||!Number.isInteger(min)||min<1||!Number.isInteger(o.maxStages)||o.maxStages<min||o.maxStages>4||!Number.isInteger(o.budget)||o.budget<1||o.budget>100000||(o.seed!==undefined&&!Number.isInteger(o.seed)))throw Error('Ungültige Suchgrenzen.');
  const linear=request.motion==='translation',value=(ratio:number)=>linear?1/ratio:ratio;
+ const gap=o.axialGap??1;if(!Number.isFinite(gap)||gap<0||gap>50)throw Error('Axialer Abstand: 0–50 mm.');
  const random=lcg(o.seed??73421),within=(ratio:number)=>Math.abs(value(ratio)-o.target)/o.target<=o.tolerance/100+1e-9;
  const source={input:request.input,output:request.output,environment:request.environment};
  const solutions:RouteSolution[]=[],nearMisses:NearMiss[]=[],rejections:Record<string,number>={};let visited=0,attempts=0,detourStarts=0;
@@ -52,7 +53,7 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
    if(cached){solved={...cached,chain:cloneChain(cached.chain)};solved.chain.stages.forEach((s,i)=>{s.join=c.stages[i].join;if(s.join==='shared')s.seat=0;});visited++;}
    else{o.trace?.({phase,chain:c,outcome:'start'});solved=await refineChain(c,{iterations,signal,yield:o.yield});if(!solved.cancelled)refined.set(key,solved);visited+=Math.max(1,solved.iterations)*(variables+2);}
    onProgress?.(visited);if(solved.cancelled)return;
-   const ratio=chainRatio(solved.chain),r=reflow(solved.chain),axial=axialChecks(solved.chain,place(solved.chain,r));
+   const ratio=chainRatio(solved.chain),r=reflow(solved.chain),axial=axialChecks(solved.chain,place(solved.chain,r),gap);
    if(!closes(solved.chain,r)||!within(ratio)||axial.some(x=>x.state==='fail')){reject('closure');o.trace?.({phase,chain:solved.chain,outcome:!within(ratio)?'ratio':axial.some(x=>x.state==='fail')?'axial':'closure',error:solved.error});
     if(o.includeNearMisses&&within(ratio)&&axial.every(x=>x.state!=='fail')){const built=assessConstruction(place(solved.chain,r));if(built.valid){const f=compose(r.end,solved.chain.output.local),d=terminalDeviation(f,solved.chain.output),score=Math.hypot(Math.max(0,d.position-d.positionLimit),30*Math.max(0,d.angle-d.angleLimit)*Math.PI/180),sig=signature(solved.chain);
      if(!nearMisses.some(n=>signature(n.chain)===sig)){const before=nearMisses.map(n=>signature(n.chain)).join('|');nearMisses.push({chain:solved.chain,mechanism:toMechanism(solved.chain,r),deviation:d,score});nearMisses.sort((a,b)=>a.score-b.score);nearMisses.splice(3);if(before!==nearMisses.map(n=>signature(n.chain)).join('|'))o.onNearMisses?.(nearMisses.slice());}}}
@@ -63,11 +64,18 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
    if(!built.valid&&!chain.environment&&built.checks.every(x=>x.state!=='fail'||x.id.startsWith('space/'))){
     const left=Math.min(60,Math.floor((o.budget-visited)/Math.max(1,variables+2)));
     if(left>=5){const repaired=await refineChain(chain,{iterations:left,clearance:1.5,signal,yield:o.yield});visited+=Math.max(1,repaired.iterations)*(variables+2);if(repaired.cancelled)return;
-     const rr=reflow(repaired.chain);if(closes(repaired.chain,rr)&&axialChecks(repaired.chain,place(repaired.chain,rr)).every(x=>x.state!=='fail')){const next=assessConstruction(place(repaired.chain,rr));if(next.valid){built=next;chain=repaired.chain;reject('repaired');}}}}
+     const rr=reflow(repaired.chain);if(closes(repaired.chain,rr)&&axialChecks(repaired.chain,place(repaired.chain,rr),gap).every(x=>x.state!=='fail')){const next=assessConstruction(place(repaired.chain,rr));if(next.valid){built=next;chain=repaired.chain;reject('repaired');}}}}
    if(!built.valid){reject('space');o.trace?.({phase,chain,outcome:'space:'+built.checks.filter(x=>x.state==='fail').map(x=>x.id).join(',')});return;}
+   // Compaction: pull the parts on each shaft to the requested gap; keep it only if every check still passes.
+   // Post-processing of a found solution: bounded (≤70 iterations, ≤8 solutions), not charged to the search budget.
+   if(chain.stages.length>1){
+    const pulled=await refineChain(chain,{iterations:40,pull:{gap},signal,yield:o.yield});
+    const closed=pulled.cancelled?undefined:await refineChain(pulled.chain,{iterations:30,signal,yield:o.yield});
+    if(closed&&!closed.cancelled){const cr=reflow(closed.chain);if(closes(closed.chain,cr)&&axialChecks(closed.chain,place(closed.chain,cr),gap).every(x=>x.state!=='fail')){const next=assessConstruction(place(closed.chain,cr));if(next.valid&&summary(closed.chain).length<=summary(chain).length+1e-6){built=next;chain=closed.chain;}}}
+   }
    const sig=signature(chain);if(solutions.some(s=>signature(s.chain)===sig)){o.trace?.({phase,chain,outcome:'duplicate'});return;}
    o.trace?.({phase,chain,outcome:'solution'});
-   const solution:RouteSolution={chain,mechanism:toMechanism(chain),checks:[...axialChecks(chain),...built.checks],ratio:value(ratio),summary:summary(chain)};
+   const solution:RouteSolution={chain,mechanism:toMechanism(chain),checks:[...axialChecks(chain,undefined,gap),...built.checks],ratio:value(ratio),summary:summary(chain)};
    const refused=o.accept?.(solution);if(refused){reject(refused);return;}
    solutions.push(solution);onSolution?.(solution,{visited,attempts,detourStarts});
   }catch{visited+=Math.max(1,variables);reject('domain');}
@@ -170,7 +178,7 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
  }
  return finish(signal?.aborted?'cancelled':solutions.length>=8?'solution-limit':visited>=o.budget-20?'budget':'starts-exhausted');
  function finish(status:RouteResult['status']):RouteResult{
-  solutions.sort((a,b)=>a.summary.elements-b.summary.elements||a.summary.driveShafts-b.summary.driveShafts);
+  solutions.sort((a,b)=>a.summary.elements-b.summary.elements||a.summary.driveShafts-b.summary.driveShafts||a.summary.length-b.summary.length);
   return {solutions,nearMisses,rejections,visited,attempts,detourStarts,status};
  }
 }
