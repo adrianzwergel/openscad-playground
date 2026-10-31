@@ -32,4 +32,14 @@ await accept(mixedFixture(4),'mixed');
  const r=await robustRoute(g,{target:5,tolerance:0,minStages:2,maxStages:3,budget:20000,beam:120,rules:['lego-spur','lego-bevel-90']});assert.ok(r.solutions.length>=1,'lego search found solutions');
  await accept(r.solutions[0],'lego-bevel');
  const w=await robustRoute(g,{target:24,tolerance:30,minStages:1,maxStages:2,budget:20000,beam:120,rules:['lego-worm','lego-spur']});if(w.solutions.length)await accept(w.solutions[0],'lego-worm');else console.log('(no lego-worm solution within budget; skipped)');}
+// Linear outputs: spindle/nut closes a loop through a screw joint, a rack rolls as a follower; travel per input turn matches.
+{const {linearExample}=await import('../../src/mechanics/graph/examples.ts');
+ for(const kind of ['belt-screw','spur-rack','worm-belt-screw']){const old=linearExample(kind),expected=resolveMechanism(old);assert.ok(expected.valid,kind+' old valid');
+  const m=fromGraph(old,{range:{from:0,to:360,samples:5}}),s=await solve(m,{yield:false});
+  assert.equal(s.checks.find(c=>c.id==='closure').state,'pass',`${kind}: ${s.checks.find(c=>c.id==='closure').message}`);
+  assert.equal(s.checks.find(c=>c.id==='mobility').state,'pass',`${kind}: ${s.mobility.message}`);
+  const p=s.transfer.samples,perTurn=(p.at(-1).output-p[0].output)/(p.at(-1).input-p[0].input)*360;
+  close(Math.abs(perTurn),Math.abs(expected.value),1e-4*Math.abs(expected.value),kind+' mm per turn');
+  for(let i=1;i<p.length;i++)close((p[i].output-p[0].output)/(p[i].input-p[0].input)*360,perTurn,1e-4*Math.abs(perTurn),kind+' linear travel');}}
+console.log('Kinematics adapter (linear): belt-screw, spur-rack and worm-belt-screw keep their travel per turn.');
 console.log('Kinematics adapter: demo, mixed fixture, free-3 search results and LEGO pairings close in the new core with the old ratios.');
