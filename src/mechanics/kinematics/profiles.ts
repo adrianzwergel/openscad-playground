@@ -4,7 +4,7 @@
 export type Reference={module:number;pressureAngle:number};
 export type Profile=
  |{kind:'involute';module:number;pressureAngle:number;backlash:number}
- |{kind:'library';id:string;reference:Reference;tolerance:number}   // tolerance: relative module deviation accepted
+ |{kind:'library';id:string;reference:Reference;tolerance:number;apexOffset?:number}   // tolerance: relative module deviation; apexOffset: extra apex height of crossed pairs
  |{kind:'generated';from:{element:string;surface:string}}
  |{kind:'belt';pitch:number;toothed:boolean}
  |{kind:'helical';lead:number;starts:number}

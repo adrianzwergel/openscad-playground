@@ -5,7 +5,9 @@ import type {Profile} from './profiles.ts';
 import {validateProfile,reference} from './profiles.ts';
 import {TAU} from './math.ts';
 
-export type Surface={id:string;pitch:Curve2;profile:Profile;z:[number,number];side:'external'|'internal';cone?:number;helix?:number};
+/** `plane` is the axial position of the pitch plane on the element; default is the middle of `z`. */
+export type Surface={id:string;pitch:Curve2;profile:Profile;z:[number,number];side:'external'|'internal';cone?:number;helix?:number;plane?:number};
+export const pitchPlane=(s:Surface)=>s.plane??(s.z[0]+s.z[1])/2;
 
 export function validateSurface(s:Surface){
  if(!s.id)throw Error('Wirkfläche braucht eine ID.');
