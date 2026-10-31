@@ -741,7 +741,7 @@ Alle Phasen sind umgesetzt; die Abnahmetests liegen in `scripts/kinematics/`.
 | 3 | `3bc80d7` | `check-route` (Benchmark), `check-route-random` (24 Aufgaben, Seed 777: 21/24 wie der alte Kern) |
 | 4 | `8edff1f` | `check-rail`, Linearteil von `check-adapter` |
 | 5 | `4e5f63e` | `check-mates` |
-| 6, 7 | dieser Stand | alle bisherigen Node- und Browser-Tests, `check-search-seeds`, `check-noncircular` |
+| 6, 7 | `ae7430c` | alle bisherigen Node- und Browser-Tests, `check-search-seeds`, `check-noncircular` |
 
 **Abweichungen von diesem Entwurf, die beim Bauen entschieden wurden:**
 
