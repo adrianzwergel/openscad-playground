@@ -223,3 +223,81 @@ unabhängige lose Elemente, Verbindungshüllenkollisionen, Versionsprüfung und
 Projekt-Roundtrip. `check-graph-compounds-browser.mjs` prüft beide CAD-Referenzen,
 kalte Suche, Übernahme, Speicherung und gemeinsame Animation. Führung, konkrete
 Verbindung, Lagerung und Montage bleiben später.
+
+
+## Suchdurchsatz und Reichweite bei einem Achswechsel (31.10.2026)
+
+Profiling zeigte drei Engpässe: Mit Sperrzonen lagen rund 95 % der Zeit in der
+Lageoptimierung, davon etwa 60 % in paarweisen Separating-Axis-Tests, die für jede
+Spalte der numerischen Jacobi-Matrix vollständig neu liefen. Ohne Sperrzonen lagen
+rund 75 % in der Aufzählung der gerichteten Katalogketten. Die Optimierung wartete
+außerdem alle fünf Iterationen auf einen Timer; im Browser-Worker werden solche
+verschachtelten Timer gedrosselt.
+
+- `separation` und `clearance` brechen ab, sobald ein Abstand von mindestens dem
+  benötigten Wert bewiesen ist. Optimierung und Endprüfung brauchen nur
+  `max(0, Grenze − Abstand)`; die Ergebnisse bleiben bitgenau gleich.
+- Gerichtete Ketten: Achsabstände werden einmal pro Katalogpaar berechnet. Der
+  Ringbereich paralleler Ketten schneidet Teilbäume schon während der Tiefensuche ab,
+  wenn kein Blatt darin den Test bestehen kann. Reihenfolge und Auswahl der Routen
+  bleiben gleich. Solange Beinahe-Treffer gesammelt werden, wird nicht abgeschnitten.
+- Die Optimierung gibt zeitbasiert etwa alle 16 ms nach statt alle fünf Iterationen.
+  Abbruch per `AbortSignal` bleibt möglich; der Worker wird ohnehin hart beendet.
+
+**Reichweite bei genau einem Achswechsel** (`reach.ts`): Axiales Verschieben auf
+Ein- und Ausgangswelle deckt die von beiden Achsen aufgespannte Ebene ab. Senkrecht
+dazu, entlang w = u₀ × u₁, wirken nur die Achsabstände der parallelen Stufen und der
+feste Versatz der Winkelpaarung (beim LEGO-Doppelkegelrad 0, bei Schnecken der
+Achsversatz). Dieser Versatz hängt nicht vom Azimut ab. Ketten mit
+|w·Δ − Versatz| > Summe der Achsabstände und Winkelpaarungen, die den geforderten
+Achswinkel nicht erzeugen können, werden verworfen, bevor die Optimierung Budget
+verbraucht. Das gilt für gerichtete und zufällige Starts (`rejections.reach`).
+Es ist eine notwendige Bedingung: Axialgrenzen und Freiraum prüft weiterhin die
+Optimierung. Bei Achs-Anschlüssen mit gedrehtem oder versetztem lokalem Rahmen, bei
+linearen Ausgängen und bei mehreren Achswechseln greift der Test nicht.
+
+Ohne diesen Test füllten bei rechtwinkligen LEGO-Zielen unerreichbare Kombinationen
+die gerichteten Plätze; die Optimierung endete dort in echten stationären Punkten,
+nicht am Iterationslimit.
+
+**Endlage von beiden Enden** (`closure.ts`): Jede Welle trägt ein Zylindergelenk
+aus axialem Sitz und Azimut, dazwischen liegen feste Paarungsversätze. Teilketten
+werden vorwärts vom Eingang und rückwärts vom Ausgang gesampelt. Passt die Achse der
+mittleren treibenden Welle zum Beginn der Rückwärtshälfte, folgen deren Sitz und
+Azimut analytisch. Gesampelt wird in einem virtuellen Modell
+`Welle·Tz(Sitz)·Rz(Azimut)·L(0)`. Bei Paarungen ohne Achswechsel dreht der Azimut
+nur die Lage, nicht die Orientierung der Folgewelle. Dieser Rollversatz wird bei der
+Umrechnung in echte Parameter an den nächsten Azimut und an die Endrolle
+weitergegeben. Das Ergebnis ist ein Startwert; Endlage, Axialgrenzen und Freiraum
+entscheiden weiterhin Optimierung und Endprüfung.
+
+Eingesetzt wird das nur für Ketten mit Achswechsel:
+- Gerichtete Routen: zuerst ein heuristischer Durchgang über alle Routen, danach
+  Meet-in-the-Middle-Starts für die gescheiterten, vor weiteren heuristischen Lagen.
+  Andernfalls verdrängen zusätzliche Versuche früher Routen die später passenden.
+- Zufallsphase: Der Startwert ersetzt die rohe Zufallslage; die Umfahrungsstarts
+  bauen auf der bereits geschlossenen Lage auf.
+
+Benchmark `node scripts/bench-graph-search.mjs` (lokal; Zeit bis zur ersten Lösung /
+Gesamtzeit / Lösungen):
+
+| Fall | ursprünglich | Durchsatz + Reichweite | + beide Enden |
+|---|---|---|---|
+| free-4 | 0,83 s / 0,92 s / 8 | 0,03 s / 0,09 s / 8 | unverändert |
+| detour-4 | 0,54 s / 25,6 s / 8 | 0,16 s / 8,6 s / 8 | unverändert |
+| mixed-cold-4 | 113 s / 121 s / 1 | 16,5 s / 43 s / 2 | 0,63 s / 20 s / 8 |
+| lego-angled-30 | – / 14 s / 0 | 0,04 s / 3,5 s / 8 | 0,03 s / 3,0 s / 8 |
+| lego-angled-70 | – / 12,8 s / 0 | 0,05 s / 1,1 s / 8 | 0,04 s / 0,9 s / 8 |
+
+free-4 und detour-4 liefern per Hash identische Lösungen wie ursprünglich.
+`check-user-spatial-regression.mjs` liefert dieselben Lösungen bei gleichem Budget.
+
+`node scripts/check-turn-reach.mjs` baut 400 zufällige gültige Ketten mit einem
+Achswechsel (gedruckte und LEGO-Provider, zufällige Azimute, Kegelwinkel, Sitze und
+Weltrahmen) und verlangt, dass jede davon erhalten bleibt. Um 1 m entlang w
+verschobene Ziele müssen verworfen werden.
+
+`node scripts/check-closure-seeds.mjs` konstruiert zufällige lösbare Ketten mit ein
+oder zwei Achswechseln (gedruckt und LEGO) und verlangt, dass die Optimierung aus den
+Meet-in-the-Middle-Starts mindestens so oft und fast immer schließt (lokal 36/36,
+aus Zufallsstarts 28/36).

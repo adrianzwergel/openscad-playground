@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import {defaultCatalog,parseCatalog,catalogChoices,catalogAllows,partKey} from '../src/mechanics/graph/catalog.ts';
+import {spaceExample} from '../src/mechanics/graph/examples.ts';
+import {robustRoute} from '../src/mechanics/graph/robust-search.ts';
+import {StudioHistory,parseStudio,serializeStudio,importStudio,adoptSolution} from '../src/mechanics/studio-model.ts';
+const base=defaultCatalog();assert.deepEqual(parseCatalog(base),base);
+const edit=structuredClone(base),gear=edit.parts.find(p=>p.family==='spur');gear.params.teeth=24;gear.name='Mein 24er';
+assert.ok(catalogChoices('external-spur',parseCatalog(edit)).some(p=>p.elements.some(e=>e.params.teeth===24)));
+assert.ok(catalogChoices('rack-drive',edit).some(p=>p.elements[0].params.teeth===24));
+const invalid=structuredClone(edit);invalid.parts[0].quantity=-1;assert.throws(()=>parseCatalog(invalid));invalid.parts[0].quantity=1;invalid.parts[0].params.teeth=3;assert.throws(()=>parseCatalog(invalid));
+const source=spaceExample(),options={target:1,tolerance:0,minStages:2,maxStages:2,budget:10000,beam:120,rules:['external-spur']};
+const result=await robustRoute(source,{...options,catalog:base});const shared=result.solutions.find(g=>g.elements.length===3);assert.ok(shared,'Stock catalog keeps shared gear solutions');
+const inventory=structuredClone(base);inventory.whitelist=true;
+for(const e of shared.elements){const p=inventory.parts.find(p=>partKey(p.family,p.params)===partKey(e.family,e.params));p.listed=true;p.quantity=(p.quantity??0)+1;}
+assert.ok(catalogAllows(shared,inventory));
+const limited=await robustRoute(shared,{...options,budget:1000,catalog:inventory});assert.ok(limited.solutions.length);assert.ok(limited.solutions.every(g=>catalogAllows(g,inventory)));assert.ok(limited.nearMisses.every(n=>catalogAllows(n.graph,inventory)));
+const short=structuredClone(inventory);short.parts.find(p=>p.listed).quantity--;assert.equal(catalogAllows(shared,short),false);
+const none=structuredClone(base);none.whitelist=true;const empty=await robustRoute(source,{...options,budget:1000,catalog:none,includeNearMisses:true});assert.equal(empty.solutions.length,0);assert.equal(empty.nearMisses.length,0);
+const noBelt=structuredClone(base);noBelt.excludedRules=['gt2-belt'];assert.equal(catalogChoices('gt2-belt',noBelt).length,0);
+const belt=catalogChoices('gt2-belt',base)[0],beltGraph={...shared,elements:belt.elements.map((e,i)=>({...e,id:String(i)})),relations:[{rule:'gt2-belt',params:belt.params}]};assert.ok(catalogAllows(beltGraph,base));const beltStock=structuredClone(base);beltStock.parts.find(p=>p.family==='gt2-belt'&&p.params.length===belt.params.length).quantity=0;assert.equal(catalogAllows(beltGraph,beltStock),false);
+const doc=parseStudio({version:1,assemblies:[{id:'main',graph:source}],routes:[{id:'r',assembly:'main',source:'input',target:'output',ratio:1}],catalog:inventory});assert.deepEqual(importStudio(serializeStudio(doc)),doc);assert.ok(adoptSolution(doc,'r',shared).assemblies[0].adopted);assert.throws(()=>adoptSolution({...doc,catalog:short},'r',shared));
+const history=new StudioHistory(),after={...doc,catalog:edit};history.record(doc,after);assert.deepEqual(history.undo(after),doc);assert.deepEqual(history.redo(doc),after);
+console.log('Catalog: editing, cross-provider propagation, validation, whitelist, groups, physical quantities, belt inventory, constrained solver, adoption, project roundtrip and undo/redo passed.');

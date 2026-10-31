@@ -1,6 +1,6 @@
 import {terminalDeviation} from './terminals.ts';
 import type {Mechanism} from './contracts.ts';
-import {constructionHulls,collisionPairs} from './construction.ts';
+import {constructionHulls,collisionPairs,clearance,deferredSpace} from './construction.ts';
 import {spaceViolations,separation} from './space.ts';
 import {registry} from './registry.ts';
 import {parseMechanism,proposeMate,context} from './model.ts';
@@ -17,7 +17,13 @@ export function endResidual(g:Mechanism){
  return [...position,...shrink(orientation,deviation.angle,deviation.angleLimit)];
 }
 function solve(a:number[][],b:number[]){const m=a.map((r,i)=>[...r,b[i]]),n=b.length;for(let i=0;i<n;i++){let pivot=i;for(let j=i+1;j<n;j++)if(Math.abs(m[j][i])>Math.abs(m[pivot][i]))pivot=j;[m[i],m[pivot]]=[m[pivot],m[i]];if(Math.abs(m[i][i])<1e-14)return null;const d=m[i][i];for(let k=i;k<=n;k++)m[i][k]/=d;for(let j=0;j<n;j++)if(j!==i){const s=m[j][i];for(let k=i;k<=n;k++)m[j][k]-=s*m[i][k];}}return m.map(r=>r[n]);}
-export async function refineGraph(input:Mechanism,signal?:AbortSignal,iterations=100){
+// Give timers and abort signals a chance about once per frame. A fixed yield every
+// few iterations spent most of a search idle in clamped setTimeout delays.
+let lastYield=0;
+async function yieldSometimes(){if(performance.now()-lastYield<16)return;await new Promise(r=>setTimeout(r,0));lastYield=performance.now();}
+/** `clearance` adds internal collision residuals without an environment; the
+ * value is the clearance aimed for (slightly above the checked margin). */
+export async function refineGraph(input:Mechanism,signal?:AbortSignal,iterations=100,{clearance:target}:{clearance?:number}={}){
  const initial=parseMechanism(input),variables:{read:(g:Mechanism)=>number;write:(g:Mechanism,v:number)=>void;lo:number;hi:number}[]=[];
  initial.relations.forEach(r=>{for(const {key,lo,hi} of registry.getRule(r.rule).search!.variables)variables.push({read:g=>g.relations.find(x=>x.id===r.id)!.params[key],write:(g,v)=>{const linked=new Set([r.id]);if(registry.getRule(r.rule).search?.sharedParameters?.includes(key)){let changed=true;while(changed){changed=false;for(const rel of g.relations)if(!linked.has(rel.id)&&registry.getRule(rel.rule).search?.sharedParameters?.includes(key)&&g.relations.some(other=>linked.has(other.id)&&other.elements.some(id=>rel.elements.includes(id)))){linked.add(rel.id);changed=true;}}}for(const rel of g.relations)if(linked.has(rel.id))rel.params[key]=v;},lo,hi});const element=r.elements[0];if(initial.relations.some(other=>other.elements[1]===element))return;variables.push({read:g=>g.elements.find(e=>e.id===element)!.pose.position[2],write:(g,v)=>{g.elements.find(e=>e.id===element)!.pose.position[2]=v;},lo:-150,hi:150});});
  // A shaft's clocking is independent of its direction. The final driven element
@@ -26,15 +32,16 @@ export async function refineGraph(input:Mechanism,signal?:AbortSignal,iterations
  if(last&&registry.getFamily(initial.elements.find(e=>e.id===last)!.family).carrier==='shaft'){variables.push({read:g=>g.elements.find(e=>e.id===last)!.pose.position[2],write:(g,v)=>{g.elements.find(e=>e.id===last)!.pose.position[2]=v;},lo:-150,hi:150});const base=initial.elements.find(e=>e.id===last)!.pose.rotation;
   variables.push({read:g=>{const q=multiply(inverseQ(base),g.elements.find(e=>e.id===last)!.pose.rotation);return 2*Math.atan2(q[2],q[3])*180/Math.PI;},write:(g,v)=>{g.elements.find(e=>e.id===last)!.pose.rotation=multiply(base,axisAngle([0,0,1],v));},lo:-180,hi:180});}
  // Keep residual dimensions stable even when a short compound has no gap hull yet.
- const hullKeys=initial.environment?[...new Set([...constructionHulls(initial).boxes.map(b=>b.kind+':'+b.id),...initial.elements.filter(e=>e.rotorGroup).map(e=>'coupling:coupling-'+e.rotorGroup)])].sort():[];
- const residual=(g:Mechanism)=>{const end=endResidual(g);if(!g.environment)return end;
-  const built=constructionHulls(g),hulls=new Map(built.boxes.map(b=>[b.kind+':'+b.id,b])),width=(g.environment.bounds?6:0)+g.environment.obstacles.length;
+ const spatial=!!initial.environment||target!==undefined,aim=initial.environment?1:target!;
+ const hullKeys=spatial?[...new Set([...constructionHulls(initial).boxes.map(b=>b.kind+':'+b.id),...initial.elements.filter(e=>e.rotorGroup).map(e=>'coupling:coupling-'+e.rotorGroup)])].sort():[];
+ const residual=(g:Mechanism)=>{const end=endResidual(g);if(!spatial)return end;
+  const built=constructionHulls(g),hulls=new Map(built.boxes.map(b=>[b.kind+':'+b.id,b])),width=g.environment?(g.environment.bounds?6:0)+g.environment.obstacles.length:0;
   const collisions=new Map<string,number>();
-  for(const [a,b] of collisionPairs(built.graph,built.boxes)){const violation=Math.max(0,1-separation(a,b));for(const h of [a,b]){const key=h.kind+':'+h.id;collisions.set(key,Math.max(collisions.get(key)??0,violation));}}
-  return [...end,...hullKeys.flatMap(key=>{const hull=hulls.get(key);return [...(hull?spaceViolations(hull,g.environment!):Array(width).fill(0)),collisions.get(key)??0];})];
+  for(const [a,b] of collisionPairs(built.graph,built.boxes)){if(deferredSpace(a)||deferredSpace(b))continue;const violation=Math.max(0,aim-clearance(a,b,aim));for(const h of [a,b]){const key=h.kind+':'+h.id;collisions.set(key,Math.max(collisions.get(key)??0,violation));}}
+  return [...end,...hullKeys.flatMap(key=>{const hull=hulls.get(key);return [...(hull&&g.environment?spaceViolations(hull,g.environment):Array(width).fill(0)),collisions.get(key)??0];})];
  };
  let best=reflow(initial),res=residual(best),cost=res.reduce((s,n)=>s+n*n,0),lambda=.01,used=0,stalled=0;
- for(;used<iterations&&cost>1e-14;used++){if(signal?.aborted)break;if(used%5===0)await new Promise(r=>setTimeout(r,0));const jac:number[][]=[];for(const v of variables){const perturbed=structuredClone(best),old=v.read(best),step=old+.001<=v.hi?.001:-.001;v.write(perturbed,old+step);try{const next=residual(reflow(perturbed));jac.push(next.map((n,k)=>(n-res[k])/step));}catch{jac.push(res.map(()=>0));}}
- const normal=jac.map((a,i)=>jac.map((b,j)=>a.reduce((s,x,k)=>s+x*b[k],0)+(i===j?lambda:0))),rhs=jac.map(a=>-a.reduce((s,x,k)=>s+x*res[k],0)),d=solve(normal,rhs);if(!d)break;const trial=structuredClone(best);variables.forEach((v,i)=>v.write(trial,Math.min(v.hi,Math.max(v.lo,v.read(best)+Math.min(20,Math.max(-20,d[i]))))));try{const next=reflow(trial),r=residual(next),value=r.reduce((s,n)=>s+n*n,0);if(value<cost){stalled=0;best=next;res=r;cost=value;lambda=Math.max(1e-9,lambda*.3);}else {stalled++;lambda=Math.min(1e9,lambda*10);}}catch{stalled++;lambda*=10;}if(initial.environment&&stalled>=12){used++;break;}}
+ for(;used<iterations&&cost>1e-14;used++){if(signal?.aborted)break;await yieldSometimes();const jac:number[][]=[];for(const v of variables){const perturbed=structuredClone(best),old=v.read(best),step=old+.001<=v.hi?.001:-.001;v.write(perturbed,old+step);try{const next=residual(reflow(perturbed));jac.push(next.map((n,k)=>(n-res[k])/step));}catch{jac.push(res.map(()=>0));}}
+ const normal=jac.map((a,i)=>jac.map((b,j)=>a.reduce((s,x,k)=>s+x*b[k],0)+(i===j?lambda:0))),rhs=jac.map(a=>-a.reduce((s,x,k)=>s+x*res[k],0)),d=solve(normal,rhs);if(!d)break;const trial=structuredClone(best);variables.forEach((v,i)=>v.write(trial,Math.min(v.hi,Math.max(v.lo,v.read(best)+Math.min(20,Math.max(-20,d[i]))))));try{const next=reflow(trial),r=residual(next),value=r.reduce((s,n)=>s+n*n,0);if(value<cost){stalled=0;best=next;res=r;cost=value;lambda=Math.max(1e-9,lambda*.3);}else {stalled++;lambda=Math.min(1e9,lambda*10);}}catch{stalled++;lambda*=10;}if(spatial&&stalled>=12){used++;break;}}
  return {graph:best,error:Math.sqrt(cost),iterations:used,cancelled:!!signal?.aborted};
 }

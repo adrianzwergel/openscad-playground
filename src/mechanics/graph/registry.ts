@@ -1,3 +1,4 @@
+import {registerLego} from './lego.ts';
 import {registerLinear} from './linear.ts';
 import {registerDrives} from './drives.ts';
 import {Registry} from './contracts.ts';
@@ -26,6 +27,7 @@ export function standardRegistry(){
  r.getRule('bevel-mesh').search={changesAxis:true,sharedRotor:true,sharedParameters:['angle'],catalog:()=>catalog('bevel'),variables:[azimuth,{key:'angle',lo:60,hi:120}],phase:c=>180/c.elements[1].params.teeth-(c.elements[0].phase-c.params.azimuth)*c.elements[0].params.teeth/c.elements[1].params.teeth};
  registerDrives(r);
  registerLinear(r);
+ registerLego(r);
  return r;
 }
 export const registry=standardRegistry();
