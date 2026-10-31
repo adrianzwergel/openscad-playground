@@ -1,12 +1,13 @@
 // A surface is a pitch curve with a profile and an axial extent on an element.
-import type {Curve2} from './curves.ts';
+import type {Curve} from './curves.ts';
 import {curve} from './curves.ts';
 import type {Profile} from './profiles.ts';
 import {validateProfile,reference} from './profiles.ts';
 import {TAU} from './math.ts';
 
 /** `plane` is the axial position of the pitch plane on the element; default is the middle of `z`. */
-export type Surface={id:string;pitch:Curve2;profile:Profile;z:[number,number];side:'external'|'internal';cone?:number;helix?:number;plane?:number};
+/** Rails and racks use open pitch curves, including paths in space. */
+export type Surface={id:string;pitch:Curve;profile:Profile;z:[number,number];side:'external'|'internal';cone?:number;helix?:number;plane?:number};
 export const pitchPlane=(s:Surface)=>s.plane??(s.z[0]+s.z[1])/2;
 
 export function validateSurface(s:Surface){

@@ -29,7 +29,8 @@ export type Joint=
  |{kind:'spherical'};
 export type JointRelation={id:string;joint:Joint;a:{body:string;local:Frame};b:{body:string;local:Frame};derived?:string;redundant?:boolean;shift?:number};
 export type SurfaceRef={element:string;surface:string};
-export type ContactParams={offsetA:number;offsetB:number;azimuth?:number;angle?:number;length?:number;hand?:1|-1;distance?:number};
+/** `side`: follower contacts put the pinion on the +normal (1) or −normal (−1) side of the rail curve. */
+export type ContactParams={offsetA:number;offsetB:number;azimuth?:number;angle?:number;length?:number;hand?:1|-1;distance?:number;side?:1|-1};
 export type Contact={id:string;kind:'roll'|'belt'|'helical';a:SurfaceRef;b:SurfaceRef;mode:'fixed-axes'|'follower';params:ContactParams;derived?:string;redundant?:boolean};
 export type Pattern=
  |{kind:'mirror';plane:Frame;source:string[]}
@@ -119,6 +120,7 @@ export function parseMechanism(input:unknown):Mechanism{
   if(!c.params)c.params={offsetA:0,offsetB:0};c.params.offsetA=num(c.params.offsetA??0,`Kontakt ${c.id}`);c.params.offsetB=num(c.params.offsetB??0,`Kontakt ${c.id}`);
   for(const k of ['azimuth','angle','length','distance'] as const)if(c.params[k]!==undefined)num(c.params[k],`Kontakt ${c.id} ${k}`);
   if(c.params.hand!==undefined&&c.params.hand!==1&&c.params.hand!==-1)throw Error(`Kontakt ${c.id}: hand ±1.`);
+  if(c.params.side!==undefined&&c.params.side!==1&&c.params.side!==-1)throw Error(`Kontakt ${c.id}: side ±1.`);
  }
  for(const p of m.patterns){
   if(p.kind==='mirror'){p.plane=frame(p.plane,'Spiegelung');}

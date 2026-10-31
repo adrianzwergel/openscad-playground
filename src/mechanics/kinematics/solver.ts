@@ -76,7 +76,7 @@ export async function solve(input:Mechanism,o:SolveOptions={}):Promise<Solution>
  // Residuals of one pose. `constants` holds the rolling constants; undefined omits rolling.
  const psiRefs:Record<string,number[]>[]=[];
  const unwrapAngle=(psi:number,ref:number|undefined)=>ref===undefined?psi:psi+2*Math.PI*Math.round((ref-psi)/(2*Math.PI));
- const rollingValue=(mm:Expanded,c:Resolved,refs?:Record<string,number[]>)=>{const term=rollingTerm(mm,c),psi=term.psi.map((p,i)=>unwrapAngle(p,refs?.[c.contact.id]?.[i]));return {value:psi.reduce((s,p,i)=>s+term.coeff[i]*p,0),psi};};
+ const rollingValue=(mm:Expanded,c:Resolved,refs?:Record<string,number[]>)=>{const term=rollingTerm(mm,c),psi=term.psi.map((p,i)=>term.periodic?.[i]===false?p:unwrapAngle(p,refs?.[c.contact.id]?.[i]));return {value:psi.reduce((s,p,i)=>s+term.coeff[i]*p,0),psi};};
  const poseResiduals=(q:Record<string,number[]>,constants?:number[],refs?:Record<string,number[]>)=>{
   const frames=forward(m,t,q),mm=withFrames(m,frames),out:number[]=[];
   for(const j of loops){const A=compose(frames[j.a.body],j.a.local),B=compose(frames[j.b.body],j.b.local);out.push(...jointResidual(j.joint,A,B,q[j.id],j.shift));}
@@ -113,7 +113,8 @@ export async function solve(input:Mechanism,o:SolveOptions={}):Promise<Solution>
  const branchJump=(a:Record<string,number[]>,b:Record<string,number[]>)=>slots.some(s=>{const d=Math.abs(b[s.joint.id][s.index]-a[s.joint.id][s.index]),k=s.joint.joint.kind;if(k==='prismatic')return false;if(k==='path')return s.index===0?d>curve(s.joint.joint.curve).length/4:d>90;if(k==='cylindrical')return s.index===0?d>90:false;return d>90;});
  const refsOf=(q:Record<string,number[]>,previous?:Record<string,number[]>)=>{const mm=withFrames(m,forward(m,t,q)),refs:Record<string,number[]>={};for(const c of contacts)refs[c.contact.id]=rollingValue(mm,c,previous).psi;return refs;};
  applyDesign(design);let q=initialCoordinates();const poses:Record<string,number[]>[]=[];let constants:number[]|undefined;const errors:number[]=[];let refs:Record<string,number[]>|undefined;
- const tolerance=1e-6;
+ // Matches the chain terminal slack (1e-5 mm, 1e-4°): a closed chain re-solves within 1e-4.
+ const tolerance=1e-4;
  for(let k=0;k<samples&&!cancelled;k++){
   if(k===0){const r=await solveAt(q,inputs[0]);q=r.q;errors.push(r.error);refs=refsOf(q);const mm=withFrames(m,forward(m,t,q));constants=contacts.map(c=>rollingValue(mm,c,refs).value);}
   else{
@@ -143,7 +144,7 @@ export async function solve(input:Mechanism,o:SolveOptions={}):Promise<Solution>
  const mobility=describeMobility(m,jac[0]?jac[0].map((_,r)=>jac.map(col=>col[r])):[],slots.length);
  // Report.
  const checks:Check[]=[],finalPoses:Pose[]=poses.map((qk,k)=>({input:inputs[k],coordinates:qk,bodies:forward(m,t,qk)}));
- const worst=Math.max(...errors);checks.push({id:'closure',state:worst<1e-6?'pass':'fail',message:`Größter Schließfehler über ${samples} Stellung(en): ${worst.toExponential(2)}.`});
+ const worst=Math.max(...errors);checks.push({id:'closure',state:worst<1e-4?'pass':'fail',message:`Größter Schließfehler über ${samples} Stellung(en): ${worst.toExponential(2)}.`});
  for(const j of redundant){let dev=0;for(const p of finalPoses){const A=compose(p.bodies[j.a.body],j.a.local),B=compose(p.bodies[j.b.body],j.b.local),qq=projectCoordinates(j.joint,compose(inverse(A),B),j.shift);dev=Math.max(dev,norm(jointResidual(j.joint,A,B,qq,j.shift).slice(0,3) as [number,number,number]));}
   checks.push({id:'redundant/'+j.id,state:dev<.05?'pass':'fail',message:`Abgeleitetes Gelenk ${j.id} weicht um ${dev.toFixed(3)} mm ab.`});}
  for(const c of allContacts.filter(c=>c.contact.redundant)){let dev=0;for(const p of finalPoses)dev=Math.max(dev,norm(geometryResiduals(withFrames(m,p.bodies),c).slice(0,3) as [number,number,number]));checks.push({id:'redundant/'+c.contact.id,state:dev<.05?'pass':'fail',message:`Abgeleiteter Kontakt ${c.contact.id} weicht um ${dev.toFixed(3)} ab.`});}
