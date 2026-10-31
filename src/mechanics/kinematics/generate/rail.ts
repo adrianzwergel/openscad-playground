@@ -51,7 +51,8 @@ export function railProfile(o:RailOptions):RailProfile{
   const local=(p:V)=>{const sa=closestArc(fn,p,c),q=fn.point(sa);return {s:sa,h:side*dot(add(p,scale(q,-1)),fn.normal(sa))};};
   for(let k=0;k<=world.length;k++){const i=k%world.length;if(!near[i]){prev=undefined;prevNear=false;continue;}
    const cur=local(world[i]);
-   if(prev&&prevNear&&(prev.h<consider||cur.h<consider)){
+   // On closed curves an edge across the seam would span the whole range.
+   if(prev&&prevNear&&(prev.h<consider||cur.h<consider)&&!(fn.closed&&Math.abs(cur.s-prev.s)>fn.length/2)){
     const lo=Math.max(0,Math.ceil(index(Math.min(prev.s,cur.s)))),hi=Math.min(count-1,Math.floor(index(Math.max(prev.s,cur.s))));
     for(let j=lo;j<=hi;j++){const ds=cur.s-prev.s,t=Math.abs(ds)<1e-12?0:(s[j]-prev.s)/ds,h=prev.h+(cur.h-prev.h)*Math.max(0,Math.min(1,t));if(h<top[j])top[j]=h;}
    }

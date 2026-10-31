@@ -39,12 +39,15 @@ export function assessConstruction(input:Mechanism,margin=1,resize=true){
  if(!Number.isFinite(margin)||margin<0||margin>10)throw Error('Ungültiger Freiraum.');
  const {graph,boxes,checks,supports}=constructionHulls(input,resize);
  let open=0;for(const [a,b] of collisionPairs(graph,boxes))if(!separated(a,b,margin)){if(deferredSpace(a)||deferredSpace(b)){open++;continue;}checks.push({id:`space/${a.id}/${b.id}`,state:'fail',message:`Konservative Freiraumprüfung: ${a.id} / ${b.id} (${margin} mm). Genauere Geometrie könnte den Kandidaten noch freigeben.`});}
+ // Bearing seats and tool access are placed after the gears: in the environment they are open as well.
  if(graph.environment){const env=graph.environment;for(const b of boxes){
-  if(env.bounds&&containment(b,regionHull(env.bounds),env.margin).some(n=>n>1e-7))checks.push({id:'bounds/'+b.id,state:'fail',message:`${b.id}: Hülle überschreitet den Bauraum oder dessen Randabstand (${env.margin} mm).`});
-  for(const obstacle of env.obstacles)if(separation(b,regionHull(obstacle),env.margin)<env.margin-1e-7)checks.push({id:'obstacle/'+obstacle.id+'/'+b.id,state:'fail',message:`${b.id}: Sperrzone ${obstacle.id} verletzt (${env.margin} mm Abstand).`});
- }if(!checks.some(c=>c.id.startsWith('bounds/')||c.id.startsWith('obstacle/')))checks.push({id:'environment',state:'pass',message:'Alle Bauteil-, Bewegungs-, Verbindungs- und reservierten Lagerräume liegen im Bauraum und außerhalb der Sperrzonen.'});}
+  const outside=env.bounds&&containment(b,regionHull(env.bounds),env.margin).some(n=>n>1e-7),blocked=env.obstacles.filter(o=>separation(b,regionHull(o),env.margin)<env.margin-1e-7);
+  if(deferredSpace(b)){if(outside||blocked.length)open++;continue;}
+  if(outside)checks.push({id:'bounds/'+b.id,state:'fail',message:`${b.id}: Hülle überschreitet den Bauraum oder dessen Randabstand (${env.margin} mm).`});
+  for(const obstacle of blocked)checks.push({id:'obstacle/'+obstacle.id+'/'+b.id,state:'fail',message:`${b.id}: Sperrzone ${obstacle.id} verletzt (${env.margin} mm Abstand).`});
+ }if(!checks.some(c=>c.id.startsWith('bounds/')||c.id.startsWith('obstacle/')))checks.push({id:'environment',state:'pass',message:'Alle Bauteil-, Bewegungs- und Verbindungsräume liegen im Bauraum und außerhalb der Sperrzonen.'});}
  if(!checks.length)checks.push({id:'reserved-spaces',state:'pass',message:open?'Nicht kämmende Rotoren und endliche Wellen geometrisch getrennt.':'Nicht kämmende Rotoren, endliche Wellen, Lager-/Deckelhüllen und axialer Werkzeugzugang geometrisch getrennt.'});
- if(open)checks.push({id:'bearings-open',state:'unknown',message:`${open} Überschneidung(en) reservierter Lager-/Werkzeugräume. Lagerung und Achslängen werden nach der Zahnradwahl festgelegt.`});
+ if(open)checks.push({id:'bearings-open',state:'unknown',message:`${open} Überschneidung(en) reservierter Lager-/Werkzeugräume (untereinander, mit Bauraum oder Sperrzonen). Lagerung und Achslängen werden nach der Zahnradwahl festgelegt.`});
  checks.push({id:'assembly-scope',state:'unknown',message:'Reservierter Lager-/Werkzeugraum; vollständiger Einfädelpfad, Nabenbefestigung, Axiallager und Lastnachweis bleiben offen.'});return {graph,checks,supports,valid:checks.every(c=>c.state!=='fail'),boxes};
 }
 export function collisionPairs(graph:Mechanism,boxes:Box[]){

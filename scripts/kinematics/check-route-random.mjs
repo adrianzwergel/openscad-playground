@@ -1,6 +1,6 @@
 // Acceptance A, random part: seeded tasks with rotated, offset shafts and a
-// solvable chain behind each target. The new route must solve at least as many
-// tasks as the element-graph search. Usage: node check-route-random.mjs [count] [seed]
+// solvable chain behind each target. The route must solve at least as many tasks
+// as the element-graph API (since phase 6 a wrapper on the same core). Usage: node check-route-random.mjs [count] [seed]
 import assert from 'node:assert/strict';
 import {registry} from '../../src/mechanics/graph/registry.ts';
 import '../../src/mechanics/graph/robust-search.ts';

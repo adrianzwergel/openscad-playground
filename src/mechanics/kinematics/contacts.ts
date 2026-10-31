@@ -97,7 +97,8 @@ export function mateFrame(g:PairGeometry,params:Partial<ContactParams>):Frame{
 }
 /** Rolling: Σ coeff_i·ψ_i with ψ measured from the line of centres about each axis (radians).
  * The caller unwraps each angle against the previous pose before summing. */
-export function rollingTerm(m:Pick<Mechanism,'bodies'>,r:Resolved):{psi:number[];coeff:number[];periodic?:boolean[]}{
+/** `arc` maps an unwrapped angle to arc length for non-circular pitch curves; it replaces coeff·ψ. */
+export function rollingTerm(m:Pick<Mechanism,'bodies'>,r:Resolved):{psi:number[];coeff:number[];periodic?:boolean[];arc?:(((psi:number)=>number)|undefined)[]}{
  const {contact:c,sa,sb}=r,A=surfaceFrame(m,r.ea,sa),B=surfaceFrame(m,r.eb,sb),za=zOf(A),zb=zOf(B),d=add(B.position,scale(A.position,-1));
  const angle=(f:Frame,z:V,reference:V)=>{const x=rotate(f.rotation,[1,0,0]),ref=perp(reference,z);if(norm(ref)<1e-9)return 0;const u=unit(ref);return Math.atan2(dot(cross(u,x),z),dot(u,x));};
  const ra=meanRadius(sa),rb=meanRadius(sb);
@@ -112,7 +113,11 @@ export function rollingTerm(m:Pick<Mechanism,'bodies'>,r:Resolved):{psi:number[]
   return {psi:[angle(A,za,zb),angle(B,zb,za)],coeff:[-hand*lead/(2*Math.PI),rb]};
  }
  const sign=c.kind==='belt'||sa.side==='internal'||sb.side==='internal'?-1:1;
- return {psi:[angle(A,za,d),angle(B,zb,scale(d,-1))],coeff:[ra,sign*rb]};
+ // Non-circular pitch curves: the contact lies on the line of centres at polar angle −ψ in the
+ // element frame, so the rolled arc length is −S(−ψ) with S the curve's arc length from angle 0.
+ const arcOf=(s:Surface)=>{if(s.pitch.kind==='circle')return undefined;const fn=curve(s.pitch);if(!fn.arcAt)return undefined;return (psi:number)=>-fn.arcAt!(-psi);};
+ const arcA=arcOf(sa),arcB=arcOf(sb);
+ return {psi:[angle(A,za,d),angle(B,zb,scale(d,-1))],coeff:[arcA?1:ra,sign*(arcB?1:rb)],...(arcA||arcB?{arc:[arcA,arcB]}:{})};
 }
 /** Constant ratio dq_b/dq_a for contacts whose pitch curves are circles. */
 export function constantRatio(r:Resolved):number|undefined{

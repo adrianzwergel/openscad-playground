@@ -1,5 +1,5 @@
-// Acceptance A: the route search on the new core finds at least as many
-// solutions as the element-graph search on the benchmark corpus, every solution
+// Acceptance A: the route search finds at least as many solutions as the
+// element-graph API (since phase 6 a wrapper on the same core) on the benchmark corpus, every solution
 // closes in the loop solver with the requested ratio and passes construction.
 import assert from 'node:assert/strict';
 import {cases,runOld,runNew} from './bench-route.mjs';

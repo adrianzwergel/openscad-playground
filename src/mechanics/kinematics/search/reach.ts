@@ -2,7 +2,7 @@
 // along the input and output axes covers the plane they span, so only
 // parallel centre distances and the turn's own offset reach along w = u0 × u1.
 import type {FrameTerminal} from '../chain.ts';
-import {inputFrame,desiredFrame} from '../chain.ts';
+import {inputFrame,desiredFrame,linearMate} from '../chain.ts';
 import type {PairChoice} from '../catalog.ts';
 import {pairGeometry,mateFrame} from '../contacts.ts';
 import {axis,add,scale,norm,cross} from '../math.ts';
@@ -17,7 +17,7 @@ export function turnReach(source:{input:FrameTerminal;output:FrameTerminal}){
  const axesAngle=Math.acos(Math.max(-1,Math.min(1,axis(inF).reduce((s,n,i)=>s+n*axis(outF)[i],0))))*180/Math.PI;
  const angleSlack=(source.output.tolerance?.angle??0)+1e-6,slack=(source.output.tolerance?.position??0)+norm(delta)*angleSlack*Math.PI/180+1e-6;
  const distances=new Map<PairChoice,number>(),offsets=new Map<PairChoice,{offset:number;length:number}|null>();
- const centerDistance=(c:PairChoice)=>{let d=distances.get(c);if(d===undefined){d=norm(mateFrame(choiceGeometry(c),{azimuth:0}).position);distances.set(c,d);}return d;};
+ const centerDistance=(c:PairChoice)=>{let d=distances.get(c);if(d===undefined){const linear=linearMate({choice:c,params:{...c.params,azimuth:0},seat:0,join:'fixed'});d=norm((linear??mateFrame(choiceGeometry(c),{azimuth:0})).position);distances.set(c,d);}return d;};
  const turnOffset=(c:PairChoice)=>{
   if(offsets.has(c))return offsets.get(c)!;let offset:{offset:number;length:number}|null=null;
   try{const variable=c.variables.find(v=>v.key==='angle');

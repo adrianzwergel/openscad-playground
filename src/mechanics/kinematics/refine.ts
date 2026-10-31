@@ -18,6 +18,8 @@ export function chainVariables(c:Chain):ChainVariable[]{
   for(const {key,lo,hi} of s.choice.variables)out.push({read:x=>x.stages[i].params[key],write:(x,v)=>{x.stages[i].params[key]=v;},lo,hi});
   if(s.join!=='shared')out.push({read:x=>x.stages[i].seat,write:(x,v)=>{x.stages[i].seat=v;},lo:-150,hi:150});
  });
+ // A translating output carries no free seat or roll.
+ if(c.stages[c.stages.length-1]?.choice.linear)return out;
  out.push({read:x=>x.lastSeat,write:(x,v)=>{x.lastSeat=v;},lo:-150,hi:150});
  // The roll is an angle: read it wrapped so a seed outside ±180° is not clamped into a stall.
  out.push({read:x=>((x.lastRoll%360)+540)%360-180,write:(x,v)=>{x.lastRoll=v;},lo:-180,hi:180});

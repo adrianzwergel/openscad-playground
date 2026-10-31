@@ -76,7 +76,7 @@ export async function solve(input:Mechanism,o:SolveOptions={}):Promise<Solution>
  // Residuals of one pose. `constants` holds the rolling constants; undefined omits rolling.
  const psiRefs:Record<string,number[]>[]=[];
  const unwrapAngle=(psi:number,ref:number|undefined)=>ref===undefined?psi:psi+2*Math.PI*Math.round((ref-psi)/(2*Math.PI));
- const rollingValue=(mm:Expanded,c:Resolved,refs?:Record<string,number[]>)=>{const term=rollingTerm(mm,c),psi=term.psi.map((p,i)=>term.periodic?.[i]===false?p:unwrapAngle(p,refs?.[c.contact.id]?.[i]));return {value:psi.reduce((s,p,i)=>s+term.coeff[i]*p,0),psi};};
+ const rollingValue=(mm:Expanded,c:Resolved,refs?:Record<string,number[]>)=>{const term=rollingTerm(mm,c),psi=term.psi.map((p,i)=>term.periodic?.[i]===false?p:unwrapAngle(p,refs?.[c.contact.id]?.[i]));return {value:psi.reduce((s,p,i)=>s+term.coeff[i]*(term.arc?.[i]?term.arc[i]!(p):p),0),psi};};
  const poseResiduals=(q:Record<string,number[]>,constants?:number[],refs?:Record<string,number[]>)=>{
   const frames=forward(m,t,q),mm=withFrames(m,frames),out:number[]=[];
   for(const j of loops){const A=compose(frames[j.a.body],j.a.local),B=compose(frames[j.b.body],j.b.local);out.push(...jointResidual(j.joint,A,B,q[j.id],j.shift));}
@@ -154,6 +154,12 @@ export async function solve(input:Mechanism,o:SolveOptions={}):Promise<Solution>
  const transfer:Transfer={samples:[]};
  if(outputSignal)transfer.samples=finalPoses.map(p=>({input:p.input,output:p.coordinates[outputSignal.joint][outputSignal.index]}));
  const constant=constantTransfer(m,t,contacts,inputSignal,outputSignal);if(constant!==undefined)transfer.constant=constant;
+ if(m.target?.kind==='profile'&&transfer.samples.length){
+  // Requested output over input, both relative to the first sample; linear interpolation between target samples.
+  const t=[...m.target.samples].sort((a,b)=>a.input-b.input),at=(x:number)=>{if(x<=t[0].input)return t[0].output;for(let i=1;i<t.length;i++)if(x<=t[i].input){const w=(x-t[i-1].input)/(t[i].input-t[i-1].input);return t[i-1].output*(1-w)+t[i].output*w;}return t[t.length-1].output;};
+  const base=transfer.samples[0],dev=Math.max(...transfer.samples.map(p=>Math.abs((p.output-base.output)-(at(p.input)-at(base.input)))));
+  checks.push({id:'target',state:dev<=m.target.tolerance+1e-9?'pass':'fail',message:`Größte Abweichung vom Übersetzungsverlauf ${dev.toFixed(4)} (zulässig ${m.target.tolerance}).`});
+ }
  if(m.target&&transfer.constant!==undefined&&(m.target.kind==='ratio'||m.target.kind==='stroke-per-turn')){const got=m.target.kind==='ratio'?1/Math.abs(transfer.constant):Math.abs(transfer.constant),dev=Math.abs(got-m.target.value)/m.target.value;checks.push({id:'target',state:dev<=m.target.tolerance+1e-9?'pass':'fail',message:`Übersetzung ${got.toFixed(4)} gegenüber Ziel ${m.target.value} (${(dev*100).toFixed(2)} %).`});}
  return {mechanism:withFrames(m,finalPoses[0].bodies),poses:finalPoses,transfer,checks,mobility,error:worst,poseErrors:errors,iterations:used,cancelled};
 }

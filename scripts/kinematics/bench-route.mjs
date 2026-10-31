@@ -1,5 +1,6 @@
-// Benchmark corpus of bench-graph-search.mjs run through the new route search
-// next to the old one. Usage: node scripts/kinematics/bench-route.mjs [case...] [--old] [--new]
+// Benchmark corpus of bench-graph-search.mjs run through the route search and
+// through the element-graph API. Since phase 6 both run on the kinematics core;
+// the comparison with the old core is recorded in docs/KINEMATIK-KERN.md 13.1. Usage: node scripts/kinematics/bench-route.mjs [case...] [--old] [--new]
 import {robustRoute} from '../../src/mechanics/graph/robust-search.ts';
 import {demoMechanism,transformMechanism} from '../../src/mechanics/graph/model.ts';
 import {identity,axisAngle} from '../../src/mechanics/graph/frames.ts';

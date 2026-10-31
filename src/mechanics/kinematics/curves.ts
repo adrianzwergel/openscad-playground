@@ -22,6 +22,8 @@ export interface CurveFn{
  frame(s:number):Frame;
  /** Radius, slope and curvature of the radius about the origin; only star-shaped closed planar curves. */
  polar?(theta:number):{r:number;dr:number;ddr:number};
+ /** Arc length from polar angle 0 to `theta` (unbounded, periodic extension); closed star-shaped curves only. */
+ arcAt?(theta:number):number;
 }
 
 const Z:V=[0,0,1];
@@ -36,7 +38,7 @@ function circle(r:number):CurveFn{
   normal:s=>{const t=s/r;return [-Math.cos(t),-Math.sin(t),0];},
   curvature:()=>1/r,
   frame(s){const t=s/r;return frameFromBasis(this.point(s),[-Math.sin(t),Math.cos(t),0],[-Math.cos(t),-Math.sin(t),0],Z);},
-  polar:()=>({r,dr:0,ddr:0})};
+  polar:()=>({r,dr:0,ddr:0}),arcAt:t=>r*t};
 }
 function line(length=Infinity):CurveFn{
  if(!(length>0))throw Error('Länge einer Geraden muss positiv sein.');
@@ -114,7 +116,8 @@ function polar(samples:number[]):CurveFn{
   normal:s=>{const {t}=at(s);return [-t[1],t[0],0];},
   curvature:s=>{const {r,dr,ddr}=at(s);return (r*r+2*dr*dr-r*ddr)/Math.pow(r*r+dr*dr,1.5);},
   frame(s){const {r,c,sn,t}=at(s);return frameFromBasis([r*c,r*sn,0],t,[-t[1],t[0],0],Z);},
-  polar:th=>spline(th)};
+  polar:th=>spline(th),
+  arcAt:th=>{const turns=Math.floor(th/TAU),x=th-turns*TAU,f=x/TAU*fine,i=Math.min(fine-1,Math.floor(f)),a=TAU*i/fine;return turns*length+ds[i]+(x-a)/6*(speed(a)+4*speed((a+x)/2)+speed(x));}};
 }
 
 const cache=new WeakMap<object,CurveFn>();
@@ -140,6 +143,7 @@ export function toPolar(fn:CurveFn,n=360):Curve2{
  const fine=Math.max(4*n,1024),th:number[]=[],rs:number[]=[];let prev=0,acc=0;
  for(let i=0;i<=fine;i++){const p=fn.point(fn.length*i/fine),a=Math.atan2(p[1],p[0]);let d=a-prev;if(i){d=((d+Math.PI)%TAU+TAU)%TAU-Math.PI;if(d<=0)throw Error('Kurve ist nicht sternförmig um die Achse.');acc+=d;}else acc=a;prev=a;th.push(acc);rs.push(Math.hypot(p[0],p[1]));}
  if(Math.abs(acc-th[0]-TAU)>1e-6)throw Error('Kurve umläuft die Achse nicht genau einmal.');
- const samples:number[]=[];for(let k=0;k<n;k++){const target=th[0]+TAU*k/n;let lo=0,hi=fine;while(lo<hi){const mid=(lo+hi+1)>>1;if(th[mid]<=target)lo=mid;else hi=mid-1;}const j=Math.min(fine,lo+1),w=th[j]===th[lo]?0:(target-th[lo])/(th[j]-th[lo]);samples.push(rs[lo]*(1-w)+rs[j]*w);}
+ // Sample at absolute polar angles 2πk/n, not relative to the curve's start point.
+ const samples:number[]=[];for(let k=0;k<n;k++){const target=th[0]+wrap(TAU*k/n-th[0],TAU);let lo=0,hi=fine;while(lo<hi){const mid=(lo+hi+1)>>1;if(th[mid]<=target)lo=mid;else hi=mid-1;}const j=Math.min(fine,lo+1),w=th[j]===th[lo]?0:(target-th[lo])/(th[j]-th[lo]);samples.push(rs[lo]*(1-w)+rs[j]*w);}
  return {kind:'polar',samples};
 }

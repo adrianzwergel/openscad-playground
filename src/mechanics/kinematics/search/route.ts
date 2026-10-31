@@ -2,7 +2,7 @@
 // starts, meet-in-the-middle closure, detour seeds, connection variants,
 // refinement and the construction gate. A port of the element-graph search.
 import type {Chain,Stage,FrameTerminal} from '../chain.ts';
-import {reflow,inputFrame,desiredFrame,place,closes,chainRatio,signature,summary,axialChecks,toMechanism,cloneChain} from '../chain.ts';
+import {reflow,inputFrame,desiredFrame,place,closes,chainRatio,signature,summary,axialChecks,toMechanism,cloneChain,terminalDeviation} from '../chain.ts';
 import type {PairChoice,Provider,ElementSpec} from '../catalog.ts';
 import {selectProviders} from '../catalog.ts';
 import {refineChain,variableCount} from '../refine.ts';
@@ -16,8 +16,9 @@ import {connectionVariants} from './topology.ts';
 import {compose,inverse,axis,add,scale,norm,rotate,multiply,inverseQ,lcg} from '../math.ts';
 import type {Check} from '../conjugate.ts';
 
-export type RouteRequest={input:FrameTerminal;output:FrameTerminal;environment?:Environment};
-export type RouteOptions={target:number;tolerance:number;minStages?:number;maxStages:number;budget:number;seed?:number;rules?:string[];includeNearMisses?:boolean;yield?:boolean;input?:ElementSpec;mateTeeth?:[number,number];trace?:(event:{phase:string;chain:Chain;outcome:string;error?:number})=>void};
+/** `motion: 'translation'` asks for a sliding output; `target` is then millimetres per input turn. */
+export type RouteRequest={input:FrameTerminal;output:FrameTerminal;environment?:Environment;motion?:'rotation'|'translation';stroke?:number};
+export type RouteOptions={target:number;tolerance:number;minStages?:number;maxStages:number;budget:number;seed?:number;rules?:string[];includeNearMisses?:boolean;yield?:boolean;input?:ElementSpec;mateTeeth?:[number,number];filter?:(c:PairChoice)=>boolean;extraProviders?:Provider[];starts?:Chain[];accept?:(s:RouteSolution)=>string|undefined;onNearMisses?:(n:NearMiss[])=>void;trace?:(event:{phase:string;chain:Chain;outcome:string;error?:number})=>void};
 export type RouteSolution={chain:Chain;mechanism:Mechanism;checks:Check[];ratio:number;summary:ReturnType<typeof summary>};
 export type NearMiss={chain:Chain;mechanism:Mechanism;deviation:{position:number;angle:number};score:number};
 export type RouteResult={solutions:RouteSolution[];nearMisses:NearMiss[];rejections:Record<string,number>;visited:number;attempts:number;detourStarts:number;status:'cancelled'|'solution-limit'|'budget'|'starts-exhausted'};
@@ -25,14 +26,19 @@ export type RouteResult={solutions:RouteSolution[];nearMisses:NearMiss[];rejecti
 export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSignal,onProgress?:(n:number)=>void,onSolution?:(s:RouteSolution,stats:{visited:number;attempts:number;detourStarts:number})=>void):Promise<RouteResult>{
  const min=o.minStages??1;
  if(!Number.isFinite(o.target)||o.target<=0||o.target>1000||!Number.isFinite(o.tolerance)||o.tolerance<0||o.tolerance>100||!Number.isInteger(min)||min<1||!Number.isInteger(o.maxStages)||o.maxStages<min||o.maxStages>4||!Number.isInteger(o.budget)||o.budget<1||o.budget>100000||(o.seed!==undefined&&!Number.isInteger(o.seed)))throw Error('Ungültige Suchgrenzen.');
- const random=lcg(o.seed??73421),within=(ratio:number)=>Math.abs(ratio-o.target)/o.target<=o.tolerance/100+1e-9;
+ const linear=request.motion==='translation',value=(ratio:number)=>linear?1/ratio:ratio;
+ const random=lcg(o.seed??73421),within=(ratio:number)=>Math.abs(value(ratio)-o.target)/o.target<=o.tolerance/100+1e-9;
  const source={input:request.input,output:request.output,environment:request.environment};
  const solutions:RouteSolution[]=[],nearMisses:NearMiss[]=[],rejections:Record<string,number>={};let visited=0,attempts=0,detourStarts=0;
  const reject=(key:string)=>{rejections[key]=(rejections[key]??0)+1;};
- const providers=selectProviders(o.rules);
+ const known=o.rules?.filter(id=>!o.extraProviders?.some(p=>p.id===id));
+ const providers=[...(known&&!known.length?[]:selectProviders(known)),...(o.extraProviders??[])].filter(p=>linear||!p.linear);
+ if(linear&&!providers.some(p=>p.linear))throw Error('Linearer Ausgang braucht Spindel oder Zahnstange in der Auswahl.');
  const inF=inputFrame(source),parallelOutput=compose(inF,source.output.local);
- const needsAxisChange=norm(add(axis(parallelOutput),scale(axis(source.output.target),-1)))>2*Math.sin((source.output.tolerance?.angle??0)*Math.PI/360)+1e-7;
- const {centerDistance,turnOffset,turnSlack,across,reachable,applies:singleTurn}=turnReach(source);
+ const needsAxisChange=!linear&&norm(add(axis(parallelOutput),scale(axis(source.output.target),-1)))>2*Math.sin((source.output.tolerance?.angle??0)*Math.PI/360)+1e-7;
+ const reach=turnReach(source),{centerDistance,turnOffset,turnSlack,across}=reach;
+ // Reach tests reason about shaft axes; a sliding output has none.
+ const reachable=(path:PairChoice[])=>linear||reach.reachable(path),singleTurn=(path:{changesAxis:boolean}[])=>!linear&&reach.applies(path);
  const refined=new Map<string,Refined>();
  // Compound and fixed joins share geometry, so variants reuse one refinement like the element graph.
  const geometryKey=(c:Chain)=>JSON.stringify([c.stages.map(s=>[s.choice.rule,s.choice.a.key,s.choice.b.key,s.join==='shared',s.params,s.seat]),c.lastSeat,c.lastRoll,!!c.environment]);
@@ -48,8 +54,8 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
    onProgress?.(visited);if(solved.cancelled)return;
    const ratio=chainRatio(solved.chain),r=reflow(solved.chain),axial=axialChecks(solved.chain,place(solved.chain,r));
    if(!closes(solved.chain,r)||!within(ratio)||axial.some(x=>x.state==='fail')){reject('closure');o.trace?.({phase,chain:solved.chain,outcome:!within(ratio)?'ratio':axial.some(x=>x.state==='fail')?'axial':'closure',error:solved.error});
-    if(o.includeNearMisses&&within(ratio)&&axial.every(x=>x.state!=='fail')){const built=assessConstruction(place(solved.chain,r));if(built.valid){const f=compose(r.end,solved.chain.output.local),d=deviation(f,solved.chain.output),score=Math.hypot(Math.max(0,d.position-d.positionLimit),30*Math.max(0,d.angle-d.angleLimit)*Math.PI/180),sig=signature(solved.chain);
-     if(!nearMisses.some(n=>signature(n.chain)===sig)){nearMisses.push({chain:solved.chain,mechanism:toMechanism(solved.chain,r),deviation:d,score});nearMisses.sort((a,b)=>a.score-b.score);nearMisses.splice(3);}}}
+    if(o.includeNearMisses&&within(ratio)&&axial.every(x=>x.state!=='fail')){const built=assessConstruction(place(solved.chain,r));if(built.valid){const f=compose(r.end,solved.chain.output.local),d=terminalDeviation(f,solved.chain.output),score=Math.hypot(Math.max(0,d.position-d.positionLimit),30*Math.max(0,d.angle-d.angleLimit)*Math.PI/180),sig=signature(solved.chain);
+     if(!nearMisses.some(n=>signature(n.chain)===sig)){const before=nearMisses.map(n=>signature(n.chain)).join('|');nearMisses.push({chain:solved.chain,mechanism:toMechanism(solved.chain,r),deviation:d,score});nearMisses.sort((a,b)=>a.score-b.score);nearMisses.splice(3);if(before!==nearMisses.map(n=>signature(n.chain)).join('|'))o.onNearMisses?.(nearMisses.slice());}}}
     return;}
    let built=assessConstruction(place(solved.chain,r)),chain=solved.chain;
    // Without an environment, refinement ignores internal clearance. A closed
@@ -61,7 +67,8 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
    if(!built.valid){reject('space');o.trace?.({phase,chain,outcome:'space:'+built.checks.filter(x=>x.state==='fail').map(x=>x.id).join(',')});return;}
    const sig=signature(chain);if(solutions.some(s=>signature(s.chain)===sig)){o.trace?.({phase,chain,outcome:'duplicate'});return;}
    o.trace?.({phase,chain,outcome:'solution'});
-   const solution:RouteSolution={chain,mechanism:toMechanism(chain),checks:[...axialChecks(chain),...built.checks],ratio,summary:summary(chain)};
+   const solution:RouteSolution={chain,mechanism:toMechanism(chain),checks:[...axialChecks(chain),...built.checks],ratio:value(ratio),summary:summary(chain)};
+   const refused=o.accept?.(solution);if(refused){reject(refused);return;}
    solutions.push(solution);onSolution?.(solution,{visited,attempts,detourStarts});
   }catch{visited+=Math.max(1,variables);reject('domain');}
  }
@@ -69,13 +76,15 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
  const groups=new Map<string,{factor:number;variants:PairChoice[]}>();
  // A given input part fixes the driver of the first stage.
  const allowedAt=(i:number,c:PairChoice)=>i>0||!o.input||c.a.key===o.input.key;
- for(const p of providers)for(const choice of p.catalog({input:o.input,teeth:o.mateTeeth})){const key=String(choice.factor);groups.set(key,{factor:choice.factor,variants:[...(groups.get(key)?.variants??[]),choice]});}
+ for(const p of providers)for(const choice of p.catalog({input:o.input,teeth:o.mateTeeth,stroke:request.stroke})){if(o.filter&&!o.filter(choice))continue;const key=(choice.linear?'t:':'r:')+choice.factor;groups.set(key,{factor:choice.factor,variants:[...(groups.get(key)?.variants??[]),choice]});}
  const memo=new Map<string,boolean>(),ratios=[...groups.keys()];
- const feasible=(remaining:number,ratio:number):boolean=>{if(!remaining)return within(ratio);const key=remaining+':'+ratio.toPrecision(12);if(memo.has(key))return memo.get(key)!;const result=ratios.some(r=>feasible(remaining-1,ratio*groups.get(r)!.factor));memo.set(key,result);return result;};
+ // Only the last stage of a sliding output translates.
+ const motionFits=(r:string,remaining:number)=>r.startsWith('t:')===(linear&&remaining===1);
+ const feasible=(remaining:number,ratio:number):boolean=>{if(!remaining)return within(ratio);const key=remaining+':'+ratio.toPrecision(12);if(memo.has(key))return memo.get(key)!;const result=ratios.some(r=>motionFits(r,remaining)&&feasible(remaining-1,ratio*groups.get(r)!.factor));memo.set(key,result);return result;};
  const active=()=>visited<o.budget&&solutions.length<8&&!signal?.aborted;
  async function attemptConnections(c:Chain){for(const candidate of connectionVariants(c).slice(0,2)){if(!active())break;await attempt(candidate);}}
  let closureRound=0;
- function closed(c:Chain,count:number){if(!c.stages.some(s=>s.choice.changesAxis))return [];const {seeds,work}=closureSeeds(c,{count,samples:300,seed:((o.seed??73421)+(++closureRound)*7919)>>>0});visited+=Math.ceil(work/20);return seeds;}
+ function closed(c:Chain,count:number){if(linear||!c.stages.some(s=>s.choice.changesAxis))return [];const {seeds,work}=closureSeeds(c,{count,samples:300,seed:((o.seed??73421)+(++closureRound)*7919)>>>0});visited+=Math.ceil(work/20);return seeds;}
  async function closureStarts(c:Chain){if(!active())return;for(const seed of closed(c,2)){if(!active())break;await attemptConnections(seed);}}
  async function explore(c:Chain,round:number,warm=false){
   const variants=connectionVariants(c);
@@ -84,13 +93,16 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
   for(let j=0;j<count&&active();j++){const v=variants[j%variants.length];if(j===0){await attempt(v);continue;}try{visited++;detourStarts++;await attempt(detourSeed(v,sectors[warm?j-1:(round*2+j-1)%16]));}catch{reject('seed');}}
   if(active()&&variants.length>1)await attempt(variants[1+round%(variants.length-1)]);
  }
+ // Given starts (an existing layout) first, as the element graph did with its source graph.
+ for(const start of o.starts??[]){if(!active())break;if(start.stages.length<min||start.stages.length>o.maxStages||!within(chainRatio(start)))continue;await (start.stages.length>=3?explore(start,0,true):attemptConnections(start));}
  // Directed starts: pair families and ratio-compatible catalogs, then vary layers.
  {
-  const straight=providers.filter(p=>!p.changesAxis),turns=providers.filter(p=>p.changesAxis),patterns:Provider[][]=[];
+  const straight=providers.filter(p=>!p.changesAxis&&!p.linear),turns=providers.filter(p=>p.changesAxis),patterns:Provider[][]=[];
   for(let depth=min;depth<=o.maxStages;depth++)for(const p of straight){
    if(!needsAxisChange||o.includeNearMisses)patterns.push(Array(depth).fill(p));
    for(const turn of needsAxisChange?turns:[])for(const index of [...new Set([Math.floor(depth/2),depth-1,0,...Array.from({length:depth},(_,i)=>i)])]){const pattern:Provider[]=Array(depth).fill(p);pattern[index]=turn;patterns.push(pattern);}
   }
+  if(linear){patterns.length=0;for(let depth=min;depth<=o.maxStages;depth++)for(const end of providers.filter(p=>p.linear)){if(depth===1){patterns.push([end]);continue;}for(const p of [...straight,...turns])patterns.push([...Array(depth-1).fill(p),end]);}}
   if(needsAxisChange)for(let depth=min;depth<=o.maxStages;depth++)for(const turn of turns)for(let count=2;count<=Math.min(depth,3);count++)for(const p of straight.length?straight:turns){const pattern:Provider[]=Array(depth).fill(p);for(let i=0;i<count;i++)pattern[i]=turn;patterns.push(pattern);}
   const desired=desiredFrame(source),direction=rotate(inverseQ(inF.rotation),axis(desired)),turnAzimuth=Math.atan2(direction[0],-direction[1])*180/Math.PI,turnAngle=Math.acos(Math.max(-1,Math.min(1,direction[2])))*180/Math.PI;
   const chord=rotate(inverseQ(inF.rotation),add(desired.position,scale(inF.position,-1))),heading=Math.atan2(chord[1],chord[0])*180/Math.PI,dot=(a:number[],b:number[])=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -146,7 +158,7 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
  for(let round=0;round<160&&visited<o.budget&&solutions.length<8;round++)for(let depth=min;depth<=o.maxStages&&visited<o.budget&&solutions.length<8;depth++){
   if(signal?.aborted)return finish('cancelled');if(!feasible(depth,1))continue;
   const choices:PairChoice[]=[];let ratio=1;
-  for(let i=0;i<depth;i++){const possible=ratios.filter(r=>feasible(depth-i-1,ratio*groups.get(r)!.factor)&&groups.get(r)!.variants.some(v=>allowedAt(i,v)));if(!possible.length)break;const r=possible[Math.floor(random()*possible.length)],variants=groups.get(r)!.variants.filter(v=>allowedAt(i,v));
+  for(let i=0;i<depth;i++){const possible=ratios.filter(r=>motionFits(r,depth-i)&&feasible(depth-i-1,ratio*groups.get(r)!.factor)&&groups.get(r)!.variants.some(v=>allowedAt(i,v)));if(!possible.length)break;const r=possible[Math.floor(random()*possible.length)],variants=groups.get(r)!.variants.filter(v=>allowedAt(i,v));
    let pool=variants;if(round%2===0&&choices.length){const previous=choices[choices.length-1],compatible=variants.filter(v=>previous.sharedRotor&&v.sharedRotor&&previous.b.key===v.a.key);if(compatible.length)pool=compatible;}
    const rules=[...new Set(pool.map(v=>v.rule))],rule=rules[Math.floor(random()*rules.length)],same=pool.filter(v=>v.rule===rule);choices.push(same[Math.floor(random()*same.length)]);ratio*=groups.get(r)!.factor;}
   if(choices.length<depth){visited++;reject('input');continue;}
@@ -161,9 +173,4 @@ export async function route(request:RouteRequest,o:RouteOptions,signal?:AbortSig
   solutions.sort((a,b)=>a.summary.elements-b.summary.elements||a.summary.driveShafts-b.summary.driveShafts);
   return {solutions,nearMisses,rejections,visited,attempts,detourStarts,status};
  }
-}
-function deviation(actual:{position:number[];rotation:number[]},t:FrameTerminal){
- const f=actual as Parameters<typeof compose>[0],delta=add(f.position,scale(t.target.position,-1));
- const position=t.constraint==='frame'?norm(delta):norm(scale(delta,1)),angle=Math.acos(Math.max(-1,Math.min(1,axis(f).reduce((s,n,i)=>s+n*axis(t.target)[i],0))))*180/Math.PI;
- return {position,angle,positionLimit:t.tolerance?.position??0,angleLimit:t.tolerance?.angle??0};
 }

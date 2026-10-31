@@ -112,7 +112,7 @@ type Curve2=
  | {kind:'line'}
  | {kind:'polyline';points:V2[];closed:boolean;cornerRadius:number}
  | {kind:'polar';samples:number[];closed:true};        // r(θ) in gleichen Winkelschritten
-type Curve3={kind:'path';points:V3[];closed:boolean;cornerRadius:number;up?:V3};
+type Curve3={kind:'path';points:V3[];closed:boolean;cornerRadius:number;axis?:V3};
 type Curve=Curve2|Curve3;
 ```
 
@@ -136,7 +136,7 @@ Regeln:
   abgetastet (Tabelle über s) und dann interpoliert. Die Abtastung ist so fein,
   dass die Sehnenabweichung unter 0,01 mm bleibt.
 - Pfade im Raum tragen ein Rahmenfeld: Tangente plus eine Normalebene, die sich
-  entlang des Pfads minimal dreht. `up` erzwingt optional eine feste Lage der
+  entlang des Pfads minimal dreht. `axis` erzwingt optional eine feste Lage der
   Normalebene, zum Beispiel senkrecht für eine Torführung.
 
 ### 4.2 Profile
@@ -729,6 +729,45 @@ Tests bleiben unverändert und laufen über den Adapter.
 
 Jede Phase endet mit einem Commit und grünen Tests. Der alte Kern wird nach
 Phase 0 nicht mehr weiterentwickelt.
+
+### 13.1 Stand der Umsetzung (01.11.2026)
+
+Alle Phasen sind umgesetzt; die Abnahmetests liegen in `scripts/kinematics/`.
+
+| Phase | Commit | Abnahmetests |
+|---|---|---|
+| 1 | `14ebf26` | `check-curves`, `check-profiles`, `check-conjugate` |
+| 2 | `c7b63bd` | `check-joints`, `check-model`, `check-solver`, `check-adapter`, `check-garage` |
+| 3 | `3bc80d7` | `check-route` (Benchmark), `check-route-random` (24 Aufgaben, Seed 777: 21/24 wie der alte Kern) |
+| 4 | `8edff1f` | `check-rail`, Linearteil von `check-adapter` |
+| 5 | `4e5f63e` | `check-mates` |
+| 6, 7 | dieser Stand | alle bisherigen Node- und Browser-Tests, `check-search-seeds`, `check-noncircular` |
+
+**Abweichungen von diesem Entwurf, die beim Bauen entschieden wurden:**
+
+- *Phase 6, Umfang:* Studio und Werkbank behalten das Elementgraph-Dokument als
+  Austauschformat. Die Suche, die Optimierung, die Umweg- und Endlagen-Starts
+  laufen auf dem neuen Kern; `graph/robust-search.ts`, `graph/search.ts`,
+  `graph/detours.ts` und `refineGraph` sind dünne Weiterleitungen auf
+  `kinematics/legacy.ts`, der in beide Richtungen übersetzt (`chainFromGraph`,
+  `toGraph`). `graph/closure.ts` und `graph/reach.ts` sind gelöscht. Darstellung,
+  CAD-Ausgabe und Inspektion arbeiten weiter auf dem Elementgraphen; sie auf
+  `kinematics-1` umzustellen ist ein eigener Schritt.
+- *Zur Laufzeit registrierte Paarungsregeln* des Elementgraphen werden über
+  `legacyProvider` zu Suchprovidern: Mate-Frame, Übersetzung und Hüllen kommen
+  aus der Regel selbst.
+- *Lager- und Zugangsräume* zählen weder bei Kollisionen noch bei Bauraum und
+  Sperrzonen als Fehler, sondern als offener Punkt `bearings-open` (auch im
+  Elementgraph-Gate).
+- *Übersetzungsziel* `ratio` ist ω_ein/ω_aus wie im Elementgraphen; bei linearem
+  Ausgang Millimeter je Eingangsumdrehung.
+- *Läuferkontakte* haben `side` (Ritzel auf der +/−Normalenseite der Kurve);
+  Wirkflächen dürfen offene Wälzkurven und Raumpfade tragen.
+- *Rollbedingung* bei unrunden Kurven über die echte Bogenlänge `arcAt` statt
+  r·ψ; Kreise bleiben bitgleich.
+- *Hüllkurve* eben in Kurven- bzw. Polarkoordinaten (`generate/rail.ts`,
+  `generate/hull.ts`) ohne Polygon-Bibliothek; ein räumliches Netz-Boolean ist
+  noch nicht nötig gewesen.
 
 ---
 

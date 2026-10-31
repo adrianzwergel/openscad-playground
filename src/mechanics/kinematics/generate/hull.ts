@@ -35,6 +35,32 @@ export function generateMate(o:MateOptions):MateOutline{
  for(let k=0;k<bins;k++)radius[k]=Math.max(root,radius[k]);
  return {radius,theta,outline:radius.map((r,k)=>[r*Math.cos(theta[k]),r*Math.sin(theta[k])] as V2),pitchRadius:rb};
 }
+/** Rolling pose of a non-circular pair on fixed axes, centre distance d, B on +x.
+ * A turns by φ (counter-clockwise); B turns clockwise by β with S_B(β) = −S_A(−φ), and
+ * B starts turned by π so its polar angle 0 faces A. Returns B's rotation angle. */
+export function conjugateTurn(arcA:(t:number)=>number,arcB:(t:number)=>number,phi:number,lengthB:number){
+ const s=-arcA(-phi);let lo=Math.floor(s/lengthB)*2*Math.PI-2*Math.PI,hi=lo+6*Math.PI;
+ for(let i=0;i<80;i++){const mid=(lo+hi)/2;if(arcB(mid)<s)lo=mid;else hi=mid;}
+ return Math.PI-(lo+hi)/2;
+}
+export type ConjugateOptions={cutter:V2[];arcA:(t:number)=>number;arcB:(t:number)=>number;lengthB:number;radiusB:(t:number)=>number;centerDistance:number;addendum:number;dedendum:number;bins?:number;step?:number};
+/** Mate outline for a non-circular pair: the toothed outline of A rolls along both pitch curves. */
+export function generateConjugate(o:ConjugateOptions):MateOutline{
+ const bins=o.bins??2880,step=o.step??.002,d=o.centerDistance,theta=Array.from({length:bins},(_,k)=>TAU*k/bins);
+ const top=theta.map(t=>o.radiusB(t)+o.addendum),root=theta.map(t=>o.radiusB(t)-o.dedendum),radius=[...top];
+ // Roll until B has turned once completely, with overlap at both ends.
+ const reach=Math.max(...o.cutter.map(([x,y])=>Math.hypot(x,y))),margin=2*reach;
+ for(let phi=-margin/reach;-o.arcA(-phi)<=o.lengthB+margin;phi+=step){
+  const beta=conjugateTurn(o.arcA,o.arcB,phi,o.lengthB),ca=Math.cos(phi),sa=Math.sin(phi),cb=Math.cos(-beta),sb=Math.sin(-beta);
+  let prev:{t:number;r:number}|undefined;
+  for(let i=0;i<=o.cutter.length;i++){const [x,y]=o.cutter[i%o.cutter.length],wx=x*ca-y*sa-d,wy=x*sa+y*ca,px=wx*cb-wy*sb,py=wx*sb+wy*cb,cur={t:Math.atan2(py,px),r:Math.hypot(px,py)};
+   if(prev){let dt=cur.t-prev.t;if(dt>Math.PI)dt-=TAU;if(dt<-Math.PI)dt+=TAU;const t0=wrap(prev.t),lo=Math.ceil(Math.min(0,dt)*bins/TAU+t0*bins/TAU),hi=Math.floor(Math.max(0,dt)*bins/TAU+t0*bins/TAU);
+    for(let j=lo;j<=hi;j++){const idx=((j%bins)+bins)%bins;if(prev.r>top[idx]&&cur.r>top[idx])continue;const w=Math.abs(dt)<1e-12?0:(j*TAU/bins-t0)/dt,rr=prev.r+(cur.r-prev.r)*Math.max(0,Math.min(1,w));if(rr<radius[idx])radius[idx]=rr;}}
+   prev=cur;}
+ }
+ for(let k=0;k<bins;k++)radius[k]=Math.max(root[k],radius[k]);
+ return {radius,theta,outline:radius.map((r,k)=>[r*Math.cos(theta[k]),r*Math.sin(theta[k])] as V2),pitchRadius:NaN};
+}
 /** Number of teeth: rising crossings of the pitch circle. */
 export function countTeeth(m:MateOutline,level=m.pitchRadius){let n=0;for(let k=0;k<m.radius.length;k++){const a=m.radius[(k-1+m.radius.length)%m.radius.length]-level,b=m.radius[k]-level;if(a<0&&b>=0)n++;}return n;}
 /** Mean angular tooth thickness at radius `level`, as arc length. */
