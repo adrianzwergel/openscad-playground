@@ -4,7 +4,8 @@
 import type {Element,Interface,Envelope,Contact} from './model.ts';
 import type {Surface} from './surfaces.ts';
 import type {Profile} from './profiles.ts';
-import {spurSurface} from './surfaces.ts';
+import {spurSurface,teeth as surfaceTeeth} from './surfaces.ts';
+import {reference} from './profiles.ts';
 import {coneAngles} from './contacts.ts';
 import {BELTS} from '../motion.ts';
 import {legoParts} from '../graph/lego-parts.ts';
@@ -13,7 +14,9 @@ import {legoBevelIds,legoWormProfiles} from '../graph/lego-config.ts';
 export type ElementSpec={key:string;label:string;source:Element['source'];surfaces:Surface[];interfaces:Interface[];envelope:Envelope;mount:'bore'|'technic-cross';compoundRotor:boolean;rearSupport?:boolean;shaftLimit?:number;scad?:string};
 export type Variable={key:string;lo:number;hi:number};
 export type PairChoice={rule:string;kind:Contact['kind'];a:ElementSpec;b:ElementSpec;params:Record<string,number>;variables:Variable[];changesAxis:boolean;sharedRotor:boolean;ratio:number;factor:number;contactParams?:{distance?:number}};
-export type Provider={id:string;changesAxis:boolean;sharedRotor:boolean;variables:Variable[];catalog:()=>PairChoice[]};
+/** `input` is a given part on the input shaft (e.g. a library gear); `teeth` bounds generated mates. */
+export type CatalogContext={input?:ElementSpec;teeth?:[number,number]};
+export type Provider={id:string;changesAxis:boolean;sharedRotor:boolean;variables:Variable[];catalog:(context?:CatalogContext)=>PairChoice[]};
 
 const involute=(module:number):Profile=>({kind:'involute',module,pressureAngle:20,backlash:.15});
 export const legoProfile:Profile={kind:'library',id:'lego-m1',reference:{module:1,pressureAngle:20},tolerance:.03,apexOffset:2};
@@ -58,6 +61,14 @@ export function legoSpec(part:LegoPart,role:'spur'|'bevel'|'worm',mateTeeth?:num
 }
 const choice=(rule:string,kind:Contact['kind'],a:ElementSpec,b:ElementSpec,params:Record<string,number>,variables:Variable[],changesAxis:boolean,sharedRotor:boolean,gain:number,contactParams?:{distance?:number}):PairChoice=>({rule,kind,a,b,params,variables,changesAxis,sharedRotor,ratio:Math.abs(gain),factor:1/Math.abs(gain),...(contactParams?{contactParams}:{})});
 const teethList=[20,30,40];
+/** Printed spur mates for a given part: same basic rack, any tooth count in range. The pairing
+ * is admissible by the basic-rack rule, so no list of allowed partners is needed. */
+export function matesFor(spec:ElementSpec,[lo,hi]:[number,number]=[8,80]):PairChoice[]{
+ const surface=spec.surfaces.find(s=>s.pitch.kind==='circle'&&!s.cone&&s.profile.kind!=='helical'),ref=surface&&reference(surface.profile),za=surface&&surfaceTeeth(surface);
+ if(!surface||!ref||za===undefined)return [];
+ const width=Math.max(6,Math.min(12,surface.z[1]-surface.z[0]));
+ return Array.from({length:hi-lo+1},(_,i)=>lo+i).map(zb=>choice('generated-mate','roll',spec,spurSpec(zb,ref.module,width),{azimuth:0},[azimuth],false,false,-Math.round(za)/zb));
+}
 export const providers:Provider[]=[
  {id:'external-spur',changesAxis:false,sharedRotor:true,variables:[azimuth],catalog:()=>teethList.flatMap(a=>teethList.map(b=>choice('external-spur','roll',spurSpec(a),spurSpec(b),{azimuth:0},[azimuth],false,true,-a/b)))},
  {id:'bevel-mesh',changesAxis:true,sharedRotor:true,variables:[azimuth,{key:'angle',lo:60,hi:120}],catalog:()=>teethList.flatMap(a=>teethList.map(b=>choice('bevel-mesh','roll',bevelSpec(a,b,90,true),bevelSpec(b,a,90,false),{azimuth:0,angle:90},[azimuth,{key:'angle',lo:60,hi:120}],true,true,-a/b)))},
@@ -65,6 +76,7 @@ export const providers:Provider[]=[
  {id:'worm-mesh',changesAxis:true,sharedRotor:false,variables:[azimuth],catalog:()=>[1,2].flatMap(starts=>teethList.map(teeth=>choice('worm-mesh','helical',wormSpec(starts),wormWheelSpec(teeth,starts),{azimuth:0},[azimuth],true,false,starts/teeth,{distance:12+wormWheelThroat(teeth,starts)})))},
  {id:'lego-spur',changesAxis:false,sharedRotor:true,variables:[azimuth],catalog:()=>{const parts=legoParts.filter(p=>p.search);return parts.flatMap(a=>parts.map(b=>choice('lego-spur','roll',legoSpec(a,'spur'),legoSpec(b,'spur'),{azimuth:0},[azimuth],false,true,-a.teeth/b.teeth)));}},
  {id:'lego-bevel-90',changesAxis:true,sharedRotor:true,variables:[azimuth],catalog:()=>{const parts=legoParts.filter(p=>legoBevelIds.includes(p.id));return parts.flatMap(a=>parts.map(b=>choice('lego-bevel-90','roll',legoSpec(a,'bevel',b.teeth),legoSpec(b,'bevel',a.teeth),{azimuth:0,angle:90},[azimuth],true,true,-a.teeth/b.teeth)));}},
+ {id:'generated-mate',changesAxis:false,sharedRotor:false,variables:[azimuth],catalog:context=>context?.input?matesFor(context.input,context.teeth):[]},
  {id:'lego-worm',changesAxis:true,sharedRotor:true,variables:[azimuth],catalog:()=>{const worms=legoParts.filter(p=>legoWormProfiles[p.id]),wheels=legoParts.filter(p=>p.search&&!legoBevelIds.includes(p.id));return worms.flatMap(a=>wheels.map(b=>choice('lego-worm','helical',legoSpec(a,'worm'),legoSpec(b,'spur'),{azimuth:0},[azimuth],true,true,legoWormProfiles[a.id].starts/b.teeth)));}},
 ];
 export function selectProviders(rules?:string[]){
