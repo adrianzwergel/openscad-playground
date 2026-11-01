@@ -103,9 +103,10 @@ export function rollingTerm(m:Pick<Mechanism,'bodies'>,r:Resolved):{psi:number[]
  const angle=(f:Frame,z:V,reference:V)=>{const x=rotate(f.rotation,[1,0,0]),ref=perp(reference,z);if(norm(ref)<1e-9)return 0;const u=unit(ref);return Math.atan2(dot(cross(u,x),z),dot(u,x));};
  const ra=meanRadius(sa),rb=meanRadius(sb);
  if(c.mode==='follower'){
-  // Equal arc length: the pinion turns relative to the contact normal by −side·Δs/r. Arc length is not periodic.
-  const f=followerState(m,r),toward=rotate(f.B.rotation,scale(f.n,-f.side));
-  return {psi:[angle(A,za,toward),f.s],coeff:[f.side*ra,1],periodic:[true,false]};
+  // Equal arc length: the pinion turns relative to the contact normal by −side·Δs/r about the rail's z. Arc length is not periodic.
+  // The pinion's axis may point either way along that z; ψ is measured about the pinion's own axis, so an opposite axis flips the sign.
+  const f=followerState(m,r),toward=rotate(f.B.rotation,scale(f.n,-f.side)),facing=dot(f.axisLocal,f.z)<0?-1:1;
+  return {psi:[angle(A,za,toward),f.s],coeff:[facing*f.side*ra,1],periodic:[true,false]};
  }
  if(c.kind==='helical'){
   // The worm advances lead/2π per radian; the wheel turns about its axis relative to the worm axis direction.

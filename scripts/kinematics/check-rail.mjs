@@ -8,7 +8,7 @@ import {curve} from '../../src/mechanics/kinematics/curves.ts';
 import {closestArc} from '../../src/mechanics/kinematics/contacts.ts';
 import {solve} from '../../src/mechanics/kinematics/solver.ts';
 import {spurSurface} from '../../src/mechanics/kinematics/surfaces.ts';
-import {identity,dot,add,scale} from '../../src/mechanics/kinematics/math.ts';
+import {identity,dot,add,scale,compose,axisAngle} from '../../src/mechanics/kinematics/math.ts';
 
 const close=(a,b,tol,what)=>assert.ok(Math.abs(a-b)<=tol,`${what}: ${a} vs ${b}`);
 const m=2,z=20,ra=m*z/2,backlash=.15,alpha=20*Math.PI/180;
@@ -45,19 +45,21 @@ for(const side of [1,-1]){
 assert.throws(()=>railProfile({path:{kind:'path',points:[[0,0,0],[0,100,0],[100,100,0]],closed:false,cornerRadius:15,axis:[0,0,1]},module:m,pinionTeeth:z,side:-1,from:60,to:120,width:10}),/Krümmungsradius/,'pinion inside a tight bend is rejected');
 
 // Follower: a carriage on the guide carries the pinion; rolling ties pinion angle to travel, also through the arc.
-for(const side of [1,-1]){
+// Also with the pinion's axis against the rail's z (motor shaft pointing the other way): it must still roll, not turn backwards.
+for(const side of [1,-1])for(const facing of [1,-1]){
+ const turn=facing>0?[0,0,0,1]:axisAngle([1,0,0],180);
  const pinion={id:'pinion',source:{kind:'printed'},surfaces:[spurSurface('teeth',m,z,10)],interfaces:[{id:'bore',kind:'bore',diameter:5,z:[-5,5]}],envelope:{radius:ra+m,min:-5,max:5},mounts:[{interface:'bore',body:'pinion',pose:identity()}],phase:0};
  const rail={id:'rail',source:{kind:'printed'},surfaces:[{id:'teeth',pitch:guide,profile:{kind:'involute',module:m,pressureAngle:20,backlash},z:[-6,6],side:'external'}],interfaces:[{id:'flange',kind:'flange',frame:identity()}],envelope:{radius:0,min:-6,max:6},mounts:[{interface:'flange',body:'ground',pose:identity()}],phase:0};
  const s0=50,start=fn.frame(s0),centre=add(start.position,scale(fn.normal(s0),side*ra));
- const doc={format:'kinematics-1',parameters:[],patterns:[],bodies:[{id:'ground',frame:identity(),ground:true},{id:'carriage',frame:start},{id:'pinion',frame:{position:centre,rotation:start.rotation}}],
+ const doc={format:'kinematics-1',parameters:[],patterns:[],bodies:[{id:'ground',frame:identity(),ground:true},{id:'carriage',frame:start},{id:'pinion',frame:compose({position:centre,rotation:start.rotation},{position:[0,0,0],rotation:turn})}],
   joints:[{id:'track',joint:{kind:'path',curve:guide,roll:'locked'},a:{body:'ground',local:identity()},b:{body:'carriage',local:identity()}},
-   {id:'axle',joint:{kind:'revolute'},a:{body:'carriage',local:{position:[0,side*ra,0],rotation:[0,0,0,1]}},b:{body:'pinion',local:identity()}}],
+   {id:'axle',joint:{kind:'revolute'},a:{body:'carriage',local:{position:[0,side*ra,0],rotation:turn}},b:{body:'pinion',local:identity()}}],
   elements:[pinion,rail],contacts:[{id:'mesh',kind:'roll',mode:'follower',a:{element:'pinion',surface:'teeth'},b:{element:'rail',surface:'teeth'},params:{offsetA:0,offsetB:0,side}}],
-  input:{kind:'coordinate',joint:'axle',coordinate:0},output:{kind:'coordinate',joint:'track',coordinate:0},range:{from:0,to:-side*720,samples:25}};
+  input:{kind:'coordinate',joint:'axle',coordinate:0},output:{kind:'coordinate',joint:'track',coordinate:0},range:{from:0,to:-side*facing*720,samples:25}};
  const r=await solve(doc,{yield:false});
  assert.equal(r.checks.find(c=>c.id==='closure').state,'pass',r.checks.find(c=>c.id==='closure').message);
  assert.equal(r.checks.find(c=>c.id==='mobility').state,'pass',r.mobility.message);
- for(const {input,output} of r.transfer.samples)close(output-s0,-side*ra*input*Math.PI/180,1e-4,`side ${side} travel at ${input}°`);
+ for(const {input,output} of r.transfer.samples)close(output-s0,-side*facing*ra*input*Math.PI/180,1e-4,`side ${side}, axis ${facing} travel at ${input}°`);
  assert.ok(r.transfer.samples.at(-1).output>arcTo,'carriage passes the whole arc');
 }
-console.log('Kinematics rail: involute outline, straight rack geometry, curved rails on both sides without interference, closed meshes and pinion follower through the arc passed.');
+console.log('Kinematics rail: involute outline, straight rack geometry, curved rails on both sides without interference, closed meshes and pinion follower through the arc (both sides, both axis directions) passed.');
