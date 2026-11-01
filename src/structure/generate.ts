@@ -305,13 +305,18 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
    if(points.length>2)scene.chain(points,radii);else scene.solid({kind:'capsule',a:points[0],b:points[1],r:radii[0],rb:radii[1]});}}
  const joints:{center:V;r:number}[]=[];
  net.nodes.forEach((x,i)=>{if(x.anchor===undefined&&radius.has(i)&&!through(i)){const j={center:x.p,r:Math.min(radius.get(i)!*1.12,Math.max(radius.get(i)!*.9,spec.clearance(x.p)-s.blend/2))};joints.push(j);scene.solid({kind:'sphere',...j});}});
- geo.forEach((g,k)=>{g.solids.forEach(x=>spec.anchors[k].clip?scene.solid(x):scene.hardSolid(x));g.holes.forEach(x=>scene.hole(x));});
+ // Holes are cut, and so are the keep zones (a bearing's way in): a plate or a blend must not close them.
+ geo.forEach((g,k)=>{g.solids.forEach(x=>spec.anchors[k].clip?scene.solid(x):scene.hardSolid(x));g.holes.forEach(x=>scene.hole(x));g.keep.forEach(x=>scene.hole(x));});
  // Clip by the keep-out field: no material where another part is (anchor bosses are placed by design).
  // The keep-out field is 1-Lipschitz: a coarse 4 mm lattice bounds it from below, exact values only where clipping can act.
  const lower=lowerBound;
  // Near the anchors' bosses the clip fades out continuously (they sit where the plan put them).
  // The cut sits 0.6 mm inside the free side: surface-net vertices interpolate across a sharp cut by up to half a cell.
- const CUT=.6,field=(p:V)=>{const d=scene.distance(p);if(d>2*s.resolution)return d;const bd=bosses.distance(p);if(bd<.3)return d;if(lower(p)>=CUT-d)return d;const fade=Math.min(1,(bd-.3)/.4);return Math.max(d,CUT-spec.clearance(p)-(1-fade)*30);};
+ // Thin skins: where the cut runs close to the strut's other side, material is kept only if its depth under the
+ // strut's surface plus its distance from the cut reaches the minimum wall (a skin goes, a cut edge gets a small
+ // chamfer).
+ const SKIN=1.2,CUT=.6,field=(p:V)=>{const d=scene.distance(p);if(d>2*s.resolution)return d;const bd=bosses.distance(p);if(bd<.3)return d;if(lower(p)>=CUT+Math.max(-d,d<0?SKIN+d:-d))return d;
+  const fade=Math.min(1,(bd-.3)/.4),away=(1-fade)*30,c=spec.clearance(p);return Math.max(d,CUT-c-away,(SKIN+d-(c-CUT))/2-away);};
  const b=scene.bounds();
  const raw=surfaceNets(field,b.min,b.max,s.resolution,4,p=>scene.distance(p)),{mesh,dropped}=largestPart(raw);
  progress?.('Prüfung',.95);
@@ -319,10 +324,11 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  // Clearance of the finished surface (every 7th vertex is plenty at 0.8 mm); the lattice bound skips what cannot be worse.
  // Wall thickness: from surface points (every 13th) along the inward normal and four rays tilted 45° from it, the
  // deepest the solid gets (a wall of thickness t reaches t/2 in its middle; at an edge one of the rays goes in deep);
- // thinner than 1.2 mm (three lines of a 0.4 mm nozzle) is too thin to print well.
+ // thinner than 1.2 mm (three lines of a 0.4 mm nozzle) is too thin to print well. The features' own walls (seat,
+ // shoulder) are set by their design and not probed.
  const WALL=1.2;let thin=0,probes=0,thinnest=Infinity,thinAt:V=[0,0,0];
  for(let i=0;i<mesh.vertices.length/3;i+=13){const p:V=[mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]],e=.2,g:V=[0,1,2].map(k=>{const a=[...p] as V,b=[...p] as V;a[k]+=e;b[k]-=e;return field(a)-field(b);}) as V,gn=norm(g);if(gn<1e-9)continue;
-  const n=scale(g,-1/gn),h:V=Math.abs(n[0])<.9?[1,0,0]:[0,1,0],u=unit(cross(n,h)),w=cross(n,u),rays=[n,...[u,scale(u,-1),w,scale(w,-1)].map(d=>unit(add(n,d)))];probes++;
+  if(bosses.distance(p)<.5)continue;const n=scale(g,-1/gn),h:V=Math.abs(n[0])<.9?[1,0,0]:[0,1,0],u=unit(cross(n,h)),w=cross(n,u),rays=[n,...[u,scale(u,-1),w,scale(w,-1)].map(d=>unit(add(n,d)))];probes++;
   let depth=0;for(const r of rays){for(let x=.15;x<=WALL*1.5;x+=.15){depth=Math.max(depth,-field(add(p,scale(r,x))));if(depth>=WALL/2)break;}if(depth>=WALL/2)break;}
   const t=2*depth;if(t<WALL*.9){thin++;if(t<thinnest){thinnest=t;thinAt=p;}}}
  let worst=Infinity,worstAt:V=[0,0,0];for(let i=0;i<mesh.vertices.length/3;i+=7){const p:V=[mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]];if(bosses.distance(p)<1||lowerBound(p)>=worst)continue;const c=spec.clearance(p);if(c<worst){worst=c;worstAt=p;}}
