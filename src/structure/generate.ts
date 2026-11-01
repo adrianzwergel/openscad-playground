@@ -178,15 +178,20 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
   const groupOf=(k:number)=>spec.anchors[k].group?spec.anchors.map((a,l)=>a.group===spec.anchors[k].group?l:-1).filter(l=>l>=0):[k];
   const anchorNodesOf=(k:number)=>{const g=groupOf(k);return N.map((x,i)=>x.anchor!==undefined&&g.includes(x.anchor)?i:-1).filter(i=>i>=0);};
   for(const {k} of loadAnchors){
-   if(usedAnchor.has(k))continue;
    // Multi-source Dijkstra from the anchor's ports to the tree; existing struts are cheaper (trunks are shared).
    // In a net every anchor gets a second, largely separate way to the tree (triangles instead of a single branch).
-   const starts=anchorNodesOf(k),connect=(avoid:Set<number>,avoidGoal:Set<number>,toSupport=false)=>{const dist=new Map<number,number>(starts.map(i=>[i,0])),via=new Map<number,{from:number;k:number}>(),done=new Set<number>();let goal=-1;
-    const heap:[number,number][]=starts.map(i=>[0,i]);
+   const starts=anchorNodesOf(k),connect=(avoid:Set<number>,avoidGoal:Set<number>,toSupport=false,from=starts)=>{const dist=new Map<number,number>(from.map(i=>[i,0])),via=new Map<number,{from:number;k:number}>(),done=new Set<number>();let goal=-1;
+    const heap:[number,number][]=from.map(i=>[0,i]);
     while(heap.length){let bi=0;for(let i=1;i<heap.length;i++)if(heap[i][0]<heap[bi][0])bi=i;const [d,i]=heap.splice(bi,1)[0];if(done.has(i))continue;done.add(i);
-     if((toSupport?N[i].fixed:tree.has(i))&&!starts.includes(i)&&!avoidGoal.has(i)){goal=i;break;}
+     if((toSupport?N[i].fixed:tree.has(i))&&!from.includes(i)&&!avoidGoal.has(i)){goal=i;break;}
      for(const e of adj.get(i)??[]){if(anchorOf(e.j)!==undefined&&!groupOf(k).includes(anchorOf(e.j)!)&&!tree.has(e.j)&&!N[e.j].fixed)continue;const w=cost(e.k)*(avoid.has(e.k)?6:usedStrut.has(e.k)?(toSupport?2:.35):1),nd=d+w;if(nd<(dist.get(e.j)??Infinity)){dist.set(e.j,nd);via.set(e.j,{from:i,k:e.k});heap.push([nd,e.j]);}}}
-    if(goal<0)return undefined;const path:number[]=[],nodesOn=new Set<number>();for(let i=goal;!starts.includes(i);){const v=via.get(i)!;path.push(v.k);nodesOn.add(i);i=v.from;}return {goal,path,nodesOn};};
+    if(goal<0)return undefined;const path:number[]=[],nodesOn=new Set<number>();for(let i=goal;!from.includes(i);){const v=via.get(i)!;path.push(v.k);nodesOn.add(i);i=v.from;}return {goal,path,nodesOn};};
+   if(usedAnchor.has(k)){
+    // A loaded seat of a group that is already joined (through another member or the plate) gets a way of its own
+    // down to the supports in a net: otherwise a seat at the plate's edge hangs on the thin plate alone.
+    if(bracing>0&&spec.anchors[k].group&&(spec.anchors[k].load??s.load)>0){const own=N.map((x,i)=>x.anchor===k?i:-1).filter(i=>i>=0),next=connect(new Set(),new Set(),true,own);
+     if(next&&next.path.length<=60)for(const sk of next.path){usedStrut.add(sk);const st=net.struts[sk];tree.add(st.i);tree.add(st.j);}}
+    continue;}
    const first=connect(new Set(),new Set());if(!first)continue;
    for(const sk of first.path){usedStrut.add(sk);const st=net.struts[sk];tree.add(st.i);tree.add(st.j);}
    const goal=first.goal;
@@ -204,7 +209,7 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
   const fan=(k:number,most:number)=>{const ports=anchorNodesOf(k).filter(i=>i!==N.findIndex(x=>x.anchor===k)),treeOnly=new Set([...tree].filter(i=>N[i].anchor===undefined));if(!treeOnly.size)return;let joined=0;
    for(const pi of ports.sort((a,b)=>Math.min(...[...treeOnly].map(t=>norm(sub(N[t].p,N[a].p))))-Math.min(...[...treeOnly].map(t=>norm(sub(N[t].p,N[b].p)))))){if(joined>=most)break;
     const e=(adj.get(pi)??[]).filter(x=>treeOnly.has(x.j)&&!usedStrut.has(x.k)).sort((a,b)=>cost(a.k)-cost(b.k))[0];if(e){usedStrut.add(e.k);joined++;}}};
-  for(const sp of supports)fan(sp.k,4);
+  for(const sp of supports)fan(sp.k,8);
   for(const {k} of loadAnchors){if(spec.anchors[k].role!=='load'||spec.anchors[k].group||(spec.anchors[k].load??s.load)<=0)continue;const own=anchorNodesOf(k),entering=[...usedStrut].filter(x=>own.includes(net.struts[x].i)||own.includes(net.struts[x].j));
    if(entering.length&&Math.max(...entering.map(x=>capOf(N,net.struts[x])))<6)fan(k,4);}
   let kept=[...net.struts.filter(x=>x.rigid),...[...usedStrut].map(k=>net.struts[k])];
@@ -255,17 +260,23 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
    let grew=false;for(const {st} of free){const g=stalled?Math.min(1.5,f*1.05):Math.min(1.5,Math.max(1,f*Math.pow(dens.get(st)!/mean,1/4))),r=Math.min(caps.get(st)!,radiusOf(st)*g);if(r>radiusOf(st)+1e-6)grew=true;st.area=Math.PI*r*r;}if(!grew)break;
    const next=solveFrame(cur.nodes,cur.struts,L,m);if(!next)break;framed={...next,util:cur.struts.map((st,i)=>st.rigid?0:Math.max(...next.forces[i].map(x=>barUtilisation(x,radiusOf(st),m))))};const before=deflection;deflection=sagOf(cur.nodes,next.us);if(deflection>before*.99)stalled=true;}
   const util=Math.max(0,...cur.struts.map((st,i)=>st.rigid?0:framed.util[i]));
-  return {cur,L,framed,deflection,caps,util,score:Math.max(util,deflection/s.deflection)};
+  // The load case that bends most (for the stiffness feedback).
+  let worstCase=0,most=-1;framed.us.forEach((u,c)=>cur.nodes.forEach((x,i)=>{if(!loaded(x))return;const d=Math.hypot(u[i][0],u[i][1],u[i][2]);if(d>most){most=d;worstCase=c;}}));
+  return {cur,L,framed,deflection,caps,util,worstCase,score:Math.max(util,deflection/s.deflection)};
  };
  // Layout feedback: struts overloaded at their room cap mark crowded spots for the next layout; a layout that holds
  // but bends too much gets more cross bracing. The best of a few rounds is kept.
  let result=design(s.bracing,[]);
- {const crowded:Crowded[]=[];let bracing=s.bracing;
-  for(let round=0;round<3&&result.score>1.001;round++){const last=result,before=crowded.length;
+ {const crowded:Crowded[]=[];let bracing=s.bracing,last=result;
+  // Feedback comes from the latest layout (what it ran into), the best layout is kept.
+  for(let round=0;round<5&&result.score>1.001;round++){const before=crowded.length;
    last.cur.struts.forEach((st,i)=>{if(st.rigid||last.framed.util[i]<=1.001)return;const r=radiusOf(st),cap=last.caps.get(st)!;if(r<cap-.05)return;crowded.push({a:last.cur.nodes[st.i].p,b:last.cur.nodes[st.j].p,need:r*Math.pow(last.framed.util[i],1/3)});});
+   // Too soft: struts at their room cap that take a large share of the bending energy are crowded spots as well.
+   if(last.deflection>s.deflection*1.05){const total=last.framed.forces.reduce((t,f)=>t+f[last.worstCase].energy,0);
+    last.cur.struts.forEach((st,i)=>{if(st.rigid)return;const r=radiusOf(st),cap=last.caps.get(st)!;if(r<cap-.05||last.framed.forces[i][last.worstCase].energy<.05*total)return;crowded.push({a:last.cur.nodes[st.i].p,b:last.cur.nodes[st.j].p,need:r*Math.pow(last.deflection/s.deflection,1/4)*1.2});});}
    const soft=last.deflection>s.deflection*1.05;if(soft&&bracing<2)bracing=Math.min(2,bracing+1);else if(crowded.length===before)break;
    progress?.(`Neuer Entwurf ${round+2}`,.1);
-   const next=design(bracing,crowded);if(next.score<result.score)result=next;}}
+   const next=design(bracing,crowded);last=next;if(next.score<result.score)result=next;}}
  net=result.cur;loads=result.L;const framed=result.framed,deflection=result.deflection,caps=result.caps;
  const reach2=(x:{nodes:TrussNode[];struts:Strut[]})=>{const c=connectedFromSupports(x.nodes,x.struts);return x.nodes.every((n,i)=>!n.load||c.has(i));};
  const util=framed.util,forceOf=(k:number)=>Math.max(...framed.forces[k].map(f=>Math.abs(f.N)));

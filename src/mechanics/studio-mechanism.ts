@@ -395,9 +395,9 @@ export class MechanismEditor{
   return out;
  }
  private structurePage(m:Mechanism,ui:{number:(label:string,value:number,write:(n:number)=>void,step?:string)=>HTMLElement;select:(label:string,value:string,options:[string,string][],write:(v:string)=>void)=>HTMLElement}):HTMLElement[]{
-  const out:HTMLElement[]=[el('h3',{textContent:'🕸 Struktur je Glied'}),el('p',{className:'muted',textContent:'Jedes Glied wird als optimiertes Tragwerk erzeugt: Streben zwischen Lagersitzen, Motorflanschen und der Verbindung zum Vorgänger, um Räder, Wellen und die bewegten Nachbarglieder herum. Das Modell diente nur zum Platzieren.'})];
+  const out:HTMLElement[]=[el('h3',{textContent:'🕸 Struktur je Glied'}),el('p',{className:'muted',textContent:'Jedes Glied wird als optimiertes Tragwerk erzeugt: Streben zwischen Lagersitzen, Motorflanschen und der Verbindung zum Vorgänger, um Räder, Wellen und die bewegten Nachbarglieder herum. Das Modell diente nur zum Platzieren. Lasten: die Pauschallast je Haltepunkt in alle Richtungen und dazu die Kräfte der Antriebe (Zahnkräfte, Riemenzug, Spindelschub) bei blockiertem Motor; mit Anteil 0,5 und Werkstoffsicherheit 3 entspricht das Sicherheit 1,5 gegen das Haltemoment.'})];
   const s=this.fabrication().structure??{},set=(k:string,v:string|number)=>this.editFabrication('Struktureinstellung geändert',f=>{f.structure={...(f.structure??{}),[k]:v};});
-  out.push(ui.number('Last je Haltepunkt [N]',Number(s.load??20),n=>{if(n>0&&n<=1000)set('load',n);},'5'),ui.number('Dünnste Strebe (Radius) [mm]',Number(s.rMin??3),n=>{if(n>=1&&n<=8)set('rMin',n);}),
+  out.push(ui.number('Last je Haltepunkt [N]',Number(s.load??20),n=>{if(n>0&&n<=1000)set('load',n);},'5'),ui.number('Antriebslast (Anteil des Haltemoments)',Number(s.driveLoad??.5),n=>{if(n>=0&&n<=2)set('driveLoad',n);},'0.1'),ui.number('Dünnste Strebe (Radius) [mm]',Number(s.rMin??3),n=>{if(n>=1&&n<=8)set('rMin',n);}),
    ui.select('Form',String(s.bracing??1),[['0','baumartig (reiner Baum)'],['1','Baum mit Querstreben'],['2','netzartig']],v=>set('bracing',Number(v))),ui.select('Auflösung',String(s.resolution??.8),[['1.2','grob (schnell)'],['0.8','mittel'],['0.5','fein']],v=>set('resolution',Number(v))));
   const job=this.structureJob,go=el('button',{textContent:job?.state==='running'?'Wird erzeugt …':'Strukturen erzeugen',className:'primary'});go.dataset.generateStructures='true';go.disabled=job?.state==='running'||!this.plan(m);go.onclick=()=>this.generateStructures(m);
   const progress=el('p',{className:'muted',id:'structure-progress',textContent:job?.text??(this.plan(m)?'':'Erst alle Antriebe mit Getriebe versehen.')});if(job)progress.dataset.state=job.state;
@@ -420,7 +420,7 @@ export class MechanismEditor{
   const fab=this.fabrication(),assets:Record<string,{parts:{id:string;positions:Float32Array}[]}>={};
   for(const b of m.bodies)if(b.display?.kind==='mesh'){const a=this.assets.get(b.display.asset);if(a)assets[a.id]={parts:a.parts.map(p=>({id:p.id,positions:p.positions}))};}
   const w=new Worker('./mechanics-structure-worker.js'),job={worker:w,state:'running' as 'running'|'done'|'error',text:'Lager werden geplant …',key:''};this.structureJob=job;
-  const st=fab.structure??{},settings={load:Number(st.load??20),structure:{material:{rMin:Number(st.rMin??3)},bracing:Number(st.bracing??1),resolution:Number(st.resolution??.8)}};
+  const st=fab.structure??{},settings={load:Number(st.load??20),drives:{factor:Number(st.driveLoad??.5)},structure:{material:{rMin:Number(st.rMin??3)},bracing:Number(st.bracing??1),resolution:Number(st.resolution??.8)}};
   const render=()=>{const p=document.getElementById('structure-progress');if(p){p.textContent=job.text;p.dataset.state=job.state;}if(this.item==='structure')this.renderProperties();};
   w.onmessage=({data})=>{if(this.structureJob!==job)return;
    if(data.type==='plan'){this.showBearings(data.plan);job.text='Lager geplant. Strukturen werden erzeugt (Spitze zuerst) …';render();}

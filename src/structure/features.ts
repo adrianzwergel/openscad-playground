@@ -38,7 +38,8 @@ export function featureSize(f:Feature):{radius:number;z0:number;z1:number}{
   case 'linear':return {radius:f.D/2+f.wall,z0:-f.B/2-1,z1:f.B/2+1};
   case 'rod':return {radius:f.d/2+f.wall+1,z0:-f.length/2,z1:f.length/2};
   case 'flange':return {radius:f.size*.71,z0:0,z1:f.thickness};
-  case 'nut':return {radius:f.flange/2+3,z0:-f.thickness/2,z1:f.thickness/2};
+  // The bought nut's flange is an obstacle of its link: the boss reaches 6 mm past it, so struts leave with room.
+  case 'nut':return {radius:f.flange/2+6,z0:-f.thickness/2,z1:f.thickness/2};
   case 'pad':return {radius:Math.hypot(f.width,f.depth)/2,z0:-f.thickness,z1:0};
   case 'din':return {radius:f.width*.75,z0:-f.thickness-8,z1:0};
   case 'standoff':return {radius:f.outer/2,z0:-f.height,z1:0};
@@ -63,7 +64,8 @@ export function featureGeometry(f:Feature,frame:Frame):FeatureGeometry{
     keep:[],ports:rim(frame,f.size,f.size,t/2)};}
   case 'nut':{const t=f.thickness;
    return {solids:[cyl(frame,s.radius,-t/2,t/2)],holes:[cyl(frame,f.body/2+.2,-t/2-3,t/2+3),...[0,1,2,3].map(i=>{const a=Math.PI/4+i*Math.PI/2;return cyl(at(frame,f.circle/2*Math.cos(a),f.circle/2*Math.sin(a),0),f.hole/2,-t/2-3,t/2+3);})],
-    keep:[],ports:ring(frame,s.radius,[0],8)};}
+    // Ports round the rim and on both faces: the thrust along the screw can leave the flange axially, not only by bending.
+    keep:[],ports:[...ring(frame,s.radius,[0],8),...ring(frame,s.radius-2,[-t/2,t/2],8)]};}
   case 'pad':{const t=f.thickness;
    return {solids:[{kind:'box',frame:at(frame,0,0,-t/2),half:[f.width/2,f.depth/2,t/2],round:1.5}],holes:f.holes.map(([x,y])=>cyl(at(frame,x,y,0),f.hole/2,-t-2,2)),keep:[],ports:rim(frame,f.width,f.depth,-t/2)};}
   case 'din':{

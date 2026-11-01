@@ -14,13 +14,14 @@ import {solve} from './solver.ts';
 import {separation} from '../graph/space.ts';
 import type {Hull} from '../graph/space.ts';
 
-export type DriveSpec={id:string;label:string;kind:'motor'|'hand';size:V;shaft:{diameter:number;length:number};note:string};
+/** `torque`: holding torque in Nm (a hand wheel: what a hand puts on it). */
+export type DriveSpec={id:string;label:string;kind:'motor'|'hand';size:V;shaft:{diameter:number;length:number};torque:number;note:string};
 export const driveCatalog:DriveSpec[]=[
- {id:'nema14',label:'NEMA 14 Schrittmotor',kind:'motor',size:[35.2,35.2,34],shaft:{diameter:5,length:20},note:'Flansch 35,2 mm · Welle 5 mm · ca. 0,18 Nm'},
- {id:'nema17',label:'NEMA 17 Schrittmotor (40 mm)',kind:'motor',size:[42.3,42.3,40],shaft:{diameter:5,length:24},note:'Flansch 42,3 mm · Welle 5 mm · ca. 0,45 Nm'},
- {id:'nema17-48',label:'NEMA 17 Schrittmotor (48 mm)',kind:'motor',size:[42.3,42.3,48],shaft:{diameter:5,length:24},note:'Flansch 42,3 mm · Welle 5 mm · ca. 0,55 Nm'},
- {id:'nema23',label:'NEMA 23 Schrittmotor',kind:'motor',size:[56.4,56.4,56],shaft:{diameter:6.35,length:21},note:'Flansch 56,4 mm · Welle 6,35 mm · ca. 1,3 Nm'},
- {id:'handrad',label:'Handrad mit Lagerbock',kind:'hand',size:[50,50,20],shaft:{diameter:8,length:30},note:'Lagerbock 50 mm · Welle 8 mm · Handrad hinter dem Bock'},
+ {id:'nema14',label:'NEMA 14 Schrittmotor',kind:'motor',size:[35.2,35.2,34],shaft:{diameter:5,length:20},torque:.18,note:'Flansch 35,2 mm · Welle 5 mm · ca. 0,18 Nm'},
+ {id:'nema17',label:'NEMA 17 Schrittmotor (40 mm)',kind:'motor',size:[42.3,42.3,40],shaft:{diameter:5,length:24},torque:.45,note:'Flansch 42,3 mm · Welle 5 mm · ca. 0,45 Nm'},
+ {id:'nema17-48',label:'NEMA 17 Schrittmotor (48 mm)',kind:'motor',size:[42.3,42.3,48],shaft:{diameter:5,length:24},torque:.55,note:'Flansch 42,3 mm · Welle 5 mm · ca. 0,55 Nm'},
+ {id:'nema23',label:'NEMA 23 Schrittmotor',kind:'motor',size:[56.4,56.4,56],shaft:{diameter:6.35,length:21},torque:1.3,note:'Flansch 56,4 mm · Welle 6,35 mm · ca. 1,3 Nm'},
+ {id:'handrad',label:'Handrad mit Lagerbock',kind:'hand',size:[50,50,20],shaft:{diameter:8,length:30},torque:2,note:'Lagerbock 50 mm · Welle 8 mm · Handrad hinter dem Bock'},
 ];
 export const driveSpec=(id:string)=>{const s=driveCatalog.find(x=>x.id===id);if(!s)throw Error(`Antrieb ${id} nicht im Katalog.`);return s;};
 

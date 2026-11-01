@@ -14,6 +14,8 @@ import {jointFrame} from './joints.ts';
 import {curve} from './curves.ts';
 import type {BearingPlan,Seat} from './bearings.ts';
 import {modelPoints} from './bearings.ts';
+import {driveLoads} from './loads.ts';
+import type {DriveLoadSettings} from './loads.ts';
 import type {Anchor,StructureResult,StructureSettings} from '../../structure/generate.ts';
 import {generateStructure} from '../../structure/generate.ts';
 import {featureGeometry,featureSize} from '../../structure/features.ts';
@@ -22,8 +24,9 @@ import {PrimIndex} from '../../structure/sdf.ts';
 import type {Prim} from '../../structure/sdf.ts';
 
 /** `inspect` sees each link's anchors and clearance field before generation (diagnostics). */
-export type LinkSettings={structure:Partial<StructureSettings>;load:number;payload:number;gap:number;region:number;only?:string[];inspect?:(link:string,anchors:Anchor[],clearance:(p:V)=>number,parts:(p:V)=>{link:string;d:number}[])=>void};
-export const defaultLinkSettings:LinkSettings={structure:{},load:20,payload:20,gap:1,region:35};
+/** `drives`: loads from the drives on top of the flat load per anchor (see loads.ts). */
+export type LinkSettings={structure:Partial<StructureSettings>;load:number;payload:number;gap:number;region:number;drives:Partial<DriveLoadSettings>;only?:string[];inspect?:(link:string,anchors:Anchor[],clearance:(p:V)=>number,parts:(p:V)=>{link:string;d:number}[])=>void};
+export const defaultLinkSettings:LinkSettings={structure:{},load:20,payload:20,gap:1,region:35,drives:{}};
 export type LinkStructure={link:string;anchors:Anchor[];result?:StructureResult;error?:string;clearance?:number;checks:{id:string;state:'pass'|'fail'|'warn';message:string}[]};
 
 const toFrame=(p:V):Frame=>({position:p,rotation:[0,0,0,1]});
@@ -139,6 +142,7 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   const pts=modelPoints(m,assets,l,4000).map(p=>inLink(l,toFrame(p)).position),sup=list.filter(a=>a.role==='support').map(a=>a.frame.position);if(!pts.length||!sup.length)continue;
   const c=scale(sup.reduce((x,p)=>add(x,p),[0,0,0] as V),1/sup.length),far=pts.reduce((b,p)=>norm(add(p,scale(c,-1)))>norm(add(b,scale(c,-1)))?p:b,pts[0]),near=pts.filter(p=>norm(add(p,scale(far,-1)))<35),centre=scale(near.reduce((x,p)=>add(x,p),[0,0,0] as V),1/near.length),dir=add(far,scale(c,-1));
   list.push({id:`${l}/werkzeug`,frame:{position:centre,rotation:quatToward(scale(dir,1/norm(dir)))},feature:{kind:'pad',width:40,depth:30,thickness:6,holes:[[-12,0],[12,0]],hole:3.4},role:'load',load:s.payload});}
+ const driveCases=driveLoads(m,drives,plan,s.drives);
  // ---- generation, tips first ----
  const adjacent=(x:string,y:string)=>tree.parent.get(x)&&[tree.parent.get(x)!.a.body,tree.parent.get(x)!.b.body].includes(y)||tree.parent.get(y)&&[tree.parent.get(y)!.a.body,tree.parent.get(y)!.b.body].includes(x);
  const order=[...tree.links].sort((a,b)=>tree.depth.get(b)!-tree.depth.get(a)!),out:LinkStructure[]=[];
@@ -159,8 +163,12 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   if(s.only&&!s.only.includes(l))continue;
   if(s.inspect){const own=indexOf(l,false),others=tree.links.filter(x=>x!==l&&adjacent(l,x)).map(x=>({x,index:indexOf(x),steps:path(m,tree,l,x)}));s.inspect(l,list,clearanceFor(l),p=>[{link:l,d:own.distance(p)},...others.map(o=>({link:o.x,d:sweptDistance(p,o.steps,0,o.index,-1)}))]);continue;}
   if(l===ground)for(const [i,p] of feetFallback){const a=list.find(x=>x.id===`fuss${i+1}`);if(a&&clearanceFor(l)(add(a.frame.position,[0,0,8]))<12)a.frame={...a.frame,position:p};}
+  // Drive loads: one case per drive on this link's seats; the pinion on a rail loads each rail holder in turn.
+  const cases:Record<string,V>[]=[];
+  for(const c of driveCases){const own=Object.fromEntries([...c.forces].filter(([id])=>list.some(a=>a.id===id)));if(Object.keys(own).length)cases.push(own);
+   if(c.rail&&carrierOf(c.rail.link)===l)for(const a of list.filter(x=>x.id.startsWith(`${c.rail!.element}/halter`)))cases.push({[a.id]:rotate(a.frame.rotation,[c.rail.tangential,c.rail.radial,0])});}
   try{
-   const result=await generateStructure({id:l,anchors:list,clearance:clearanceFor(l),settings:{...s.structure,region:s.region}},(stage,f)=>progress?.(l,stage,f));
+   const result=await generateStructure({id:l,anchors:list,clearance:clearanceFor(l),cases,settings:{...s.structure,region:s.region}},(stage,f)=>progress?.(l,stage,f));
    entry.result=result;entry.checks.push(...result.report.checks);
    // Later links avoid this structure: struts and nodes as primitives of this link.
    // The mesh is a little fuller than its struts (blends, node spheres): later links keep an extra millimetre.

@@ -11,16 +11,21 @@ const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Ch
 try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});
  await p.goto('http://localhost:4001/studio');await p.waitForSelector('canvas');await p.evaluate(()=>localStorage.removeItem('mechanics-studio'));await p.reload();await p.waitForSelector('canvas');
  const ready=()=>p.waitForFunction(()=>document.querySelector('#mechanism-preview')?.dataset.state==='ok',{timeout:120000});
+ // Buttons may sit below the fold of the properties panel and be redrawn: click the current one in the page.
+ const press=sel=>p.waitForFunction(sel=>{const b=document.querySelector(sel);if(!b||b.disabled)return false;b.click();return true;},{timeout:20000},sel);
  for(const c of cases.filter(c=>!only.length||only.includes(c.demo))){
   const t0=Date.now();
   await p.click(`[data-demo="${c.demo}"]`);await ready();
   assert.equal(await p.$$eval('.steps li',l=>l.length),7,'seven steps');
-  await p.evaluate(id=>[...document.querySelectorAll('#tree button')].find(b=>b.textContent.includes('⚡ '+id)).click(),c.drive);
-  await p.waitForSelector(`[data-find-gear="${c.drive}"]`);await p.click(`[data-find-gear="${c.drive}"]`);
+  // The tree of the new demo (the old one may still be shown right after the switch).
+  await p.waitForFunction(({id,axis})=>[...document.querySelectorAll('#tree button')].some(b=>b.textContent.includes(`⚡ ${id} → ${axis}`)),{timeout:60000},{id:c.drive,axis:c.axis});
+  await p.evaluate(({id,axis})=>[...document.querySelectorAll('#tree button')].find(b=>b.textContent.includes(`⚡ ${id} → ${axis}`)).click(),{id:c.drive,axis:c.axis});
+  await p.waitForFunction(id=>document.querySelector('#properties')?.textContent.includes('Antrieb '+id),{timeout:20000},c.drive);
+  await p.waitForSelector(`[data-find-gear="${c.drive}"]`);await press(`[data-find-gear="${c.drive}"]`);
   await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#drive-progress')?.dataset.state),{timeout:180000});
   const found=await p.$eval('#drive-progress',e=>e.textContent);assert.ok(await p.$('[data-adopt="0"]'),`${c.demo}: ${found}`);
   const label=await p.$eval('.drive-result span',e=>e.textContent);
-  await p.click('[data-adopt="0"]');
+  await press('[data-adopt="0"]');
   await p.waitForFunction(()=>['ok','hit','error'].includes(document.querySelector('#drive-check')?.dataset.state),{timeout:180000});
   const check=await p.$eval('#drive-check',e=>e.dataset.state+': '+e.textContent);assert.match(check,/^ok/,check);
   await ready();

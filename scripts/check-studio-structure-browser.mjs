@@ -1,5 +1,5 @@
 // Studio steps 6 and 7 on a demo: all trains adopted, bearings planned (every line ✓, parts list),
-// structures generated per link, all checks pass, the step bar is complete, an STL downloads.
+// structures generated per link, all checks pass (strength and stiffness included), the step bar is complete, an STL downloads.
 // Usage: node scripts/check-studio-structure-browser.mjs [robot|cnc|sled]
 import puppeteer from 'puppeteer';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 const demo=process.argv[2]??'robot',drives={robot:['M1','M2','M3'],cnc:['M1','M2','M3'],sled:['M1']}[demo];
@@ -23,6 +23,8 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#structure-progress')?.dataset.state),{timeout:900000});
  const report=await p.$eval('#structure-progress',e=>e.textContent),rows=await p.$$eval('.structure-row',l=>l.map(x=>({link:x.dataset.link,state:x.dataset.state,text:x.textContent})));
  assert.match(report,/Fertig/,report);assert.ok(rows.length>=2&&rows.every(r=>r.state==='ok'),JSON.stringify(rows));
+ // Strong and stiff enough under the design loads: no hint on utilisation or deflection.
+ assert.ok(rows.every(r=>!/Größte (Auslastung|Verformung)/.test(r.text)),JSON.stringify(rows.map(r=>r.text)));
  assert.deepEqual(await p.$$eval('.steps li',l=>l.map(x=>x.dataset.state)),Array(7).fill('done'),'alle Schritte erledigt');
  // Sliders still move the arm with its structures.
  const first=await p.$eval('#axes input[type=range]',r=>r.dataset.axis);

@@ -1,9 +1,13 @@
 // Per-link sizing diagnosis: utilisation, deflection, strut radii (how many sit at their room cap).
 import {adopted} from './adopted.mjs';
+import fs from 'node:fs';
+import {demos} from '../../src/mechanics/demos.ts';
 import {planBearings,applyBearings} from '../../src/mechanics/kinematics/bearings.ts';
 import {linkStructures} from '../../src/mechanics/kinematics/link-structure.ts';
 const name=process.argv[2]??'robot',settings=JSON.parse(process.argv[3]??'{}');
-const {mechanism:m,drives,asset}=await adopted(name),assets=id=>id===asset.id?asset:undefined,plan=planBearings(m,drives,assets);applyBearings(m,plan);
+// `name` is a demo, or a Studio document written by dump-studio.mjs (demo mechanism with the trains adopted there).
+const fromStudio=async file=>{const doc=JSON.parse(fs.readFileSync(file,'utf8')),x=doc.mechanisms.find(y=>y.drives?.length),demo=Object.values(demos).map(f=>f()).find(d=>d.label===x.label);return {mechanism:x.mechanism,drives:x.drives,asset:demo.asset};};
+const {mechanism:m,drives,asset}=name.endsWith('.json')?await fromStudio(name):await adopted(name),assets=id=>id===asset.id?asset:undefined,plan=planBearings(m,drives,assets);applyBearings(m,plan);
 const t0=performance.now();
 const times={};let lastKey='',lastT=performance.now();
 const links=await linkStructures(m,drives,plan,assets,settings,(l,st)=>{const k=l+' '+st.replace(/\d+$/,'');const now=performance.now();if(lastKey)times[lastKey]=(times[lastKey]??0)+(now-lastT);lastKey=k;lastT=now;});
