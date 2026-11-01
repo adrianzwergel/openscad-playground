@@ -1,8 +1,9 @@
 // The drive search uses what the Studio's catalog leaves to it: switched-off kinds are not used, locked parts never
-// enter a pair; LEGO parts are released like all others by default and stay out when locked.
+// enter a pair; LEGO parts are released like all others by default and stay out when locked; a sled train whose rail
+// would lie behind the track is recognised (the Studio's search drops it).
 import assert from 'node:assert/strict';
 import {demos} from '../../src/mechanics/demos.ts';
-import {driveTask,placeMotor,heldTrains,modelAxes} from '../../src/mechanics/kinematics/drive.ts';
+import {driveTask,placeMotor,heldTrains,modelAxes,pinionEnd} from '../../src/mechanics/kinematics/drive.ts';
 import {route} from '../../src/mechanics/kinematics/search/route.ts';
 import {solve} from '../../src/mechanics/kinematics/solver.ts';
 import {defaultCatalog,partAllowed,partKey} from '../../src/mechanics/graph/catalog.ts';
@@ -24,4 +25,11 @@ const search=async catalog=>{const base=defaultCatalog(),stock=new Map(base.part
 // Spur gears and belts switched off: neither rule is searched.
 {const c=defaultCatalog();c.excludedRules=['external-spur','lego-spur','gt2-belt'];const r=await search(c);assert.ok(!r.rules.includes('external-spur')&&!r.rules.includes('gt2-belt'),'abgewählte Gruppen nicht in der Suche');
  assert.ok(r.parts.every(k=>!k.startsWith('["spur"')&&!k.startsWith('["gt2-pulley"')),'keine Stirnräder und Riemen');}
+// Sled: a path drive's rail must lie on the wagon's side of the track; trains that put it behind the track are told.
+{const sd=demos.sled(),sm=structuredClone(sd.mechanism),sdr=structuredClone(sd.drives);for(const x of sdr)placeMotor(sm,x);
+ const sax=modelAxes(sm,sdr),sv=Object.fromEntries(sax.map(j=>[j.id,sm.input.kind==='coordinate'&&sm.input.joint===j.id?sm.range.from:0]));
+ const sref=await solve({...structuredClone(sm),input:{kind:'none'},output:{kind:'none'},range:{from:0,to:0,samples:1}},{yield:false,fixed:Object.fromEntries(sax.map(j=>[j.id,[sv[j.id]]]))});
+ const task=driveTask(sm,sdr,sdr[0],id=>id===sd.asset.id?sd.asset:undefined,sref.poses[0].bodies,sv,{catalog:{excludedRules:[],lockedParts:[]}}),r=await route(task.request,task.options);
+ const sides=r.solutions.map(x=>({side:pinionEnd(x.mechanism,task.info.rail).wagonSide,stages:x.chain.stages.length}));
+ assert.ok(sides.some(x=>x.side)&&sides.some(x=>!x.side),'Schlitten: Schiene teils auf der Wagenseite, teils dahinter');assert.ok(sides.filter(x=>x.stages===3).every(x=>x.side),'die dreistufigen Getriebe liegen auf der Wagenseite');}
 console.log('Antriebssuche folgt dem Katalog: abgewählte Gruppen und gesperrte Teile bleiben draußen, LEGO wie alle anderen Teile.');

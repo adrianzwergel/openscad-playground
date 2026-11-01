@@ -126,7 +126,8 @@ function linkBoxes(m:Mechanism,assets:Assets,frames:Record<string,Frame>,into:Fr
 function motorBox(m:Mechanism,d:Drive,frames:Record<string,Frame>,into:Frame){const spec=driveSpec(d.spec),carrier=frames[d.body];if(!carrier)return undefined;return {id:'motor:'+d.id,frame:compose(compose(compose(inverse(into),carrier),d.frame),{position:[0,0,-spec.size[2]/2],rotation:[0,0,0,1]}),size:[...spec.size] as V};}
 
 // ---------- search task ----------
-export type TaskInfo={drive:string;kind:'rotation'|'translation'|'path';carrier:string;driven:string;outPerAxis:number;reference:number;lo:number;hi:number;frames:Record<string,Frame>;pinion?:{module:number;teeth:number;radius:number}};
+/** `rail`: for a path drive, what `pinionEnd` needs to judge a found train. */
+export type TaskInfo={rail?:{local:Frame;motor:Frame;size:V};drive:string;kind:'rotation'|'translation'|'path';carrier:string;driven:string;outPerAxis:number;reference:number;lo:number;hi:number;frames:Record<string,Frame>;pinion?:{module:number;teeth:number;radius:number}};
 export type DriveTask={request:RouteRequest;options:RouteOptions;info:TaskInfo};
 const PINION={module:2,teeth:20,radius:20};
 /** The route request of a drive in the frame of its carrying link at the given pose. */
@@ -161,9 +162,28 @@ export function driveTask(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frame
  const rules=['external-spur','gt2-belt','bevel-mesh','worm-mesh',...(kind==='translation'?['screw-nut','rack-drive']:[]),...(o.catalog?['lego-spur','lego-bevel-90','lego-worm']:[])].filter(id=>!o.catalog?.excludedRules.includes(id));
  const request:RouteRequest={input:{kind:'frame',body:'s0',local:identity(),target:d.frame,constraint:'frame'},output,environment:{obstacles,margin:1,terminals:'given'},...(kind==='translation'?{motion:'translation' as const,stroke:Math.min(400,hi-lo)}:{})};
  const options:RouteOptions&{lockedParts?:string[]}={target,tolerance:d.tolerance,maxStages:d.maxStages??3,budget:o.budget??(o.catalog?15000:6000),seed:o.seed??1,rules,axialGap:1,...(o.catalog?.lockedParts.length?{lockedParts:o.catalog.lockedParts}:{})};
- return {request,options,info:{drive:d.id,kind,carrier:d.body,driven,outPerAxis,reference,lo,hi,frames,...(pinion?{pinion}:{})}};
+ return {request,options,info:{drive:d.id,kind,carrier:d.body,driven,outPerAxis,reference,lo,hi,frames,...(pinion?{pinion,rail:{local:c.local,motor:d.frame,size:driveSpec(d.spec).size}}:{})}};
 }
 
+// ---------- adopting a found train ----------
+/** A path drive's pinion goes to an end of the found chain's last shaft (beside its outermost part); its rail lies at
+ * that height across the path plane. The rail must lie on the wagon's side of the path plane (where its motor sits):
+ * on the other side the wagon reaches round the track and the rail's holders cannot get to it (`wagonSide`). Of the
+ * ends on that side the one where the rail keeps most room from the wagon's other wheels and motor body is taken
+ * (`room`, mm); ties: the end away from the motor. */
+export function pinionEnd(found:Mechanism,rail:{local:Frame;motor:Frame;size:V}){
+ const shafts=found.bodies.filter(b=>/^s\d+$/.test(b.id)).map(b=>Number(b.id.slice(1))),lastId='s'+Math.max(...shafts),frameC=(id:string)=>found.bodies.find(b=>b.id===id)!.frame;
+ const lastPart=found.elements.filter(e=>e.mounts[0].body===lastId||e.mounts[0].body===`${lastId}/rotor`).sort((a,b)=>a.mounts[0].pose.position[2]-b.mounts[0].pose.position[2]);
+ const zs=[lastPart[0].mounts[0].pose.position[2]+lastPart[0].envelope.min-1-5,lastPart[lastPart.length-1].mounts[0].pose.position[2]+lastPart[lastPart.length-1].envelope.max+1+5];
+ const pz=(p:V)=>compose(inverse(rail.local),{position:p,rotation:[0,0,0,1]}).position[2],normal=rotate(rail.local.rotation,[0,0,1]),items:[number,number][]=[];
+ for(const e of found.elements){const k=e.mounts[0].body.replace(/\/rotor$/,'');if(k===lastId||!/^s\d+$/.test(k))continue;const f=compose(compose(frameC(k),e.mounts[0].pose),shift((e.envelope.min+e.envelope.max)/2)),c=pz(f.position),cos=Math.abs(dot(rotate(f.rotation,[0,0,1]),normal)),r=cos*(e.envelope.max-e.envelope.min)/2+Math.sqrt(Math.max(0,1-cos*cos))*e.envelope.radius;items.push([c-r,c+r]);}
+ {const zsMotor=[0,1].flatMap(a=>[0,1].flatMap(b=>[0,1].map(c=>pz(compose(rail.motor,{position:[(a-.5)*rail.size[0],(b-.5)*rail.size[1],-c*rail.size[2]],rotation:[0,0,0,1]}).position))));items.push([Math.min(...zsMotor),Math.max(...zsMotor)]);}
+ const room=(z:number)=>{const zr=pz(compose(frameC(lastId),shift(z)).position);return Math.min(...items.map(([a,b])=>Math.max(0,a-(zr+6),(zr-6)-b)));};
+ const motorAlong=compose(inverse(frameC(lastId)),rail.motor).position[2],far=Math.abs(zs[0]-motorAlong)>=Math.abs(zs[1]-motorAlong)?0:1,r=[room(zs[0]),room(zs[1])];
+ const motorZ=pz(compose(rail.motor,shift(-rail.size[2]/2)).position),side=(z:number)=>Math.sign(pz(compose(frameC(lastId),shift(z)).position))===Math.sign(motorZ)||Math.abs(motorZ)<1,ok=[side(zs[0]),side(zs[1])];
+ const score=(k:number)=>(ok[k]?1000:0)+r[k],at=Math.abs(score(0)-score(1))>1?(score(0)>score(1)?0:1):far;
+ return {z:zs[at],room:r[at],wagonSide:ok[at]};
+}
 // ---------- adopting a found train ----------
 const shift=(z:number):Frame=>({position:[0,0,z],rotation:[0,0,0,1]});
 function spurElement(id:string,body:string,pose:Frame,module:number,teeth:number,width:number):Element{
@@ -217,21 +237,10 @@ export async function adoptGear(m:Mechanism,d:Drive,found:Mechanism,info:TaskInf
  }
  if(keepLast){
   // Path: a pinion beside the last part rolls on a rail along the path.
-  const pin=info.pinion!,lastPart=added.filter(e=>e.mounts[0].body===`${d.id}/${lastId}`).sort((a,b)=>a.mounts[0].pose.position[2]-b.mounts[0].pose.position[2]);
-  const zs=[lastPart[0].mounts[0].pose.position[2]+lastPart[0].envelope.min-1-5,lastPart[lastPart.length-1].mounts[0].pose.position[2]+lastPart[lastPart.length-1].envelope.max+1+5];
+  const pin=info.pinion!;
   // Height above the path plane (z of the path frame = plane normal of a planar path).
   const pathFrame=(z:number)=>compose(inverse(j.b.local),compose(frameC(lastId),shift(z))).position[2];
-  // The pinion goes to the end of the last shaft where the rail keeps most room from what the wagon carries (the other
-  // wheels and the motor body, across the path plane): the rail's holders must reach it from outside. Ties: the end
-  // away from the motor.
-  const pz=(p:V)=>compose(inverse(j.b.local),{position:p,rotation:[0,0,0,1]}).position[2],spec=driveSpec(d.spec),items:[number,number][]=[];
-  // A wheel's extent across the path plane: half its width along its axis, its radius across it.
-  const normal=rotate(j.b.local.rotation,[0,0,1]);
-  for(const e of added){const k=e.mounts[0].body.slice(d.id.length+1);if(k===lastId||!/^s\d+$/.test(k))continue;const f=compose(compose(frameC(k),e.mounts[0].pose),shift((e.envelope.min+e.envelope.max)/2)),c=pz(f.position),cos=Math.abs(dot(rotate(f.rotation,[0,0,1]),normal)),r=cos*(e.envelope.max-e.envelope.min)/2+Math.sqrt(Math.max(0,1-cos*cos))*e.envelope.radius;items.push([c-r,c+r]);}
-  {const zsMotor=[0,1].flatMap(a=>[0,1].flatMap(b=>[0,1].map(c=>pz(compose(d.frame,{position:[(a-.5)*spec.size[0],(b-.5)*spec.size[1],-c*spec.size[2]],rotation:[0,0,0,1]}).position))));items.push([Math.min(...zsMotor),Math.max(...zsMotor)]);}
-  const room=(z:number)=>{const zr=pathFrame(z);return Math.min(...items.map(([a,b])=>Math.max(0,a-(zr+6),(zr-6)-b)));};
-  const motorAlong=compose(inverse(frameC(lastId)),d.frame).position[2],far=Math.abs(zs[0]-motorAlong)>=Math.abs(zs[1]-motorAlong)?0:1,r0=room(zs[0]),r1=room(zs[1]);
-  const z=Math.abs(r0-r1)>1?(r0>r1?zs[0]:zs[1]):zs[far],ritzel=spurElement(`${d.id}/ritzel`,`${d.id}/${lastId}`,shift(z),pin.module,pin.teeth,10);
+  const {z}=pinionEnd(found,{local:j.b.local,motor:d.frame,size:driveSpec(d.spec).size}),ritzel=spurElement(`${d.id}/ritzel`,`${d.id}/${lastId}`,shift(z),pin.module,pin.teeth,10);
   // Rail on the path's a-side in its frame; z along the path plane normal at the pinion's height.
   const zr=pathFrame(z);
   if(j.joint.kind!=='path')throw Error('Pfad erwartet.');

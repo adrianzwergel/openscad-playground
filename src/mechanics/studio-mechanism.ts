@@ -301,7 +301,7 @@ export class MechanismEditor{
     if(data.type==='done'){w.terminate();search.state='done';search.text=search.results.length?`${search.results.length} Getriebe gefunden.`:'Kein Getriebe gefunden. Motor näher an die Achse, Ziel oder Stufenzahl ändern, oder Sperrzonen prüfen.';}
     if(data.type==='error'){w.terminate();search.state='error';search.text='Suche fehlgeschlagen: '+data.message;}
     this.renderSearch();};
-   w.postMessage({request:task.request,options:task.options});
+   w.postMessage({request:task.request,options:task.options,rail:task.info.rail});
   }catch(e){this.host.status('Suche nicht möglich: '+(e instanceof Error?e.message:e));}
   this.renderProperties();}
  private ratioText(kind:TaskInfo['kind'],ratio:number){return kind==='rotation'?`1 : ${ratio.toFixed(2)}`:kind==='translation'?`${ratio.toFixed(2)} mm/U`:`${(2*Math.PI*20/ratio).toFixed(2)} mm/U`;}
