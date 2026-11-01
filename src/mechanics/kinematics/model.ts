@@ -49,8 +49,11 @@ export type Target=
  |{kind:'ratio';value:number;tolerance:number}
  |{kind:'stroke-per-turn';value:number;tolerance:number}
  |{kind:'profile';samples:{input:number;output:number}[];tolerance:number};
-export type Region={id:string;frame:Frame;size:V};
-export type Environment={bounds?:Region;obstacles:Region[];margin:number};
+/** `role: 'output'` marks space of the driven part itself: what the chain mounts on it may overlap it.
+ * `role: 'carrier'` marks the part that carries the train: shafts may pass into it (their bearing seats), wheels not. */
+export type Region={id:string;frame:Frame;size:V;role?:'output'|'carrier'};
+/** `terminals: 'given'`: input and output shafts exist already (motor shaft, joint axis) and pass through obstacles. */
+export type Environment={bounds?:Region;obstacles:Region[];margin:number;terminals?:'given'};
 export type Mechanism={format:'kinematics-1';parameters:Parameter[];bodies:Body[];elements:Element[];joints:JointRelation[];contacts:Contact[];patterns:Pattern[];input:Terminal;output:Terminal;range:Range;target?:Target;environment?:Environment};
 
 export const jointDofs=(j:Joint)=>j.kind==='fixed'?0:j.kind==='revolute'||j.kind==='prismatic'||j.kind==='screw'?1:j.kind==='cylindrical'?2:j.kind==='path'?(j.roll==='free'?2:1):3;

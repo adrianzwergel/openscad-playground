@@ -6,15 +6,17 @@ import {parseProject} from './model.ts';
 import type {Mechanism} from './graph/contracts.ts';
 import type {Mechanism as Kinematics} from './kinematics/model.ts';
 import {parseMechanism as parseKinematics} from './kinematics/model.ts';
+import type {Drive} from './kinematics/drive.ts';
+import {parseDrives} from './kinematics/drive.ts';
 /** `mechanisms` are kinematics-1 documents edited in the Studio (stored raw: parameters may be expressions). */
-export type StudioDocument={version:1;catalog?:SearchCatalog;assemblies:{id:string;graph:Mechanism;adopted?:boolean}[];mechanisms?:{id:string;label:string;mechanism:Kinematics}[];routes:{id:string;assembly:string;source:'input';target:'output';ratio?:number}[]};
+export type StudioDocument={version:1;catalog?:SearchCatalog;assemblies:{id:string;graph:Mechanism;adopted?:boolean}[];mechanisms?:{id:string;label:string;mechanism:Kinematics;drives?:Drive[]}[];routes:{id:string;assembly:string;source:'input';target:'output';ratio?:number}[]};
 const id=(x:unknown)=>{if(typeof x!=='string'||! /^[a-zA-Z0-9_-]{1,80}$/.test(x))throw Error('Ungültige Studio-ID');return x;};
 export function parseStudio(value:unknown):StudioDocument{
  const p=value as StudioDocument;if(!p||p.version!==1||!Array.isArray(p.assemblies)||p.assemblies.length<1||p.assemblies.length>16||!Array.isArray(p.routes)||p.routes.length<1||p.routes.length>32)throw Error('Ungültiges Studio-Projekt');
  const assemblies=p.assemblies.map(a=>{if(!a||a.adopted!==undefined&&typeof a.adopted!=='boolean')throw Error('Ungültige Baugruppe');const graph=parseMechanism(a.graph);if(a.adopted&&(!resolveMechanism(graph).valid||!assessConstruction(graph,1,false).valid))throw Error('Übernommene Baugruppe ist nicht gültig');return {id:id(a.id),graph,...(a.adopted===undefined?{}:{adopted:a.adopted})};});
  const routes=p.routes.map(r=>{if(!r||r.source!=='input'||r.target!=='output'||!assemblies.some(a=>a.id===r.assembly)||r.ratio!==undefined&&(!Number.isFinite(r.ratio)||r.ratio<=0||r.ratio>1000))throw Error('Ungültige Route');return {id:id(r.id),assembly:id(r.assembly),source:'input' as const,target:'output' as const,...(r.ratio===undefined?{}:{ratio:r.ratio})};});
  if(p.mechanisms!==undefined&&(!Array.isArray(p.mechanisms)||p.mechanisms.length>16))throw Error('Ungültige Mechanismenliste');
- const mechanisms=p.mechanisms?.map(m=>{if(!m||typeof m.label!=='string'||!m.label.trim()||m.label.length>80)throw Error('Mechanismus braucht einen Namen');try{parseKinematics(structuredClone(m.mechanism));}catch(e){throw Error(`Mechanismus ${m.label}: ${e instanceof Error?e.message:e}`);}return {id:id(m.id),label:m.label,mechanism:structuredClone(m.mechanism)};});
+ const mechanisms=p.mechanisms?.map(m=>{if(!m||typeof m.label!=='string'||!m.label.trim()||m.label.length>80)throw Error('Mechanismus braucht einen Namen');let drives:Drive[]=[];try{drives=parseDrives(m.drives,parseKinematics(structuredClone(m.mechanism)));}catch(e){throw Error(`Mechanismus ${m.label}: ${e instanceof Error?e.message:e}`);}return {id:id(m.id),label:m.label,mechanism:structuredClone(m.mechanism),...(drives.length?{drives}:{})};});
  if(mechanisms&&new Set(mechanisms.map(m=>m.id)).size!==mechanisms.length)throw Error('Doppelte Studio-ID');
  if(new Set(assemblies.map(a=>a.id)).size!==assemblies.length||new Set(routes.map(r=>r.id)).size!==routes.length)throw Error('Doppelte Studio-ID');return {version:1,assemblies,routes,...(mechanisms?{mechanisms}:{}),...(p.catalog===undefined?{}:{catalog:parseCatalog(p.catalog)})};
 }

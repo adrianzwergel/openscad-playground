@@ -800,3 +800,49 @@ Alle Phasen sind umgesetzt; die Abnahmetests liegen in `scripts/kinematics/`.
 - **Hüllkurve räumlich:** Welches Netz-Boolean im Worker läuft (manifold-wasm
   oder OpenSCAD-Union) wird in Phase 4 entschieden; die Schnittstelle ist in
   beiden Fällen dieselbe.
+
+## 15. Antriebe am Zielmechanismus
+
+Ein Zielmechanismus aus einem 3D-Modell (Glieder, Achsen, Regler) bekommt je
+Achse eine Antriebsquelle; die Routensuche findet das Getriebe dazwischen
+(`kinematics/drive.ts`, Studio-Schritt ⑤ „Antrieb“).
+
+- **Katalog:** NEMA 14, NEMA 17 (40/48 mm), NEMA 23, Handrad mit Lagerbock.
+  Ein Antrieb (`Drive`) sitzt auf einem Glied: Flansch-Rahmen, z = Welle. Er
+  wird als Körper mit festem Gelenk am Glied geführt (`M1/halter`).
+- **Aufgabe:** Gesucht wird im Rahmen des tragenden Glieds; dort stehen
+  Motorwelle und Achse still. Eingang = Flansch (`frame`), Ausgang = Achslinie
+  (`axis`). Der Zielpunkt wird entlang der Achse auf Flanschhöhe gelegt (nur die
+  Linie zählt, so starten die Seeds außerhalb des Modells). Zeigt die
+  Motorwelle gegen die Achsrichtung, wird das Ziel gedreht und die Rate negiert.
+  - Drehachse: Ziel = Achse, Verhältnis = Untersetzung.
+  - Linearachse: `translation`, Ziel = mm je Motorumdrehung (Spindel, Zahnstange).
+  - Pfad: Antrieb sitzt auf dem Wagen; Ziel = Ritzelachse (z20 m2) auf der
+    Pfadnormalen durch den Wagenpunkt, Verhältnis = 2πr / (mm/U). Das Ritzel
+    rollt auf einer erzeugten Zahnschiene entlang des Pfads.
+- **Sperrzonen:** Teilehüllen aller Glieder in der Bezugsstellung (kompakte
+  Teile ein Quader, lange Teile je 40-mm-Zelle) plus Motorquader, nur nahe der
+  Strecke Motor–Achse. Neue Rollen im Vertrag (`Region.role`):
+  `output` – Raum des getriebenen Glieds, darf von dem überlappt werden, was
+  darauf sitzt; `carrier` – tragendes Glied, Wellen dürfen hinein (Lagerstellen),
+  Räder nicht. `Environment.terminals: 'given'`: Motorwelle und Achse gibt es
+  schon, ihre Wellenhüllen sind von Sperrzonen ausgenommen.
+- **Übernahme:** Die Kette wird umbenannt (`M1/…`) eingefügt; die letzte Welle
+  ist das getriebene Glied (beim Pfad bleibt sie Wagen-Welle mit Ritzel).
+  Spindeln decken den Hub, die Mutter sitzt am Achspunkt; Zahnstangen decken
+  den Hub. Bohrungen auf der Motorwelle folgen dem Wellendurchmesser.
+- **Raten:** Jede Getriebekoordinate (Drehgelenke und Schrauben) folgt der Achse
+  linear: `offset + rate·(q − reference)`. Raten aus einer kurzen Lösung der
+  gefundenen Kette, beim Pfad aus dem Rollkontakt gemessen; Offsets aus einer
+  Lösung der Bezugsstellung (der Spindelwinkel folgt aus der Mutterlage). Die
+  Regler halten so alle Getriebe analytisch; „Bewegung berechnen“ lässt die
+  Getriebe des Eingangs frei und prüft sie mit dem Löser.
+- **Kollisionen beim Verfahren:** 13 Stellungen der Achse; Räder als Achteck
+  (zwei um 45° versetzte Quader), Modellteile als Dreieckshüllen. Ausgenommen
+  sind Teile auf demselben Glied.
+- **Abnahme:** `scripts/kinematics/check-drive.mjs` (Suche, Übernahme, Lauf über
+  den Bereich, Übersetzung, Raten, Kollisionen für Roboterarm, CNC-Portal,
+  Schlitten) und `scripts/check-studio-drive-browser.mjs`.
+
+Offen: Kollisionen zwischen Gliedern selbst, Stellungen anderer Achsen beim
+Verfahren, Motordrehzahl/-moment als Ziel, Bauraum-Markierung im Modell.

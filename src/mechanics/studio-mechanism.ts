@@ -17,12 +17,14 @@ import type {Asset} from './model-import';
 import {fitCylinder,fitEdge,fitTwoPoints} from './kinematics/axis-fit';
 import type {AxisFit} from './kinematics/axis-fit';
 import {solve} from './kinematics/solver';
-import {demoRobot} from './demo-robot';
+import {demos} from './demos';
+import type {Drive,TaskInfo,Collision} from './kinematics/drive';
+import {driveCatalog,driveSpec,placeMotor,removeGear,removeDrive,heldTrains,modelAxes,owned,driveTask,adoptGear,sweepCollisions,faceNormal,standOn,parallelTo,linearAxis,toward} from './kinematics/drive';
 import {quaternionFromBasis,cross as crossV,unit} from './kinematics/math';
 import {KinematicsView,linkColor} from './kinematics-view';
 import type {MotionSolution} from './kinematics-view';
 
-type Item='mechanism'|'model'|'axis-new'|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
+type Item='mechanism'|'model'|'axis-new'|'drive-new'|`drive:${string}`|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
 export type EditorHost={doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
@@ -40,17 +42,23 @@ export class MechanismEditor{
  /** Assignment brush: clicked parts go to this link. */
  private brush='';
  /** Axis picking: the tool and the joint draft it fills. */
- private tool?:{mode:'cylinder'|'edge'|'points';first?:[number,number,number];joint?:string};
+ private tool?:{mode:'cylinder'|'edge'|'points'|'motor';first?:[number,number,number];joint?:string;drive?:string};
+ /** Gear search of one drive and its found trains (in carrier coordinates); collision sweeps per drive. */
+ private search?:{drive:string;worker:Worker;info:TaskInfo;results:{mechanism:Mechanism;ratio:number;summary:{elements:number;length:number};label:string}[];state:'running'|'done'|'error';text:string};
+ private sweeps:Record<string,{state:'running'|'ok'|'hit'|'error';text:string;hits?:Collision[]}>={};
+ private newDrive={axis:'',spec:'nema17'};
  private draft={a:'ground',b:'',kind:'revolute' as 'revolute'|'prismatic'};
  private lastFit?:AxisFit;private selectedPart='';private worker?:Worker;private preview?:MotionSolution;private previewError='';
  constructor(private host:EditorHost){}
  get active(){return !!this.activeId&&!!this.entry();}
  private entry(){return this.host.doc().mechanisms?.find(m=>m.id===this.activeId);}
+ private drives(){return this.entry()?.drives??[];}
  mechanism(){return this.entry()?.mechanism;}
  private assetsTried=new Set<string>();
  enter(id:string){if(this.activeId!==id){this.axisValues={};this.tool=undefined;this.brush='';}this.activeId=id;this.item=this.mechanism()?.bodies.some(b=>b.display?.kind==='mesh')?'model':'mechanism';this.fitNext=true;this.refresh();}
- exit(){this.activeId=undefined;this.axisValues={};this.tool=undefined;this.brush='';this.worker?.terminate();this.worker=undefined;this.view.clear();this.clearHandles();this.preview=undefined;}
- motionSource(){const e=this.entry();return e?{label:e.label,mechanism:e.mechanism}:undefined;}
+ exit(){this.search?.worker.terminate();this.search=undefined;this.sweeps={};this.activeId=undefined;this.axisValues={};this.tool=undefined;this.brush='';this.worker?.terminate();this.worker=undefined;this.view.clear();this.clearHandles();this.preview=undefined;}
+ /** For a run over the range: the input's own trains turn with it, everything else is held. */
+ motionSource(){const e=this.entry();if(!e)return undefined;const m=e.mechanism,input=m.input.kind==='coordinate'?m.input.joint:undefined;return {label:e.label,mechanism:m,fixed:this.held(m,this.values(m),input)};}
 
  // ---------- preview ----------
  refresh(){
@@ -94,6 +102,9 @@ export class MechanismEditor{
  /** A picked model part: axis tool, assignment brush or selection. Also the entry point for tests. */
  pickPart(body:string,asset:string,part:string,local:[number,number,number]){
   const m=this.mechanism();if(!m)return;
+  if(this.tool?.mode==='motor'){const positions=this.assets.get(asset)?.parts.find(p=>p.id===part)?.positions,id=this.tool.drive!;if(!positions)return;this.tool=undefined;
+   const b=m.bodies.find(x=>x.id===body)!,normal=faceNormal(positions,local),world=standOn(this.drives().find(d=>d.id===id)!,local,normal),frame=compose(inverse(b.frame),world);
+   this.editDrive(id,`Motor ${id} auf ${body} gesetzt`,(d,x)=>{d.body=body;d.frame=frame;removeGear(x,d);placeMotor(x,d);});this.renderProperties();return;}
   if(this.tool){const positions=this.assets.get(asset)?.parts.find(p=>p.id===part)?.positions;if(!positions)return;
    try{let fit:AxisFit|undefined;
     if(this.tool.mode==='cylinder')fit=fitCylinder(positions,local);
@@ -129,10 +140,16 @@ export class MechanismEditor{
  private axes(m:Mechanism){
   const movable=m.joints.filter(j=>!j.id.startsWith('halt-')&&['revolute','prismatic','cylindrical','screw','path'].includes(j.joint.kind));
   // A model's axes are each driven; in other mechanisms only the input drives, the rest follows.
-  return m.bodies.some(b=>b.display?.kind==='mesh')?movable:movable.filter(j=>m.input.kind==='coordinate'&&m.input.joint===j.id);}
+  return m.bodies.some(b=>b.display?.kind==='mesh')?modelAxes(m,this.drives()):movable.filter(j=>m.input.kind==='coordinate'&&m.input.joint===j.id);}
+ /** Current value of every axis (the input from the range start or its slider). */
+ private values(m:Mechanism,over:Record<string,number>={}){const out:Record<string,number>={};for(const j of this.axes(m))out[j.id]=m.input.kind==='coordinate'&&m.input.joint===j.id?this.inputValue(m):this.axisValues[j.id]??this.axisDefault(m,j);return {...out,...over};}
+ /** Held coordinates: every axis but the input (swept by the range) and every adopted train; `free` leaves one axis and its trains to the solver. */
+ private held(m:Mechanism,values:Record<string,number>,free?:string){const input=m.input.kind==='coordinate'?m.input.joint:undefined,out:Record<string,number[]>={};for(const j of this.axes(m))if(j.id!==input&&j.id!==free)out[j.id]=[values[j.id]];return {...out,...heldTrains(this.drives().filter(d=>d.axis!==free),values)};}
+ /** The mechanism solved at given axis values (main thread). */
+ private async poseAt(m:Mechanism,values:Record<string,number>){const v=m.input.kind==='coordinate'?values[m.input.joint]??m.range.from:m.range.from;return solve({...structuredClone(m),range:{from:v,to:v,samples:1}},{yield:false,fixed:this.held(m,values),iterations:80});}
  private axisDefault(m:Mechanism,j:JointRelation){const deg=j.joint.kind==='revolute'||j.joint.kind==='screw',lo=j.limits?.min??(deg?-180:-200),hi=j.limits?.max??(deg?180:200);return m.input.kind==='coordinate'&&m.input.joint===j.id?m.range.from:Math.max(lo,Math.min(hi,0));}
  /** Every axis is driven by its own slider, so every axis is held (the input through the range). */
- private fixed(m:Mechanism){const out:Record<string,number[]>={};for(const j of this.axes(m))if(!(m.input.kind==='coordinate'&&m.input.joint===j.id))out[j.id]=[this.axisValues[j.id]??this.axisDefault(m,j)];return out;}
+ private fixed(m:Mechanism){return this.held(m,this.values(m));}
  /** Sliders: one per axis; moving one re-solves the pose in place. */
  renderAxes(root=document.getElementById('axes')){
   if(!root)return;root.replaceChildren();const m=this.mechanism();root.hidden=!m;if(!m)return;
@@ -143,12 +160,16 @@ export class MechanismEditor{
    const slider=el('input',{type:'range',min:String(lo),max:String(hi),step:String((hi-lo)/720),value:String(value)});slider.dataset.axis=j.id;slider.setAttribute('aria-label','Achse '+j.id);const out=el('output',{textContent:`${value.toFixed(1)} ${unitLabel}`});
    slider.oninput=()=>{const v=Number(slider.value);this.axisValues[j.id]=v;out.textContent=`${v.toFixed(1)} ${unitLabel}`;this.livePose();};
    root.append(el('label',{className:'axis-row'},el('span',{textContent:j.id}),slider,out));}
-  const reset=el('button',{textContent:'Alle Achsen auf Null'});reset.onclick=()=>{this.axisValues={};this.renderAxes();this.livePose();};root.append(reset,el('p',{id:'axes-report',className:'muted'}));
+  const reset=el('button',{textContent:'Alle Achsen auf Null'});reset.onclick=()=>{this.axisValues={};this.renderAxes();this.livePose();};root.append(reset,el('p',{id:'axes-report',className:'muted'}),el('p',{id:'axes-motors',className:'muted'}));this.renderMotors(m);
  }
+ /** Motor turns from the reference, for every drive with a train: shows the reduction while sliding. */
+ private renderMotors(m:Mechanism){const p=document.getElementById('axes-motors');if(!p)return;const values=this.values(m),turns:Record<string,number>={};
+  for(const d of this.drives())if(d.gear){const id=`${d.id}/ground/s0`,rate=d.gear.rates[id];if(rate!==undefined&&values[d.axis]!==undefined)turns[d.id]=Math.round(rate*(values[d.axis]-d.gear.reference)/360*100)/100;}
+  p.dataset.motors=JSON.stringify(turns);p.textContent=Object.keys(turns).length?'Motoren: '+Object.entries(turns).map(([id,t])=>`${id} ${t>=0?'+':''}${t.toFixed(2)} U`).join(' · '):'';}
  private liveToken=0;
  private livePose(){const token=++this.liveToken;requestAnimationFrame(async()=>{if(token!==this.liveToken)return;const m=this.mechanism();if(!m)return;
   try{const s=await solve({...structuredClone(m),range:{from:this.inputValue(m),to:this.inputValue(m),samples:1}},{yield:false,fixed:this.fixed(m),iterations:60});if(token!==this.liveToken)return;
-   this.view.setFrames(s.poses[0].bodies);const open=s.checks.find(c=>c.id==='closure'&&c.state==='fail'),r=document.getElementById('axes-report');if(r){r.textContent=open?'Geht in dieser Stellung nicht auf: '+open.message:'Stellung gelöst.';r.dataset.state=open?'open':'ok';r.dataset.frames=JSON.stringify(Object.fromEntries(Object.entries(s.poses[0].bodies).map(([k,f])=>[k,f.position.map(n=>Math.round(n*100)/100)])));}}
+   this.view.setFrames(s.poses[0].bodies);this.renderMotors(m);const open=s.checks.find(c=>c.id==='closure'&&c.state==='fail'),r=document.getElementById('axes-report');if(r){r.textContent=open?'Geht in dieser Stellung nicht auf: '+open.message:'Stellung gelöst.';r.dataset.state=open?'open':'ok';r.dataset.frames=JSON.stringify(Object.fromEntries(Object.entries(s.poses[0].bodies).map(([k,f])=>[k,f.position.map(n=>Math.round(n*100)/100)])));}}
   catch(e){const r=document.getElementById('axes-report');if(r)r.textContent='Nicht lösbar: '+(e instanceof Error?e.message:e);}});}
  selectHandle(o:THREE.Object3D){const point=o.userData.pathPoint;if(point){this.item=`joint:${point.joint}`;this.renderProperties();this.drawHandles();}}
  /** Writes a dragged path point back into the document (in the guide's a-side frame). */
@@ -171,29 +192,32 @@ export class MechanismEditor{
    const model=m.mechanism.bodies.some(b=>b.display?.kind==='mesh');
    const sub=(label:string,item:Item)=>{const b=el('button',{textContent:label,className:'tree-sub'});b.setAttribute('aria-selected',String(this.item===item));b.onclick=()=>{this.item=item;this.renderProperties();this.drawHandles();this.host.leave();};root.append(el('div',{className:'tree-row'},b));};
    const group=(text:string)=>root.append(el('div',{className:'tree-subgroup',textContent:text}));
-   if(model){sub('  🧩 Modell & Glieder','model');group('Achsen');for(const j of m.mechanism.joints)if(!j.id.startsWith('halt-'))sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);sub('  ＋ Achse anlegen','axis-new');group('Weitere Einstellungen');}
+   const drives=m.drives??[];
+   if(model){sub('  🧩 Modell & Glieder','model');group('Achsen');for(const j of m.mechanism.joints)if(!j.id.startsWith('halt-')&&!owned(drives,j.id))sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);sub('  ＋ Achse anlegen','axis-new');
+    group('Antriebe');for(const d of drives)sub(`  ⚡ ${d.id} → ${d.axis}${d.gear?' ✓':''}`,`drive:${d.id}`);sub('  ＋ Antrieb setzen','drive-new');group('Weitere Einstellungen');}
    else{for(const b of m.mechanism.bodies)if(!b.ground)sub(`  ▭ ${b.id}`,`body:${b.id}`);for(const j of m.mechanism.joints)sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);}
    sub('  Parameter','parameters');sub('  Ein-/Ausgang, Bereich','io');
-   if(model)for(const b of m.mechanism.bodies)if(!b.ground&&b.display?.kind!=='mesh')sub(`  ▭ ${b.id}`,`body:${b.id}`);
-   for(const e of m.mechanism.elements)sub(`  ◉ ${e.id}${e.source.kind==='library'?' (Kaufteil)':''}`,`element:${e.id}`);
-   for(const c of m.mechanism.contacts)sub(`  ⚙ ${c.id} (${c.mode==='follower'?'Läufer':c.kind})`,`contact:${c.id}`);
+   if(model)for(const b of m.mechanism.bodies)if(!b.ground&&b.display?.kind!=='mesh'&&!owned(drives,b.id))sub(`  ▭ ${b.id}`,`body:${b.id}`);
+   for(const e of m.mechanism.elements)if(!owned(drives,e.id))sub(`  ◉ ${e.id}${e.source.kind==='library'?' (Kaufteil)':''}`,`element:${e.id}`);
+   for(const c of m.mechanism.contacts)if(!owned(drives,c.id))sub(`  ⚙ ${c.id} (${c.mode==='follower'?'Läufer':c.kind})`,`contact:${c.id}`);
    m.mechanism.patterns.forEach((p,i)=>sub(`  ⟷ Muster ${i+1} (${p.kind==='mirror'?'Spiegelung':'Reihe'})`,`pattern:${i}`));
   }
   root.append(el('div',{className:'tree-group',textContent:'Neu'}));
   const add=el('div',{className:'mechanism-add'});
-  const demo=el('button',{textContent:'▶ Demo: Roboterarm',className:'primary'});demo.dataset.demo='robot';demo.onclick=()=>void this.loadDemo();
+  const demoButtons=([['robot','▶ Demo: Roboterarm'],['cnc','▶ Demo: CNC-Portal'],['sled','▶ Demo: Schlitten auf Wellenbahn']] as const).map(([key,label])=>{const b=el('button',{textContent:label,className:'primary'});b.dataset.demo=key;b.onclick=()=>void this.loadDemo(key);return b;});
   const templateBox=el('details',{className:'templates'},el('summary',{textContent:'Vorlagen (Getriebe-Beispiele)'}));
   for(const [key,t] of Object.entries(templates)){const b=el('button',{textContent:'+ '+t.label});b.dataset.mechanismTemplate=key;b.onclick=()=>{const id='mech-'+crypto.randomUUID().slice(0,8);this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label:t.label.replace(' (Vorlage)',''),mechanism:t.build()}];},`${t.label} angelegt`);this.enter(id);this.host.leave();};templateBox.append(b);}
   const file=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});file.id='model-file';
   const load=el('button',{textContent:'⬆ 3D-Modell laden (STL, OBJ, GLB)'});load.dataset.mechanismModel='true';load.onclick=()=>file.click();
   file.onchange=async()=>{const files=[...(file.files??[])];file.value='';if(files.length)await this.importFiles(files);};
-  add.append(load,file,demo,templateBox);root.append(add);
+  add.append(load,file,...demoButtons,templateBox);root.append(add);
  }
- /** The demo arm: stored like an imported model, links and axes ready, sliders work at once. */
- async loadDemo(){
-  const {asset,mechanism}=demoRobot();await storeAsset(asset);rememberAsset(asset);this.assets.set(asset.id,asset);
+ /** A demo: stored like an imported model, links, axes and motors ready; sliders work at once. */
+ async loadDemo(key:keyof typeof demos='robot'){
+  const {asset,mechanism,drives,label}=demos[key]();await storeAsset(asset);rememberAsset(asset);this.assets.set(asset.id,asset);
+  for(const d of drives)placeMotor(mechanism,d);
   const id='mech-'+crypto.randomUUID().slice(0,8);
-  this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label:'Demo Roboterarm',mechanism}];},'Demo geladen: drei Achsen – die Regler unter der 3D-Ansicht bewegen den Arm.');
+  this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label,mechanism,drives}];},`${label} geladen: Regler unter der 3D-Ansicht bewegen die Achsen; unter „Antriebe“ findet die Suche die Getriebe.`);
   this.enter(id);this.item='model';this.host.leave();
  }
  /** Renames a link everywhere it is referenced. */
@@ -201,20 +225,23 @@ export class MechanismEditor{
   if(!/^[A-Za-zÄÖÜäöüß0-9_-]{1,40}$/.test(to)){this.host.status('Name: Buchstaben, Ziffern, - und _ (bis 40 Zeichen).');return;}
   const m=this.mechanism();if(!m||m.bodies.some(b=>b.id===to)){this.host.status('Name ist schon vergeben.');return;}
   this.host.change(()=>{const x=this.mechanism()!;for(const b of x.bodies)if(b.id===from)b.id=to;for(const j of x.joints){if(j.a.body===from)j.a.body=to;if(j.b.body===from)j.b.body=to;if(j.id===`halt-${from}`)j.id=`halt-${to}`;}
-   for(const e of x.elements)for(const mt of e.mounts)if(mt.body===from)mt.body=to;for(const p of x.patterns)p.source=p.source.map(s=>s===from?to:s);},`Glied umbenannt: ${to}`);
+   for(const e of x.elements)for(const mt of e.mounts)if(mt.body===from)mt.body=to;for(const p of x.patterns)p.source=p.source.map(s=>s===from?to:s);for(const d of this.drives())if(d.body===from)d.body=to;},`Glied umbenannt: ${to}`);
   if(this.brush===from)this.brush=to;if(this.draft.a===from)this.draft.a=to;if(this.draft.b===from)this.draft.b=to;
  }
  /** Step bar for model-based mechanisms: where am I, what next. */
  private steps(m:Mechanism):HTMLElement{
-  const links=m.bodies.filter(b=>!b.ground),filled=links.filter(b=>b.display?.kind==='mesh'&&b.display.parts.length),axes=m.joints.filter(j=>!j.id.startsWith('halt-')&&j.joint.kind!=='fixed'),loose=links.filter(b=>m.joints.some(j=>j.id===`halt-${b.id}`));
-  const state=[true,filled.length>0&&filled.length===links.length,axes.length>0&&!loose.length,axes.length>0];
+  const drives=this.drives(),links=m.bodies.filter(b=>!b.ground&&!owned(drives,b.id)),filled=links.filter(b=>b.display?.kind==='mesh'&&b.display.parts.length),axes=modelAxes(m,drives),loose=links.filter(b=>m.joints.some(j=>j.id===`halt-${b.id}`));
+  const geared=axes.filter(j=>drives.some(d=>d.axis===j.id&&d.gear)),open=axes.filter(j=>!drives.some(d=>d.axis===j.id));
+  const state=[true,filled.length>0&&filled.length===links.length,axes.length>0&&!loose.length,axes.length>0,axes.length>0&&geared.length===axes.length];
   const hints=['Modell ist geladen.',
    !links.length?'Mit „+ Glied“ ein bewegliches Glied anlegen, dann Teile anklicken.':filled.length<links.length?`Glied ${links.find(b=>!filled.includes(b))!.id} hat noch keine Teile.`:'Alle Glieder haben Teile.',
    loose.length?`${loose.map(b=>b.id).join(', ')} hängt noch fest – „＋ Achse anlegen“ und den Zylinder des Gelenks anklicken.`:axes.length?'Jedes Glied hat eine Achse.':'Noch keine Achse.',
-   axes.length?'Regler unter der 3D-Ansicht schieben und prüfen, ob alles richtig mitläuft.':'Erst Achsen anlegen.'];
+   axes.length?'Regler unter der 3D-Ansicht schieben und prüfen, ob alles richtig mitläuft.':'Erst Achsen anlegen.',
+   open.length?`Achse ${open[0].id} hat noch keinen Antrieb – „＋ Antrieb setzen“.`:geared.length<axes.length?`Antrieb ${drives.find(d=>!d.gear)?.id??''}: „Getriebe finden“ und eine Lösung übernehmen.`:'Jede Achse hat ihr Getriebe. Regler schieben: die Getriebe drehen mit.'];
   const next=state.findIndex(s=>!s),bar=el('ol',{className:'steps'});
-  [['Modell','model'],['Glieder','model'],['Achsen','axis-new'],['Testen','model']].forEach(([label,item],i)=>{const li=el('li',{textContent:`${state[i]?'✓':i+1} ${label}`});li.dataset.state=state[i]?'done':i===next?'current':'open';li.onclick=()=>{this.item=item as Item;this.renderProperties();};bar.append(li);});
-  const index=next<0?3:next;return el('div',{className:'step-box'},bar,el('p',{className:'step-hint',textContent:'Was jetzt? '+hints[index]}),el('p',{className:'muted',textContent:'Danach (bald): Antrieb setzen – Motor aus dem Katalog, die Suche findet das Getriebe zur Achse.'}));
+  const firstDrive=drives.find(d=>!d.gear)??drives[0];
+  [['Modell','model'],['Glieder','model'],['Achsen','axis-new'],['Testen','model'],['Antrieb',firstDrive?`drive:${firstDrive.id}`:'drive-new']].forEach(([label,item],i)=>{const li=el('li',{textContent:`${state[i]?'✓':i+1} ${label}`});li.dataset.state=state[i]?'done':i===next?'current':'open';li.onclick=()=>{this.item=item as Item;this.renderProperties();};bar.append(li);});
+  const index=next<0?4:next;return el('div',{className:'step-box'},bar,el('p',{className:'step-hint',textContent:'Was jetzt? '+hints[index]}));
  }
  /** New mechanism from model files: every part starts on the frame (Basis). */
  async importFiles(files:File[]){
@@ -224,6 +251,101 @@ export class MechanismEditor{
     `Modell geladen: ${asset.parts.length} Teile${asset.scale!==1?' (in Metern erkannt, auf mm skaliert)':''}`);
    this.enter(id);this.host.leave();}
   catch(e){this.host.status('Modell nicht lesbar: '+(e instanceof Error?e.message:e));}}
+
+ // ---------- drives ----------
+ /** Changes one drive (and the mechanism) through the Studio's change(); stale search results go. */
+ private editDrive(id:string,message:string,fn:(d:Drive,m:Mechanism)=>void){
+  if(this.search?.drive===id){this.search.worker.terminate();this.search=undefined;}delete this.sweeps[id];
+  this.host.change(()=>{const e=this.entry()!,d=e.drives?.find(x=>x.id===id);if(!d)throw Error('Antrieb fehlt.');fn(d,e.mechanism);},message);}
+ /** A new drive beside its axis: on the carrying link (the wagon on a path), shaft parallel to the axis. */
+ private createDrive(m:Mechanism){
+  const j=m.joints.find(x=>x.id===this.newDrive.axis);if(!j)return;const carrier=j.joint.kind==='path'?j.b:j.a,drives=this.drives();
+  let k=1;while(m.bodies.some(b=>b.id===`M${k}`)||drives.some(d=>d.id===`M${k}`))k++;const id=`M${k}`;
+  const d:Drive={id,spec:this.newDrive.spec,body:carrier.body,frame:compose(carrier.local,{position:[80,0,0],rotation:[0,0,0,1]}),axis:j.id,target:linearAxis(j)?8:4,tolerance:5};
+  this.host.change(()=>{const e=this.entry()!;e.drives=[...(e.drives??[]),d];placeMotor(e.mechanism,d);},`Motor ${id} neben ${j.id} gesetzt – per Klick auf eine Fläche oder mit den Zahlen genau platzieren.`);
+  this.item=`drive:${id}`;this.renderProperties();}
+ /** Starts the route search of a drive in the frame of its carrying link at the current pose. */
+ private async findGear(id:string){
+  const m=this.mechanism(),drives=this.drives(),d=drives.find(x=>x.id===id);if(!m||!d)return;this.search?.worker.terminate();this.search=undefined;
+  try{
+   const values=this.values(m),ref=await this.poseAt(m,values),task=driveTask(m,drives,d,a=>this.assets.get(a),ref.poses[0].bodies,values);
+   const w=new Worker('./mechanics-drive-worker.js'),search={drive:id,worker:w,info:task.info,results:[] as NonNullable<MechanismEditor['search']>['results'],state:'running' as 'running'|'done'|'error',text:`Suche läuft · ${task.request.environment!.obstacles.length} Sperrzonen aus dem Modell …`};this.search=search;
+   w.onmessage=({data})=>{if(this.search!==search)return;
+    if(data.type==='progress')search.text=`Suche läuft · ${Math.round(100*data.visited/data.budget)} % · ${search.results.length} Lösung(en)`;
+    if(data.type==='solution'){search.results.push(data.solution);search.results.sort((a,b)=>a.summary.elements-b.summary.elements||a.summary.length-b.summary.length);}
+    if(data.type==='done'){w.terminate();search.state='done';search.text=search.results.length?`${search.results.length} Getriebe gefunden.`:'Kein Getriebe gefunden. Motor näher an die Achse, Ziel oder Stufenzahl ändern, oder Sperrzonen prüfen.';}
+    if(data.type==='error'){w.terminate();search.state='error';search.text='Suche fehlgeschlagen: '+data.message;}
+    this.renderSearch();};
+   w.postMessage({request:task.request,options:task.options});
+  }catch(e){this.host.status('Suche nicht möglich: '+(e instanceof Error?e.message:e));}
+  this.renderProperties();}
+ private ratioText(kind:TaskInfo['kind'],ratio:number){return kind==='rotation'?`1 : ${ratio.toFixed(2)}`:kind==='translation'?`${ratio.toFixed(2)} mm/U`:`${(2*Math.PI*20/ratio).toFixed(2)} mm/U`;}
+ private renderSearch(){
+  const s=this.search,progress=document.getElementById('drive-progress'),list=document.getElementById('drive-results');if(!s||!progress||!list||progress.dataset.drive!==s.drive)return;
+  progress.textContent=s.text;progress.dataset.state=s.state;list.replaceChildren();
+  s.results.forEach((r,i)=>{const take=el('button',{textContent:'Übernehmen'});take.dataset.adopt=String(i);take.onclick=()=>void this.adopt(i);
+   list.append(el('div',{className:'drive-result'},el('span',{textContent:`${r.label}`}),el('small',{textContent:`${this.ratioText(s.info.kind,r.ratio)} · ${r.summary.elements} Teile`}),take));});}
+ /** Merges a found train into the mechanism, then checks it over the axis range. */
+ private async adopt(i:number){
+  const s=this.search,e=this.entry();if(!s||!e)return;const found=s.results[i];if(!found)return;
+  const m=structuredClone(e.mechanism),drives=structuredClone(e.drives??[]),d=drives.find(x=>x.id===s.drive);if(!d)return;
+  try{this.host.status('Getriebe wird übernommen …');
+   const values=this.values(m),fixed:Record<string,number[]>={};for(const j of this.axes(m))if(j.id!==d.axis)fixed[j.id]=[values[j.id]];Object.assign(fixed,heldTrains(drives.filter(x=>x.axis!==d.axis),values));
+   const gear=await adoptGear(m,d,found.mechanism,s.info,found.label,found.ratio,fixed);
+   s.worker.terminate();this.search=undefined;
+   this.host.change(()=>{const x=this.entry()!;x.mechanism=m;x.drives=drives;},`Getriebe für ${d.id} übernommen: ${found.label}${gear.notes.length?' · '+gear.notes.join(' '):''}`);
+   void this.checkSweep(d.id);
+  }catch(err){this.host.status('Übernahme fehlgeschlagen: '+(err instanceof Error?err.message:err));}
+  this.renderProperties();}
+ /** Drive parts and motor against the model's parts while the driven axis runs through its range. */
+ private async checkSweep(id:string){
+  const m=this.mechanism(),d=this.drives().find(x=>x.id===id);if(!m||!d?.gear)return;
+  this.sweeps[id]={state:'running',text:'Prüfe Kollisionen über den Achsbereich …'};this.renderSweep(id);
+  try{const hits=await sweepCollisions(m,this.drives(),d,a=>this.assets.get(a),async(axis,v)=>(await this.poseAt(m,this.values(m,{[axis]:v}))).poses[0].bodies,13);
+   this.sweeps[id]=hits.length?{state:'hit',text:'Kollision: '+hits.map(h=>`${h.a} ↔ ${h.b} bei ${h.at.join(', ')}`).join('; '),hits}:{state:'ok',text:`Kollisionsfrei über den ganzen Bereich von ${d.axis} (13 Stellungen).`};}
+  catch(err){this.sweeps[id]={state:'error',text:'Prüfung fehlgeschlagen: '+(err instanceof Error?err.message:err)};}
+  this.renderSweep(id);}
+ private renderSweep(id:string){const p=document.getElementById('drive-check');if(!p||p.dataset.drive!==id)return;const s=this.sweeps[id];p.textContent=s?.text??'Noch nicht geprüft.';p.dataset.state=s?.state??'';}
+ private drivePage(m:Mechanism,id:string|undefined,ui:{number:(label:string,value:number,write:(n:number)=>void,step?:string)=>HTMLElement;select:(label:string,value:string,options:[string,string][],write:(v:string)=>void)=>HTMLElement;frameFields:(label:string,f:Frame,write:(f:Frame)=>void)=>HTMLElement[]}):HTMLElement[]{
+  const drives=this.drives(),axes=modelAxes(m,drives),catalog=driveCatalog.map(s=>[s.id,s.label] as [string,string]);
+  if(!id){
+   if(!axes.length)return [el('h3',{textContent:'＋ Antrieb setzen'}),el('p',{className:'muted',textContent:'Erst Achsen anlegen: ein Antrieb treibt immer eine Achse.'})];
+   if(!axes.some(j=>j.id===this.newDrive.axis))this.newDrive.axis=(axes.find(j=>!drives.some(d=>d.axis===j.id))??axes[0]).id;
+   const create=el('button',{textContent:'Motor setzen',className:'primary'});create.dataset.createDrive='true';create.onclick=()=>this.createDrive(m);
+   return [el('h3',{textContent:'＋ Antrieb setzen'}),el('p',{className:'muted',textContent:'Ein Motor oder Handrad sitzt auf dem Glied, das die Achse trägt (auf einem Pfad: auf dem Wagen). Er wird neben die Achse gesetzt, die Welle parallel. Danach per Klick auf eine Fläche oder mit den Zahlen genau platzieren.'}),
+    ui.select('Achse',this.newDrive.axis,axes.map(j=>[j.id,`${j.id} · ${jointName(j.joint.kind)}`]),v=>{this.newDrive.axis=v;}),ui.select('Antrieb',this.newDrive.spec,catalog,v=>{this.newDrive.spec=v;}),create];
+  }
+  const d=drives.find(x=>x.id===id);if(!d)return [el('p',{className:'muted',textContent:'Antrieb fehlt.'})];
+  const j=m.joints.find(x=>x.id===d.axis),linear=!!j&&linearAxis(j),spec=driveSpec(d.spec),links=m.bodies.filter(b=>!owned(drives,b.id)).map(b=>[b.id,b.ground?'Basis':b.id] as [string,string]);
+  const out:HTMLElement[]=[el('h3',{textContent:`⚡ Antrieb ${id}`}),el('p',{className:'muted',textContent:`${spec.label} · ${spec.note}`}),
+   ui.select('Antrieb',d.spec,catalog,v=>this.editDrive(id,'Antrieb geändert',(x,mm)=>{x.spec=v;removeGear(mm,x);placeMotor(mm,x);})),
+   ui.select('Treibt Achse',d.axis,axes.map(a=>[a.id,`${a.id} · ${jointName(a.joint.kind)}`]),v=>this.editDrive(id,'Achse des Antriebs geändert',(x,mm)=>{removeGear(mm,x);x.axis=v;})),
+   ui.select('Sitzt auf Glied',d.body,links,v=>this.editDrive(id,'Motor auf anderes Glied gesetzt',(x,mm)=>{const from=mm.bodies.find(b=>b.id===x.body)!,to=mm.bodies.find(b=>b.id===v)!;x.frame=compose(compose(inverse(to.frame),from.frame),x.frame);x.body=v;removeGear(mm,x);placeMotor(mm,x);})),
+   ui.number(linear?'Weg je Motorumdrehung [mm/U]':'Untersetzung (Motorumdrehungen je Achsumdrehung)',Math.round(d.target*1000)/1000,n=>{if(n>0&&n<=1000)this.editDrive(id,'Ziel geändert',x=>{x.target=n;});}),
+   ui.number('Toleranz [%]',d.tolerance,n=>{if(n>=0&&n<=50)this.editDrive(id,'Toleranz geändert',x=>{x.tolerance=n;});}),
+   ui.select('Stufen höchstens',String(d.maxStages??3),[['1','1'],['2','2'],['3','3'],['4','4']],v=>this.editDrive(id,'Stufenzahl geändert',x=>{x.maxStages=Number(v);}))];
+  const lego=el('input',{type:'checkbox',checked:!!d.lego});lego.onchange=()=>this.editDrive(id,'Teileauswahl geändert',x=>{x.lego=lego.checked||undefined;});out.push(el('label',{className:'check'},lego,' auch LEGO-Teile verwenden'));
+  // Placement.
+  const click=el('button',{textContent:'Auf Fläche klicken'});click.dataset.driveTool=id;click.setAttribute('aria-pressed',String(this.tool?.mode==='motor'));click.onclick=()=>{this.tool=this.tool?.mode==='motor'?undefined:{mode:'motor',drive:id};this.host.status(this.tool?'Fläche am Modell anklicken: der Motor steht darauf, die Welle zeigt von der Fläche weg.':'Werkzeug beendet.');this.renderProperties();};
+  const parallel=el('button',{textContent:'Welle parallel zur Achse'});parallel.onclick=()=>this.editDrive(id,'Motorwelle parallel zur Achse',(x,mm)=>{x.frame=parallelTo(mm,x);removeGear(mm,x);placeMotor(mm,x);});
+  out.push(el('h2',{textContent:'Lage des Motors'}),el('div',{className:'button-row'},click,parallel),...ui.frameFields('Flansch auf dem Glied (z = Welle)',d.frame,f=>this.editDrive(id,'Motor verschoben',(x,mm)=>{x.frame=f;removeGear(mm,x);placeMotor(mm,x);})));
+  // Gear.
+  const s=this.search?.drive===id?this.search:undefined,find=el('button',{textContent:s?.state==='running'?'Suche läuft …':'Getriebe finden',className:'primary'});find.dataset.findGear=id;find.disabled=s?.state==='running';find.onclick=()=>void this.findGear(id);
+  const progress=el('p',{className:'muted',id:'drive-progress',textContent:s?.text??(d.gear?'':'Die Suche läuft im Glied, auf dem der Motor sitzt; die Teile des Modells sind Sperrzonen.')});progress.dataset.drive=id;if(s)progress.dataset.state=s.state;
+  const results=el('div',{id:'drive-results',className:'drive-results'});
+  out.push(el('h2',{textContent:'Getriebe'}),find,progress,results);
+  if(d.gear){
+   const check=el('p',{id:'drive-check',className:'muted'});check.dataset.drive=id;
+   const again=el('button',{textContent:'Über den Bereich prüfen'});again.onclick=()=>void this.checkSweep(id);
+   const drop=el('button',{textContent:'Getriebe entfernen',className:'danger'});drop.onclick=()=>this.editDrive(id,'Getriebe entfernt',(x,mm)=>{removeGear(mm,x);});
+   out.push(el('p',{className:'drive-gear',textContent:`Übernommen: ${d.gear.label} · ${this.ratioText(j?.joint.kind==='path'?'path':linear?'translation':'rotation',d.gear.ratio)}`}),...d.gear.notes.map(n=>el('p',{className:'muted',textContent:'Hinweis: '+n})),check,el('div',{className:'button-row'},again,drop));
+   queueMicrotask(()=>this.renderSweep(id));
+  }
+  const del=el('button',{textContent:'Antrieb löschen',className:'danger'});del.onclick=()=>{if(this.search?.drive===id){this.search.worker.terminate();this.search=undefined;}this.host.change(()=>{const e=this.entry()!,x=e.drives?.find(y=>y.id===id);if(x)removeDrive(e.mechanism,x);e.drives=(e.drives??[]).filter(y=>y.id!==id);},`Antrieb ${id} gelöscht`);this.item='model';this.renderProperties();};
+  out.push(del);
+  queueMicrotask(()=>this.renderSearch());
+  return out;
+ }
 
  // ---------- properties ----------
  renderProperties(root:HTMLElement=document.getElementById('properties')!):void{
@@ -275,6 +397,7 @@ export class MechanismEditor{
     select('Typ',this.draft.kind,[['revolute','Drehachse'],['prismatic','Linearachse']],v=>{this.draft.kind=v as 'revolute'|'prismatic';}));
    root.append(...this.axisTools());return;
   }
+  if(this.item==='drive-new'||this.item.startsWith('drive:')){root.append(...this.drivePage(m,this.item==='drive-new'?undefined:this.item.slice(6),{number,select,frameFields}));return;}
   if(this.item==='parameters'){
    root.append(el('p',{className:'muted',textContent:'Zahl oder Ausdruck aus früheren Parametern, z. B. torHoehe/3. Werte im Dokument können Ausdrücke als {"expr": …} tragen.'}));
    m.parameters.forEach((p,i)=>{const raw=typeof p.value==='number'?String(p.value):(p.value as {expr:string}).expr;root.append(el('div',{className:'param-row'},text(p.id,raw,v=>edit('Parameter geändert',x=>{const n=Number(v);x.parameters[i].value=(v!==''&&Number.isFinite(n)?n:{expr:v}) as number;})),remove('×',x=>{x.parameters.splice(i,1);})));});

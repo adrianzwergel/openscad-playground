@@ -3,7 +3,7 @@
 // gears (KINEMATIK-KERN.md 7.5), so they are not part of the hull set.
 import type {V,Frame} from './math.ts';
 import {rotate,add,scale,norm,dot,axis} from './math.ts';
-import type {Environment,Envelope,Contact} from './model.ts';
+import type {Environment,Envelope,Contact,Region} from './model.ts';
 import {separation,containment,regionHull} from '../graph/space.ts';
 import type {Check} from './conjugate.ts';
 
@@ -57,10 +57,17 @@ export function collisionPairs(p:Placed,boxes:Box[]){
   pairs.push([a,b]);}
  return pairs;
 }
+/** Hulls an obstacle does not apply to: given terminal shafts, and parts carried by the output in its own space. */
+export function exempt(p:Placed,b:Box,o:Region){
+ const env=p.environment,first=p.bodies[0]?.id,last=p.bodies[p.bodies.length-1]?.id;
+ if(env?.terminals==='given'&&b.kind==='shaft'&&(b.id===first||b.id===last))return true;
+ if(o.role==='carrier')return b.kind==='shaft';
+ return o.role==='output'&&(b.kind==='shaft'?b.id===last:b.owner===last);
+}
 /** Residual-style violations: internal collisions and environment, keyed per hull so dimensions stay stable. */
 export function violations(p:Placed,boxes:Box[],aim:number){
  const out=new Map<string,number[]>(),env=p.environment;
- for(const b of boxes)out.set(b.kind+':'+b.id,env?[...(env.bounds?containment(b,regionHull(env.bounds),env.margin):[]),...env.obstacles.map(o=>Math.max(0,env.margin-separation(b,regionHull(o),env.margin)))]:[]);
+ for(const b of boxes)out.set(b.kind+':'+b.id,env?[...(env.bounds?containment(b,regionHull(env.bounds),env.margin):[]),...env.obstacles.map(o=>exempt(p,b,o)?0:Math.max(0,env.margin-separation(b,regionHull(o),env.margin)))]:[]);
  const collisions=new Map<string,number>();
  for(const [a,b] of collisionPairs(p,boxes)){const v=Math.max(0,aim-clearance(a,b,aim));for(const h of [a,b]){const key=h.kind+':'+h.id;collisions.set(key,Math.max(collisions.get(key)??0,v));}}
  for(const [key,list] of out)list.push(collisions.get(key)??0);
@@ -71,7 +78,7 @@ export function assessConstruction(p:Placed,margin=1){
  for(const [a,b] of collisionPairs(p,boxes))if(!separated(a,b,margin))checks.push({id:`space/${a.id}/${b.id}`,state:'fail',message:`Konservative Freiraumprüfung: ${a.id} / ${b.id} (${margin} mm). Genauere Geometrie könnte den Kandidaten noch freigeben.`});
  if(p.environment){const env=p.environment;for(const b of boxes){
   if(env.bounds&&containment(b,regionHull(env.bounds),env.margin).some(n=>n>1e-7))checks.push({id:'bounds/'+b.id,state:'fail',message:`${b.id}: Hülle überschreitet den Bauraum oder dessen Randabstand (${env.margin} mm).`});
-  for(const o of env.obstacles)if(separation(b,regionHull(o),env.margin)<env.margin-1e-7)checks.push({id:'obstacle/'+o.id+'/'+b.id,state:'fail',message:`${b.id}: Sperrzone ${o.id} verletzt (${env.margin} mm Abstand).`});}
+  for(const o of env.obstacles)if(!exempt(p,b,o)&&separation(b,regionHull(o),env.margin)<env.margin-1e-7)checks.push({id:'obstacle/'+o.id+'/'+b.id,state:'fail',message:`${b.id}: Sperrzone ${o.id} verletzt (${env.margin} mm Abstand).`});}
   if(!checks.some(c=>c.id.startsWith('bounds/')||c.id.startsWith('obstacle/')))checks.push({id:'environment',state:'pass',message:'Alle Bauteil-, Bewegungs- und Verbindungsräume liegen im Bauraum und außerhalb der Sperrzonen.'});}
  if(!checks.some(c=>c.state==='fail'))checks.push({id:'reserved-spaces',state:'pass',message:'Nicht kämmende Rotoren, endliche Wellen und Antriebsräume geometrisch getrennt.'});
  checks.push({id:'bearings-open',state:'unknown',message:'Lagerung, Achslängen und Werkzeugzugang werden nach der Zahnradwahl festgelegt.'});

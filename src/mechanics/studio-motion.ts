@@ -6,7 +6,8 @@ import type {Mechanism,Range} from './kinematics/model';
 import {KinematicsView,transferChart} from './kinematics-view';
 import type {MotionSolution} from './kinematics-view';
 
-export type MotionSource={label:string;graph?:Graph;mechanism?:Mechanism;range?:Range};
+/** `fixed`: held joint coordinates (the other axes of a model and their gear trains). */
+export type MotionSource={label:string;graph?:Graph;mechanism?:Mechanism;range?:Range;fixed?:Record<string,number[]>};
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 export class MotionPanel{
  readonly view=new KinematicsView();
@@ -25,7 +26,7 @@ export class MotionPanel{
   // The worker posts the solution first and the generated parts afterwards.
   w.onmessage=({data})=>{if(this.worker!==w)return;if(data.type==='parts'){this.stop();this.view.setParts(data.parts);return;}if(data.type==='error'){this.stop();$('motion-report').textContent='Bewegung nicht lösbar: '+data.message;return;}$<HTMLButtonElement>('motion-run').disabled=false;this.show(data.solution,source.label);};
   w.onerror=e=>{e.preventDefault();if(this.worker!==w)return;this.stop();$('motion-report').textContent='Bewegungsberechnung fehlgeschlagen.';};
-  w.postMessage({graph:source.graph,mechanism:source.mechanism,range:source.range,parts:'printed'});
+  w.postMessage({graph:source.graph,mechanism:source.mechanism,range:source.range,fixed:source.fixed,parts:'printed'});
  }
  private stop(){this.worker?.terminate();this.worker=undefined;$<HTMLButtonElement>('motion-run').disabled=false;}
  private show(s:MotionSolution,label:string){
