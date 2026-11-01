@@ -20,3 +20,13 @@
 #motion-chart .marker{fill:#ffcc66}
 #motion-chart text{fill:#9fb1bc;font-size:10px}
 #motion-report{flex:1;margin:0}
+
+.tree-sub{font-size:12px;padding-left:14px!important;white-space:pre}
+.mechanism-add{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.param-row{display:flex;gap:4px;align-items:end}
+.param-row label{flex:1}
+.points .triple{grid-template-columns:repeat(3,1fr) auto}
+.sources{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px}
+.sources label.check{display:inline-flex;gap:3px;align-items:center;margin:0}
+button.danger{border-color:#8a4444;color:#ffb3b3}
+.button-row{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0}
