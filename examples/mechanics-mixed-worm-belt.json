@@ -1,0 +1,92 @@
+{
+  "format": "mechanics10",
+  "version": 5,
+  "catalogVersion": "mechanics10-spur-1",
+  "name": "Schnecke + Zahnriemen",
+  "targetRatio": 2.1,
+  "components": [
+    {
+      "id": "input",
+      "catalogId": "spur-m2-z20",
+      "position": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "output",
+      "catalogId": "spur-m2-z40",
+      "position": [
+        60,
+        0,
+        0
+      ]
+    }
+  ],
+  "input": {
+    "component": "input",
+    "port": "shaft"
+  },
+  "output": {
+    "component": "output",
+    "port": "shaft"
+  },
+  "connections": [
+    {
+      "kind": "external-spur-mesh",
+      "a": {
+        "component": "input",
+        "port": "teeth"
+      },
+      "b": {
+        "component": "output",
+        "port": "teeth"
+      }
+    }
+  ],
+  "axes": {
+    "input": [
+      0,
+      0,
+      0
+    ],
+    "output": [
+      60,
+      0,
+      0
+    ]
+  },
+  "search": {
+    "maxLayers": 2,
+    "layerSpacing": 15,
+    "margin": 1,
+    "maxError": 100,
+    "direction": "any"
+  },
+  "mixed": {
+    "input": [
+      0,
+      42.104712,
+      0
+    ],
+    "output": [
+      119.83085318658112,
+      0,
+      120
+    ],
+    "target": 60,
+    "tolerance": 5,
+    "travel": 100,
+    "allow": "belt",
+    "selected": {
+      "kind": "belt",
+      "wheel": 30,
+      "starts": 1,
+      "za": 20,
+      "zb": 40,
+      "belt": 300,
+      "offset": 0
+    }
+  }
+}

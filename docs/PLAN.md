@@ -1,0 +1,244 @@
+# Mechanics-10: Entwicklungsplan
+
+Stand: 2026-10-30. Zunächst Geometrie und Kinematik, keine Kraft- oder Tragfähigkeitsauslegung.
+
+## Aktueller Stand
+Begrenzte räumliche Graphsuche begonnen: feste Zielrahmen, gemeinsame Wellen,
+Stirnrad-/Kegelradprovider und explizite Budgetzustände. Zweistufige Referenzen geprüft;
+drei/vier Stufen experimentell, konstruktive Kollisions-/Lagerprüfung noch offen.
+Siehe [GRAPH-SEARCH.md](GRAPH-SEARCH.md). Generative Gehäuse bleiben zurückgestellt.
+
+H1 implementiert, H2 begonnen: erweiterbarer Element-/Relationsgraph, gemeinsame Wellen,
+Quaternion-Rahmen, gerichtete feste Anschlüsse, Registry-Vertrag für Übertragungen,
+Umläufe und Gelenke. Erste Stirnrad-/Kegelradadapter, analytische Lagevorschläge und
+Browser-Referenzaufbau mit drei Wellen. Noch kein allgemeiner Autorouter.
+Details und Grenzen: [ELEMENT-GRAPH.md](ELEMENT-GRAPH.md).
+
+**Prioritätskorrektur:** Suche und räumliche Anordnung zuerst ausreifen, inklusive
+Familienerweiterungen, Lager-/Montageplatz und Hindernissen. Generative Tragstrukturen
+(H5) und Topologieoptimierung (H7) werden hinter diese Arbeiten einschließlich H6 gestellt.
+„Näher zum Ziel“ ist keine vorgegebene Heuristik; Suchverfahren werden nach Eignung gewählt.
+
+**Neue Zielrichtung, nur geplant:** Freie räumliche Getriebesynthese aus einzelnen
+Paarungen und gemeinsam belegten Wellen statt weiterer verketteter Fertigmodule.
+Freie Anschlussrahmen, Suchräume/Hindernisse, Montage und eine aus Mountings abgeleitete
+Tragstruktur gehören zum neuen Konzept. Architektur, fehlende Grundlagen und Etappen
+H1–H7: [TRANSMISSION-SYNTHESIS-3D.md](TRANSMISSION-SYNTHESIS-3D.md).
+Der ursprüngliche Architekturplan wurde ohne Codeänderung erstellt; der Stand der
+inzwischen begonnenen Umsetzung ist oben und in ELEMENT-GRAPH.md dokumentiert.
+
+Gemischte Kettensuche ergänzt: Schnecke → Stirnräder oder GT2, diskrete Prolog-Suche,
+analytische Platzierung entlang einer festen Eingangsachse und feste Ausgangsachse.
+Getrennte Lagerungen, koaxiale Kupplung, gemeinsame Gehäusebrücke, Montageansicht und
+STL-/ZIP-Export. Projektformat 5. Begrenzte Zweistufenfamilien; allgemeine Graphsuche
+und physische Abnahme bleiben offen. Siehe [MIXED-SEARCH.md](MIXED-SEARCH.md).
+
+Etappe G: Browser-Werkbank für Anschlussvorgaben, schematische Live-Kinematik mit
+Projektionsansichten, persistente Variantenablage mit JSON-Austausch und erweiterte
+CAD-Explosionsansichten implementiert. Fertigungsteile bleiben von Ansichtszuständen
+unberührt. Freie Baugruppenkopplung, animierte CAD-Zahngeometrie und öffentliche
+Bereitstellung bleiben offen. Bedienung und Tests: [WORKBENCH.md](WORKBENCH.md).
+
+Etappe F als Softwareentwurf implementiert: Innenverzahnung, 90°-Kegelräder und rechtwinklige
+Schneckenpaare mit Katalogvarianten, expliziten Portachsen, radialer/axialer Lagerung,
+abnehmbaren Gehäusen und Einzelteil-/ZIP-Export. Rotationshüllen und endliche Wellen werden
+geprüft; OpenSCAD-Schnittproben ergänzen die Prüfung. Projektformat 4 migriert Versionen 1–3.
+Eigenständige Vorlagen, noch keine gemischte Kettensuche. Hohl-/Kegelräder sind rückseitig
+zweifach und überhängend gelagert; physische Abnahme offen. Siehe [SPATIAL-PAIRS.md](SPATIAL-PAIRS.md).
+
+Etappe E als Softwareentwurf implementiert: GT2-Kataloglängen mit exakter Teilkreislänge und
+freigegebenem Stellweg; separat geführte TR8-/Zahnstangenachsen, vollständige Bewegungshüllen,
+Sperrraumprüfung, Montagevorlagen und Einzelteil-/ZIP-Exporte. Projektformat 3 migriert ältere
+Projekte. Drei eigenständige Vorlagen, noch keine automatische Suche gemischter Ketten.
+Physische Abnahme und Lastauslegung bleiben offen. Siehe [MOTION.md](MOTION.md).
+
+Etappe D als Softwareentwurf implementiert: zwei Lager je Welle, zwei abnehmbare Lagerplatten,
+Abstandshalter, Nabenfixierung und axiale Hülsen, Freiraumprüfungen, Montageansicht,
+Stückliste und Einzelteil-STLs/ZIP. Der reale Druck-/Montageversuch ist noch offen;
+Etappe D ist deshalb konstruktiv noch nicht abgenommen. Siehe [HOUSING.md](HOUSING.md).
+
+Etappe C abgeschlossen: feste parallele Anschlussachsen, vier Kettenvorlagen mit Zwischen-
+und Doppelzahnrädern, bis zu zwei Ebenen, konservative Freiraumprüfung, Variantenvergleich
+und Projektformat 2 mit Migration. Prolog enumeriert, ein TypeScript-Worker positioniert.
+Grenzen, Beispiel und Abnahme: [SPATIAL-SEARCH.md](SPATIAL-SEARCH.md).
+Modell-/Suchtests, TypeScript, Produktionsbuild und Browserprüfungen bestanden.
+
+Etappe B abgeschlossen: versionierter Katalog, Komponenteninstanzen, Wellen-/Verzahnungsports,
+explizite Paarungsbeziehungen, manuelle XYZ-Positionierung bei parallelen +Z-Achsen,
+gemeinsame Geometrieauflösung und Paarungsprüfung. Projekte werden lokal gespeichert und
+als validierte JSON-Dateien importiert/exportiert. Siehe COMPONENT-MODEL.md.
+Modelltests, TypeScript, Produktionsbuild und Browser-Tests bestanden.
+
+Etappe A abgeschlossen: Prolog/WASM (Laufzeit 10.1.19, einschließlich CLP(FD)) sucht ein
+Zahnradpaar, OpenSCAD/WASM erzeugt BOSL2-Geometrie, GLB-Vorschau und STL im Browser.
+Produktionsbuild, TypeScript und Chrome-Browsertest bestanden. Abbruch beider Worker und
+Wiederanlauf getestet. Beispiel Soll 2,1: Ist 2,0 mit 20/40 Zähnen, 60 mm Achsabstand.
+Keine mechanische Montage- oder Kollisionsvalidierung in diesem technischen Durchstich.
+
+## Architektur
+Lokale Ableitung von openscad/openscad-playground, Basis-Commit
+012111f06bb6d8dac2b8d30318512494d87d6932, Remote `upstream`, Branch `mechanics10`.
+GitHub-Fork: https://github.com/adrianzwergel/openscad-playground (Remote `origin`).
+React/TypeScript orchestriert ein versioniertes Projektmodell;
+SWI-Prolog/WASM sucht diskrete Kombinationen in einem Worker, TypeScript berechnet Positionen,
+OpenSCAD/WASM erzeugt Geometrie in einem separaten Worker. Keine serverseitige Berechnung nötig.
+Langfristig eigene Three.js-Baugruppenansicht, zunächst vorhandener model-viewer und OFF/GLB-Konvertierung.
+GPL-Hinweise des Originals erhalten. Abhängigkeiten und Geometriebibliotheken versionieren.
+
+## Anforderungen
+- Eingang: Wellenachse mit Position, Richtung und optionalem erlaubtem Positionsbereich.
+- Ausgang: Wellenachse oder Verfahrachse mit Hub. Feste Vorgaben nicht automatisch verschieben.
+- Soll-Untersetzung und Ist-Untersetzung getrennt; linearer Ausgang in mm/Eingangsumdrehung.
+- Drehrichtung, erlaubte Komponenten, Stufen, Ebenen, Bauraum und maximale Abweichung.
+- Katalog: Stirnräder, starre Doppel-/Mehrfachräder, Innenverzahnung, Kegelräder,
+  Schnecke/Schneckenrad, Ritzel/Zahnstange, Zahnriemen und Spindel/Mutter.
+- Jede Getriebewelle konstruktiv beidseitig lagern; Komponentenpaket zunächst zwischen Lagerstellen.
+  Lagerbreite, Sicherungen, Schultern und Montagewege berücksichtigen. Spindel mit geeigneter
+  axialer Abstützung und separat geführter, gegen Mitdrehen gesicherter Mutter.
+- Zahnriemen zunächst offen über zwei Scheiben, mit verfügbaren Längen und Spannmechanismus.
+- Abstände getrennt für Bewegung/Gehäuse, unabhängige Teile, Ebenen, Riemen und Montage.
+  Passungen und vorgesehene Verzahnungskontakte sind eigene Beziehungen, keine pauschalen Ausnahmen.
+- Hüllkörper für schnelle konservative Prüfungen; detaillierte Prüfung ausgewählter Lösungen.
+  Bewegungsräume berücksichtigen; Stichproben sind kein vollständiger Kollisionsnachweis.
+- Gehäuse zuerst aus zwei Lagerplatten, Abstandshaltern und abnehmbarer Abdeckung.
+- Solver und Geometrie nutzen dieselben berechneten Maße. Ergebnisse: erfüllt/verletzt/ungeklärt.
+
+## Etappen und Abnahme
+A. Technischer Durchstich: Browser lädt Prolog und OpenSCAD; Prolog sucht Zahnradpaar,
+   OpenSCAD erzeugt es; Vorschau und STL; Abbruch und Wiederanlauf; reproduzierbare Abhängigkeiten.
+B. Gemeinsames Modell: Katalog, Anschlüsse, Paarungsregeln, speicherbare Projektdatei;
+   manuell angeordnetes Stirnradpaar mit konsistenten Maßen.
+C. Räumliche Suche: parallele Wellen, Zwischen- und Doppelzahnräder, höchstens zwei Ebenen;
+   feste Anschlüsse eingehalten; unerfüllbare Vorgaben erklärt.
+D. Konstruktiver MVP: beidseitige Lagerung, Sicherungen, Gehäuse, Freiräume, Montageansicht,
+   Stückliste und Einzelteil-STLs. Ein Muster drucken und tatsächlich montieren.
+E. Riemen und Linearachsen: Riemenlänge/Spannweg, Spindel/Mutter und Zahnstange,
+   geführter Schlitten und Hubprüfung.
+F. Räumliche Paarungen: Innenverzahnung, Kegelräder, Schneckenpaare mit Lager-/Gehäusevorlagen.
+G. Webprodukt: Anschlusseditor, Variantenvergleich, Animation, Explosionsansicht,
+   Import/Export und statische Veröffentlichung.
+
+## Etappe A: Grenzen
+Nur einstufige Stirnradpaare, Modul 2, 20 Grad, Zähne 20/30/40/50, ohne Profilverschiebung.
+Prolog wählt minimale relative Übersetzungsabweichung, dann minimale Summe der Zähne.
+Achsabstand wird daraus abgeleitet, nicht als feste Vorgabe gelöst. 5,1-mm-Bohrung und
+0,15-mm-Backlash sind Demo-Parameter, keine validierten Fertigungsempfehlungen.
+Keine Lager, kein Gehäuse, keine Kollisions-/Montagefreigabe. STL enthält beide Räder.
+
+
+## Freie Graphsuche: numerische Verfeinerung (30.10.2026)
+
+Drei-/Vierstufen-Mehrstarts, kontinuierliche Winkel-/Sitzanpassung und konservative
+Rotor-/Wellen-/Lager-/Werkzeugräume implementiert. Details, Suchgrenzen und
+Abnahmeszenarien: [GRAPH-SEARCH.md](GRAPH-SEARCH.md). Beidseitige Lagerplätze für
+Stirnradpakete; Kegelwellen vorläufig mit zwei rückwärtigen Lagerplätzen, deren
+überhängende Anordnung noch konstruktiv/physikalisch auszulegen ist.
+Nächste Arbeiten: vollständige Montagepfade, feinere Kollisionsprüfung und weitere
+Paarungsprovider im Elementgraph. Generative Tragstruktur weiterhin später.
+
+
+## Freie Paarungsprovider: Schnecke und GT2 (30.10.2026)
+
+Suchkatalog, kontinuierliche Freiheitsgrade und Phasenfortschreibung in die
+Paarungsprovider verlagert. Schnecke/Schneckenrad und GT2 als Einzelkomponenten auf
+gemeinsamen Wellen integriert, einschließlich Katalogriemenlänge, Entspann- und
+Nachspannreserve sowie Lager-/Riemenkorridor-Hüllen. Keine neuen kompletten
+Getriebemodule. Referenzen und kalte Suchtests für gemischte Zwei-/Dreistufenketten.
+Details und Grenzen: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
+Noch offen: konkrete Axiallager und Spannvorrichtungen, vollständige Montagewege,
+gezielte Hindernisumgehung, vorgegebene Bauräume und Sperrzonen, weitere Provider.
+Generatives Gehäuse bleibt zurückgestellt.
+
+
+## Lineare Graphausgänge und Bindungen (30.10.2026)
+
+Graphversion 2 ergänzt Trägerbewegungen und feste/freie/axial verschiebbare
+Elementbindungen. Spindel/Mutter und Ritzel/Zahnstange sind als letzte Stufe der
+freien Suche integriert. Suchziel für lineare Ausgänge: Vorschubbetrag in mm/U;
+Hub und Bewegungshüllen werden separat geprüft. Feste Kataloge bleiben bestehen.
+UI, schematische Bewegung, Referenzen und Persistenz angepasst. Die konkrete
+Führung, Verdrehsicherung, D-Wellen/Montageprofile und Lagerauslegung bleiben
+bewusst offen. Details: [LINEAR-GRAPH.md](LINEAR-GRAPH.md).
+
+
+## Automatische Zwischenrad-/Wellenwahl (30.10.2026)
+
+Freigegebene identische Stirnräder können jetzt als einzelner freier Rotor zwei
+benachbarte Eingriffe übernehmen. Feste Achse und drehender Rotor bleiben getrennte
+Bewegungsknoten. Verschiedene Elemente behalten ihre gemeinsame Antriebswelle.
+Die Suche prüft beide Verbindungsvarianten und priorisiert innerhalb der gültigen
+Auswahl weniger antreibende Zwischenwellen. Tests decken Zwei-/Drei-/Vierstufenfälle,
+eine notwendige Doppelradwelle und eine gemischte Zwischenrad-/Schneckenanordnung ab.
+Führung, Lagerausführung, Montage und Achsbefestigung bleiben später.
+Details: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
+
+
+## Freie Verbünde auf festen Achsen (30.10.2026)
+
+Graphversion 3 ergänzt starre freie Rotorgruppen. Automatische Suche vergleicht
+Doppelzahnrad bzw. gemischten Rotorverbund mit einer Antriebswelle. Gemeinsame
+Drehbewegung, feste relative Phase, unabhängige Achse, Verbindungshüllraum,
+Persistenz und Browserdarstellung implementiert. Katalogfreigaben bleiben explizit;
+keine automatische Konstruktion von Naben, Montage oder Lagerung.
+Abnahme und Grenzen: [GRAPH-SEARCH.md](GRAPH-SEARCH.md).
+
+## Bauraum und Sperrzonen (30.10.2026)
+
+Graphversion 4 ergänzt optionale orientierte Raumquader und verbotene Zonen mit
+Mindestabstand. Editor, Speicherung und schematische Darstellung sind angebunden.
+Die kontinuierliche Lageoptimierung berücksichtigt diese Vorgaben; die Endprüfung
+umfasst die vollständigen Bauteil- und Bewegungsräume einschließlich vorhandener
+Lager-/Zugangsreservierungen. Katalog und feste Anschlüsse bleiben unverändert.
+Montage und generatives Gehäuse weiterhin später. Verfahren, Grenzen und Abnahme:
+[SPACE-SEARCH.md](SPACE-SEARCH.md).
+
+## Mehrstufige Hindernisumfahrung (30.10.2026)
+
+Gezielte, gegensätzliche Umfahrungsstarts ergänzen die Katalogsuche. Einzelne
+Sperrzonen und interne Bauteilkollisionen beeinflussen gemeinsam die kontinuierliche
+Lageoptimierung. Drei-/Vierstufentests, gedrehter Bauraum, alternative Seiten und eine
+zusätzlich gesperrte Umfahrung ergänzen die Abnahme. Suchbericht zeigt Umfahrungsstarts.
+Verfahren und verbleibende Grenzen: [SPACE-SEARCH.md](SPACE-SEARCH.md).
+Montage und generatives Gehäuse weiterhin später.
+
+## Hindernisse bei gemischten Ketten (30.10.2026)
+
+Umfahrungsstarts berücksichtigen jetzt auch den vorhergesagten Ausgangsrahmen und
+verfolgen bei Achswechseln mehrere Zwischenlagen. Provider kennzeichnen Änderungen
+der Achsausrichtung; nachweislich ungeeignete achsparallele Ketten werden früh verworfen.
+Tests für Stirnrad, GT2, Schnecke und Kegelrad mit räumlichen Anschlussrahmen und
+blockierten Bauteil-/Riemenräumen ergänzt. Details: [SPACE-SEARCH.md](SPACE-SEARCH.md).
+Montage und generatives Gehäuse weiterhin später.
+
+## Live-Suche und Suchsteuerung (30.10.2026)
+
+Graphsuche in separaten Browser-Worker verlagert. Geprüfte Lösungen werden laufend
+angezeigt und können sofort übernommen werden. Abbruch beendet den Worker und erhält
+sichtbare Ergebnisse. Suchbudget auswählbar, Standard 25.000; Fortschritt und
+Lösungsanzahl sichtbar. Doppelte Winkelproben bei der Starterzeugung entfernt.
+Details und Abnahme: [SPACE-SEARCH.md](SPACE-SEARCH.md). Montage und generatives
+Gehäuse bleiben später.
+
+## Vergleich und 3D-Prüfung der Suchergebnisse (30.10.2026)
+
+Live-Ergebnisse als sortierbare Tabelle mit Hüllmaßen/-volumen, Stufen und
+Element-/Wellenzählung. Eigene 3D-Vorschau pro Kandidat ohne Projektübernahme,
+mit Abbruch veralteter Renderjobs und stabiler Auswahl beim Sortieren.
+Definitionen, Grenzen und Tests: [SPACE-SEARCH.md](SPACE-SEARCH.md).
+Montage und generatives Gehäuse bleiben später.
+
+## Sichtbare räumliche Prüfungen (30.10.2026)
+
+Bauraum, Sperrzonen und konservative Freiraum-/Bewegungshüllen als getrennte transparente
+3D-Ebenen in Kandidaten- und Graphvorschau ergänzt. Umschalten ohne erneute CAD-Berechnung,
+Kamera bleibt erhalten, „Alles einpassen“ verfügbar. Projekt und Teileexport unverändert.
+Details: [SPACE-SEARCH.md](SPACE-SEARCH.md). Montage und generatives Gehäuse weiterhin später.
+
+## Mechanics Studio – neuer Zielentwurf (30.10.2026)
+
+3D-Arbeitsfläche mit Modellbaum, Katalog, lokalen Anschlussrahmen und gestrichelten
+Verbindungsabsichten geplant. Neue übergeordnete Dokumentebene für mehrere Baugruppen,
+Routen und später gekoppelte Mehrfachausgänge. STEP-Topologie und frei geformte Räume
+als gesonderte Erweiterungen; Three.js übernimmt die Interaktion, nicht den CAD-Kernel.
+Konkrete Bedienabläufe, Architektur, Grenzen und Abnahmen: [STUDIO-PLAN.md](STUDIO-PLAN.md).
+Status: Entwurf, noch nicht implementiert. Montage und generatives Gehäuse bleiben später.

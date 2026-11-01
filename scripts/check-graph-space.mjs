@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import {spaceExample,linearExample,compoundExample} from '../src/mechanics/graph/examples.ts';
+import {demoMechanism,parseMechanism,resolveMechanism,transformMechanism} from '../src/mechanics/graph/model.ts';
+import {assessConstruction} from '../src/mechanics/graph/construction.ts';
+import {refineGraph} from '../src/mechanics/graph/refine.ts';
+import {robustRoute} from '../src/mechanics/graph/robust-search.ts';
+import {axisAngle,identity} from '../src/mechanics/graph/frames.ts';
+import {regionHull,containment,separation} from '../src/mechanics/graph/space.ts';
+import {initialProject,parseProject,serializeProject} from '../src/mechanics/model.ts';
+const source=spaceExample(),original=structuredClone(source);
+assert.ok(assessConstruction(source).checks.some(c=>c.state==='fail'&&c.id.startsWith('obstacle/')));
+const refined=await refineGraph(source,undefined,150),g=assessConstruction(refined.graph).graph;
+assert.ok(assessConstruction(g).valid);assert.ok(resolveMechanism(g).valid);assert.deepEqual(source,original);
+assert.deepEqual(g.environment,source.environment);assert.deepEqual(g.output.target,source.output.target);
+assert.deepEqual(g.elements.map(e=>e.params),source.elements.map(e=>e.params));assert.equal(resolveMechanism(g).value,1);
+assert.ok(g.bodies[1].frame.position[1]<0);
+const transformed=transformMechanism(g,{position:[21,-13,9],rotation:axisAngle([1,2,3],37)});
+assert.ok(assessConstruction(transformed).valid);assert.ok(resolveMechanism(transformed).valid);
+assert.deepEqual(parseProject(serializeProject({...initialProject(),graph:transformed})).graph,transformed);
+for(const mutate of [x=>x.version=3,x=>x.environment.bounds.size[0]=0,x=>x.environment.margin=-1,x=>x.environment.obstacles.push(x.environment.obstacles[0]),x=>x.environment.bounds.frame.rotation=[0,0,0,0]]){const bad=structuredClone(g);mutate(bad);assert.throws(()=>parseMechanism(bad));}
+const region={id:'test',frame:identity(),size:[10,10,10]},h=regionHull(region),small=regionHull({...region,size:[8,8,8]});
+assert.ok(containment(small,h,1).every(n=>n===0));assert.ok(containment(small,h,1.1).some(n=>n>0));
+assert.equal(separation(h,{...h,center:[11,0,0]}),1);
+const linear=linearExample('belt-screw'),hull=assessConstruction(linear).boxes.find(b=>b.owner==='l2'&&b.kind==='rotor');
+assert.ok(hull&&hull.half[2]>50);
+linear.version=4;linear.environment={margin:1,obstacles:[{id:'hub-block',frame:{...identity(),position:[hull.center[0]+9,0,200]},size:[2,2,2]}]};
+assert.ok(assessConstruction(linear).checks.some(c=>c.id===`obstacle/hub-block/${hull.id}`&&c.state==='fail'),'Entire linear travel must be checked, not only its initial position');
+const belt=assessConstruction(linear).boxes.find(b=>b.kind==='drive');linear.environment.obstacles=[{id:'belt-block',frame:{...identity(),position:belt.center},size:[2,2,2]}];
+assert.ok(assessConstruction(linear).checks.some(c=>c.id===`obstacle/belt-block/${belt.id}`&&c.state==='fail'));
+const cold=demoMechanism();cold.version=4;cold.environment=structuredClone(source.environment);cold.input.target=source.input.target;cold.output.target=source.output.target;
+const result=await robustRoute(cold,{target:1,tolerance:0,minStages:2,maxStages:2,budget:20000,beam:120,rules:['external-spur']});
+assert.ok(result.solutions.length>0);for(const s of result.solutions){assert.ok(assessConstruction(s,1,false).valid);assert.ok(resolveMechanism(s).valid);assert.deepEqual(s.environment,source.environment);assert.deepEqual(s.output.target,source.output.target);}
+const impossible=structuredClone(cold);impossible.environment.bounds.size=[1,1,1];const none=await robustRoute(impossible,{target:1,tolerance:0,minStages:2,maxStages:2,budget:200,beam:10,rules:['external-spur']});assert.equal(none.solutions.length,0);
+console.log('Space constraints: continuous avoidance, cold search',result.solutions.length,'solutions, oriented bounds, persistence, invalid regions and impossible box passed.');
+
+const compound=compoundExample('gear-belt');compound.version=4;compound.environment={margin:1,obstacles:[]};
+const alternatives=await robustRoute(compound,{target:4,tolerance:0,minStages:2,maxStages:2,budget:20,beam:10});
+assert.ok(alternatives.solutions.some(s=>s.elements.some(e=>e.rotorGroup)));assert.ok(alternatives.solutions.every(s=>s.version===4));
+const groupHull=assessConstruction(compound).boxes.find(b=>b.kind==='coupling');assert.ok(groupHull);
+compound.environment.obstacles=[{id:'coupling-block',frame:{...identity(),position:groupHull.center},size:[1,1,1]}];
+assert.ok(assessConstruction(compound).checks.some(c=>c.id===`obstacle/coupling-block/${groupHull.id}`&&c.state==='fail'));
+const controller=new AbortController();controller.abort();assert.equal((await robustRoute(cold,{target:1,tolerance:0,minStages:2,maxStages:2,budget:200,beam:10},controller.signal)).status,'cancelled');
+console.log('Environment also preserves compound alternatives and cancellation; coupling clearance checked.');

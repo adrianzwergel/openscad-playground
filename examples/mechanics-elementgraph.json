@@ -1,0 +1,326 @@
+{
+  "format": "mechanics10",
+  "version": 6,
+  "catalogVersion": "mechanics10-spur-1",
+  "name": "Gemeinsame Welle – Stirnrad und Kegelritzel",
+  "targetRatio": 2.1,
+  "components": [
+    {
+      "id": "input",
+      "catalogId": "spur-m2-z20",
+      "position": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "output",
+      "catalogId": "spur-m2-z40",
+      "position": [
+        60,
+        0,
+        0
+      ]
+    }
+  ],
+  "input": {
+    "component": "input",
+    "port": "shaft"
+  },
+  "output": {
+    "component": "output",
+    "port": "shaft"
+  },
+  "connections": [
+    {
+      "kind": "external-spur-mesh",
+      "a": {
+        "component": "input",
+        "port": "teeth"
+      },
+      "b": {
+        "component": "output",
+        "port": "teeth"
+      }
+    }
+  ],
+  "axes": {
+    "input": [
+      0,
+      0,
+      0
+    ],
+    "output": [
+      60,
+      0,
+      0
+    ]
+  },
+  "search": {
+    "maxLayers": 2,
+    "layerSpacing": 15,
+    "margin": 1,
+    "maxError": 100,
+    "direction": "any"
+  },
+  "graph": {
+    "version": 1,
+    "registryVersion": "mechanics-elements-1",
+    "bodies": [
+      {
+        "id": "A",
+        "kind": "shaft",
+        "frame": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "shaft": {
+          "diameter": 5,
+          "start": -12,
+          "end": 12
+        }
+      },
+      {
+        "id": "B",
+        "kind": "shaft",
+        "frame": {
+          "position": [
+            60,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "shaft": {
+          "diameter": 5,
+          "start": -12,
+          "end": 42
+        }
+      },
+      {
+        "id": "C",
+        "kind": "shaft",
+        "frame": {
+          "position": [
+            60,
+            20,
+            60
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865476
+          ]
+        },
+        "shaft": {
+          "diameter": 5,
+          "start": -12,
+          "end": 5
+        }
+      }
+    ],
+    "elements": [
+      {
+        "id": "spur-A",
+        "family": "spur",
+        "body": "A",
+        "pose": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "phase": 0,
+        "params": {
+          "teeth": 20,
+          "module": 2,
+          "width": 10,
+          "bore": 5.1
+        }
+      },
+      {
+        "id": "spur-B",
+        "family": "spur",
+        "body": "B",
+        "pose": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "phase": 40.5,
+        "params": {
+          "teeth": 40,
+          "module": 2,
+          "width": 10,
+          "bore": 5.1
+        }
+      },
+      {
+        "id": "bevel-B",
+        "family": "bevel",
+        "body": "B",
+        "pose": {
+          "position": [
+            0,
+            0,
+            30
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "phase": 0,
+        "params": {
+          "teeth": 20,
+          "module": 2,
+          "width": 6,
+          "bore": 5.1
+        }
+      },
+      {
+        "id": "bevel-C",
+        "family": "bevel",
+        "body": "C",
+        "pose": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "phase": 6,
+        "params": {
+          "teeth": 30,
+          "module": 2,
+          "width": 6,
+          "bore": 5.1
+        }
+      }
+    ],
+    "relations": [
+      {
+        "id": "mesh-AB",
+        "rule": "external-spur",
+        "elements": [
+          "spur-A",
+          "spur-B"
+        ],
+        "params": {
+          "azimuth": 0
+        }
+      },
+      {
+        "id": "mesh-BC",
+        "rule": "bevel-mesh",
+        "elements": [
+          "bevel-B",
+          "bevel-C"
+        ],
+        "params": {
+          "angle": 90,
+          "azimuth": 0
+        }
+      }
+    ],
+    "input": {
+      "body": "A",
+      "local": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "target": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "constraint": "frame"
+    },
+    "output": {
+      "body": "C",
+      "local": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "target": {
+        "position": [
+          60,
+          20,
+          60
+        ],
+        "rotation": [
+          0.7071067811865475,
+          0,
+          0,
+          0.7071067811865476
+        ]
+      },
+      "constraint": "frame"
+    }
+  }
+}

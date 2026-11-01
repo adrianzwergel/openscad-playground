@@ -1,0 +1,107 @@
+{
+  "format": "mechanics10",
+  "version": 2,
+  "catalogVersion": "mechanics10-spur-1",
+  "name": "Doppelzahnrad 4 zu 1",
+  "targetRatio": 4,
+  "components": [
+    {
+      "id": "input",
+      "catalogId": "spur-m2-z20",
+      "position": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "intermediate-1",
+      "catalogId": "spur-m2-z40",
+      "position": [
+        50,
+        -33.166247903554,
+        0
+      ]
+    },
+    {
+      "id": "intermediate-2",
+      "catalogId": "spur-m2-z20",
+      "position": [
+        50,
+        -33.166247903554,
+        15
+      ]
+    },
+    {
+      "id": "output",
+      "catalogId": "spur-m2-z40",
+      "position": [
+        100,
+        0,
+        15
+      ]
+    }
+  ],
+  "input": {
+    "component": "input",
+    "port": "shaft"
+  },
+  "output": {
+    "component": "output",
+    "port": "shaft"
+  },
+  "connections": [
+    {
+      "kind": "external-spur-mesh",
+      "a": {
+        "component": "input",
+        "port": "teeth"
+      },
+      "b": {
+        "component": "intermediate-1",
+        "port": "teeth"
+      }
+    },
+    {
+      "kind": "rigid-shaft",
+      "a": {
+        "component": "intermediate-1",
+        "port": "shaft"
+      },
+      "b": {
+        "component": "intermediate-2",
+        "port": "shaft"
+      }
+    },
+    {
+      "kind": "external-spur-mesh",
+      "a": {
+        "component": "intermediate-2",
+        "port": "teeth"
+      },
+      "b": {
+        "component": "output",
+        "port": "teeth"
+      }
+    }
+  ],
+  "axes": {
+    "input": [
+      0,
+      0,
+      0
+    ],
+    "output": [
+      100,
+      0,
+      0
+    ]
+  },
+  "search": {
+    "maxLayers": 2,
+    "layerSpacing": 15,
+    "margin": 1,
+    "maxError": 0,
+    "direction": "any"
+  }
+}

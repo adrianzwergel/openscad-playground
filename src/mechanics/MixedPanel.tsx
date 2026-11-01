@@ -1,0 +1,50 @@
+import React,{useEffect,useRef,useState} from 'react';
+import JSZip from 'jszip';
+import {parseOff} from '../io/import_off';
+import {exportGlb} from '../io/export_glb';
+import {resolveMixed,searchMixed,mixedCAD,mixedInstructions} from './mixed';
+import type {MixedSpec,MixedChoice} from './mixed-model';
+export function MixedPanel({mixed,onChange,busy,onBusy,projectJSON}:{mixed:MixedSpec;onChange:(s:MixedSpec)=>void;busy:boolean;onBusy:(v:boolean)=>void;projectJSON:string}){
+ const [results,setResults]=useState<ReturnType<typeof searchMixed>>(),[exploded,setExploded]=useState(false);
+ useEffect(()=>{setResults(undefined);},[JSON.stringify([mixed.input,mixed.output,mixed.target,mixed.tolerance,mixed.travel,mixed.allow])]);
+ const a=mixed.selected?resolveMixed(mixed,mixed.selected):null,cad=a?.valid?mixedCAD(mixed,mixed.selected!):null;
+ const [status,setStatus]=useState('Bereit'),[preview,setPreview]=useState(''),[download,setDownload]=useState<{url:string;name:string}>();
+ const worker=useRef<Worker>(),reject=useRef<(e:Error)=>void>(),generation=useRef(0);
+ useEffect(()=>{setPreview('');setDownload(undefined);setStatus('Vorgaben geändert – Vorschau neu erzeugen.');},[mixed]);
+ useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview);},[preview]);
+ useEffect(()=>()=>{if(download)URL.revokeObjectURL(download.url);},[download]);
+ useEffect(()=>()=>{generation.current++;reject.current?.(Error('Ansicht geschlossen'));worker.current?.terminate();},[]);
+ function cancel(){generation.current++;reject.current?.(Error('Abgebrochen'));worker.current?.terminate();onBusy(false);setStatus('Abgebrochen');}
+ function job(source:string){return new Promise<any>((resolve,fail)=>{const w=new Worker('./mechanics-render-worker.js');worker.current=w;const timer=setTimeout(()=>finish(Error('Zeitlimit überschritten.')),120000);function finish(e?:Error,result?:unknown){clearTimeout(timer);w.terminate();worker.current=undefined;reject.current=undefined;e?fail(e):resolve(result);}reject.current=e=>finish(e);w.onerror=e=>finish(Error(e.message));w.onmessage=e=>e.data.error?finish(Error(e.data.error)):finish(undefined,e.data);w.postMessage({source});});}
+ async function run(part?:string){
+  if(!cad||!mixed.selected)return;const id=++generation.current;onBusy(true);setDownload(undefined);
+  try{
+   if(!part){setStatus('OpenSCAD rendert …');setPreview('');const r=await job(mixedCAD(mixed,mixed.selected,exploded).source);if(id!==generation.current)return;const mesh=parseOff(r.off);mesh.colors=mesh.colors.map(()=>[0.12,0.3,0.28,1]);const glb=await exportGlb(mesh);if(id!==generation.current)return;setPreview(URL.createObjectURL(glb));setStatus('Vorschau fertig.');}
+   else{
+    const parts=cad.parts.filter(p=>part==='all'||p.id===part),zip=new JSZip();
+    for(const [i,p] of parts.entries()){setStatus(`STL ${i+1}/${parts.length}: ${p.name}`);const r=await job(p.source);if(id!==generation.current)return;zip.file(`${p.id}.stl`,r.stl);}
+    let blob:Blob,name:string;
+    if(part==='all'){zip.file('project.json',projectJSON);zip.file('parts.json',JSON.stringify({printed:cad.parts.map(({source,...p})=>p),purchased:cad.bom},null,2));zip.file('checks.json',JSON.stringify({checks:a?.checks,ports:a?.ports},null,2));zip.file('MONTAGE.txt',mixedInstructions(mixed,mixed.selected));blob=await zip.generateAsync({type:'blob'});name=`mechanics10-${mixed.selected.kind}.zip`;}
+    else{blob=new Blob([new Uint8Array(await zip.file(`${part}.stl`)!.async('uint8array'))],{type:'model/stl'});name=`${part}.stl`;}
+    if(id!==generation.current)return;setDownload({url:URL.createObjectURL(blob),name});setStatus('Export fertig.');
+   }
+  }catch(e){if(id===generation.current)setStatus(String(e));}finally{if(id===generation.current)onBusy(false);}
+ }
+
+ async function search(){const id=++generation.current;onBusy(true);setResults(undefined);setStatus('Prolog kombiniert Schnecke, Stirnräder und Riemenkatalog …');
+  try{const r=await new Promise<{candidates:MixedChoice[]}>((resolve,fail)=>{const w=new Worker('./prolog-worker.js');worker.current=w;const timer=setTimeout(()=>finish(Error('Zeitlimit überschritten')),120000);function finish(e?:Error,data?:any){clearTimeout(timer);w.terminate();worker.current=undefined;reject.current=undefined;e?fail(e):resolve(data);}reject.current=e=>finish(e);w.onerror=e=>finish(Error(e.message));w.onmessage=e=>e.data.error?finish(Error(e.data.error)):finish(undefined,e.data);w.postMessage({mode:'mixed',target:mixed.target,tolerance:mixed.tolerance,allow:mixed.allow,catalog:[]});});if(id!==generation.current)return;const found=searchMixed(mixed,r.candidates);setResults(found);setStatus(found.total?`${found.total} konstruktiv passende Ketten gefunden.`:'Keine passende Kette im begrenzten Suchraum. Anschlusslage, Höhe, Übersetzung oder Riemenlänge passen nicht.');}catch(e){if(id===generation.current)setStatus(String(e));}finally{if(id===generation.current)onBusy(false);}}
+ function change(p:Partial<MixedSpec>){const {selected,...rest}=mixed;setResults(undefined);onChange({...rest,...p});}
+ return <section id="mixed-panel"><div className="layout"><aside><h2>Gemischte Kettensuche</h2><p>Zwei Stufen: Schnecke → Stirnräder oder GT2-Riemen. Eingang +X, Ausgang +Z. Positionen sind feste Achsreferenzen, keine Wellenstirnflächen. Die Schneckenstufe darf entlang der Eingangsachse positioniert werden.</p>
+ {(['input','output'] as const).map(which=><fieldset key={which}><legend>{which==='input'?'Eingang +X':'Ausgang +Z'} [mm]</legend><div className="coordinates">{['X','Y','Z'].map((key,i)=><label key={key}>{key}<input aria-label={`mixed ${which} ${key}`} disabled={busy} type="number" step="0.1" value={mixed[which][i]} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&Number.isFinite(n)&&Math.abs(n)<=10000){const v=[...mixed[which]] as [number,number,number];v[i]=n;change({[which]:v});}}}/></label>)}</div></fieldset>)}
+ <label>Soll-Untersetzung<input id="mixed-target" type="number" disabled={busy} value={mixed.target} min="0.01" max="100" onChange={e=>{const n=Number(e.target.value);if(n>0&&n<=100)change({target:n});}}/></label>
+ <label>Abweichung [%]<input id="mixed-tolerance" type="number" disabled={busy} value={mixed.tolerance} min="0" max="1000" onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1000)change({tolerance:n});}}/></label>
+ <label>Stufenposition entlang Eingang ±[mm]<input id="mixed-travel" type="number" min="0" max="150" value={mixed.travel} disabled={busy} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=150)change({travel:n});}}/></label>
+ <label>Nachgeschaltete Stufe<select id="mixed-allow" disabled={busy} value={mixed.allow} onChange={e=>change({allow:e.target.value as MixedSpec['allow']})}><option value="both">Stirnräder und Zahnriemen vergleichen</option><option value="spur">Nur Stirnräder</option><option value="belt">Nur Zahnriemen</option></select></label>
+ <div className="actions"><button id="mixed-search" disabled={busy} onClick={search}>Ketten suchen</button><button id="mixed-cancel" disabled={!busy} onClick={cancel}>Abbrechen</button></div><p id="mixed-status" role="status">{status}</p>
+ {cad&&<><label>Ansicht<select id="mixed-view" disabled={busy} value={exploded?'open':'assembly'} onChange={e=>{setExploded(e.target.value==='open');setPreview('');}}><option value="assembly">Gesamte Baugruppe</option><option value="open">Montageansicht</option></select></label><div className="actions"><button id="mixed-render" disabled={busy} onClick={()=>run()}>Vorschau erzeugen</button><button id="mixed-export" disabled={busy} onClick={()=>run('all')}>Druckteile als ZIP</button></div></>}
+ {download&&<a id="mixed-download" href={download.url} download={download.name}>{download.name} herunterladen</a>}
+ </aside><div className="viewer">{preview?React.createElement('model-viewer',{src:preview,'camera-controls':true,'camera-orbit':'35deg 65deg auto',orientation:'0deg -90deg 0deg',style:{width:'100%',height:'100%'}}):<div className="empty">{cad?'Kette bereit für CAD-Vorschau':'Feste Anschlüsse → Katalogsuche → Konstruktion'}<small>Beide Stufen separat gelagert, koaxial gekuppelt und über eine Gehäusebrücke verschraubt.</small></div>}</div></div>
+ {results&&<section className="card"><h2>Ketten vergleichen</h2><p>{results.candidates} diskrete Kombinationen geprüft; {results.total} gültig; maximal 40 angezeigt.</p><table id="mixed-solutions"><thead><tr><th>Kette</th><th>Ist / Fehler</th><th>Bauraum XY / Verschiebung</th><th>Auswahl</th></tr></thead><tbody>{results.solutions.map((r,i)=><tr key={i}><td>Schnecke {r.c.starts}/{r.c.wheel} → {r.c.kind==='spur'?'Stirnrad':'GT2'} {r.c.za}/{r.c.zb}{r.c.belt?` · ${r.c.belt} mm`:''}</td><td>{r.ratio.toFixed(3)}:1 / {(100*r.error).toFixed(2)}%</td><td>{(r.xmax-r.xmin).toFixed(1)} × {(r.ymax-r.ymin).toFixed(1)} mm<small>Entlang Eingang: {(r.c.offset??0).toFixed(2)} mm</small></td><td><button disabled={busy} onClick={()=>onChange({...mixed,selected:r.c})}>Übernehmen</button></td></tr>)}</tbody></table><details><summary>Ablehnungsgründe (mehrere je Kandidat möglich)</summary><pre>{JSON.stringify(results.reasons,null,2)}</pre></details></section>}
+ {a&&<section className="card"><h2>Gemeinsame Konstruktion</h2><p>Ist-Untersetzung {a.ratio}:1. Ausgangsdrehung pro Eingang: {(a.c.kind==='spur'?-1:1)/a.ratio}. Kupplung verbindet zwei getrennte Ø5-Wellen.</p><ul id="mixed-checks">{a.checks.map(k=><li key={k.id} data-state={k.state}>{k.state==='pass'?'✓':k.state==='fail'?'✕':'?'} {k.message}</li>)}</ul>{cad&&<><table id="mixed-parts"><thead><tr><th>Einzelteil</th><th>Anzahl</th><th>Export</th></tr></thead><tbody>{cad.parts.map(p=><tr key={p.id}><td>{p.name}</td><td>{p.quantity}</td><td><button disabled={busy} data-mixed-part={p.id} onClick={()=>run(p.id)}>STL</button></td></tr>)}</tbody></table><details><summary>Montage</summary><pre>{mixedInstructions(mixed,mixed.selected!)}</pre></details><details><summary>Kaufteile</summary><ul>{cad.bom.map((b,i)=><li key={i}>{b}</li>)}</ul></details></>}</section>}
+ </section>;
+}

@@ -1,5 +1,39 @@
 # OpenSCAD Playground
 
+## Mechanics-10 – Etappe G
+
+This fork adds a browser-local Prolog → OpenSCAD workflow with a shared component catalog,
+shaft/gear ports, fixed-axis spatial search with idlers and compound gears on two planes,
+clearance rules, solution comparison and local/JSON project persistence. Stage D adds two-sided
+bearing support, removable housing plates, spacers, assembly views, a hardware BOM and individual
+printable STLs (also as ZIP). Physical print/assembly validation is still pending; see
+[the housing design](docs/HOUSING.md). Stage E adds GT2 belt-length/tension-travel selection,
+guided lead-screw and rack axes, full-stroke clearance checks and printable assembly parts.
+See [motion templates and limitations](docs/MOTION.md).
+Stage F adds internal gears, 90-degree bevel gears and worm pairs with oriented shaft ports,
+radial/axial bearing templates, removable housings, clearance checks and individual STL exports.
+These are standalone assembly templates; unrestricted transmission search and physical validation
+remain future work. See [spatial pairs and assembly limitations](docs/SPATIAL-PAIRS.md).
+Stage G adds a shared port editor, schematic live kinematics, persistent project variants
+with JSON exchange, and adjustable CAD explosion views. Manufacturing exports remain
+independent of view settings. See [the browser workbench](docs/WORKBENCH.md).
+Mixed-chain search now combines a worm stage with spur gears or GT2 belts between fixed
+shaft axes, including separate bearing supports, a coupling, a bolted housing bridge and
+individual STL exports. See [scope and construction checks](docs/MIXED-SEARCH.md).
+A new element-graph workbench begins the general architecture: shared shafts, quaternion
+frames, extensible relation providers and initial spur/bevel rules. This foundation does
+not yet perform automatic graph routing. See [element graph](docs/ELEMENT-GRAPH.md).
+See [the project plan](docs/PLAN.md) and [development instructions](docs/DEVELOPMENT.md).
+The [component model](docs/COMPONENT-MODEL.md) describes the shared model and current project format.
+
+```sh
+npm ci
+npm run prepare:mechanics
+npm run dev:mechanics
+```
+
+Open http://localhost:4000/mechanics.html. The upstream playground is preserved below.
+
 [Open the Demo](https://ochafik.com/openscad2)
 
 <a href="https://ochafik.com/openscad2" target="_blank">
