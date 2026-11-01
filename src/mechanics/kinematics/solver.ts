@@ -59,6 +59,7 @@ function terminalResiduals(m:Expanded,t:Terminal):number[]{
 /** Signal coordinate of a terminal: the coordinate itself or the first coordinate of the body's tree joint. */
 function terminalSignal(m:Expanded,t:Tree,term:Terminal){
  if(term.kind==='coordinate')return {joint:term.joint,index:term.coordinate};
+ if(term.kind==='none')return undefined;
  const entry=t.order.find(o=>o.child===term.body);if(!entry||coordinateCount(entry.joint.joint)===0)return undefined;return {joint:entry.joint.id,index:0};
 }
 

@@ -18,8 +18,9 @@ export type Interface=
 export type Envelope={radius:number;min:number;max:number;transverse?:[number,number]};
 export type Mount={interface:string;body:string;pose:Frame};
 export type Element={id:string;source:{kind:'printed'}|{kind:'library';library:string;part:string};surfaces:Surface[];interfaces:Interface[];envelope:Envelope;mounts:Mount[];phase:number;derived?:string};
-/** `display` is a visual box for bodies without elements (panels, carriages); it has no kinematic effect. */
-export type Body={id:string;frame:Frame;ground?:boolean;shaft?:{diameter:number;start:number;end:number};display?:{kind:'box';size:V;offset?:V};derived?:string;mirror?:{source:string;plane:Frame}};
+/** `display` is visual only: a box, or parts of an imported model (stored as assets, vertices in the body's frame at pose 0). */
+export type Display={kind:'box';size:V;offset?:V}|{kind:'mesh';asset:string;parts:string[]};
+export type Body={id:string;frame:Frame;ground?:boolean;shaft?:{diameter:number;start:number;end:number};display?:Display;derived?:string;mirror?:{source:string;plane:Frame}};
 export type Joint=
  |{kind:'fixed'}
  |{kind:'revolute'}
@@ -28,7 +29,8 @@ export type Joint=
  |{kind:'screw';lead:number}
  |{kind:'path';curve:Curve3;roll:'free'|'locked'}
  |{kind:'spherical'};
-export type JointRelation={id:string;joint:Joint;a:{body:string;local:Frame};b:{body:string;local:Frame};derived?:string;redundant?:boolean;shift?:number};
+/** `limits` bounds the first coordinate for sliders and range checks (degrees or millimetres). */
+export type JointRelation={id:string;joint:Joint;a:{body:string;local:Frame};b:{body:string;local:Frame};derived?:string;redundant?:boolean;shift?:number;limits?:{min:number;max:number}};
 export type SurfaceRef={element:string;surface:string};
 /** `side`: follower contacts put the pinion on the +normal (1) or −normal (−1) side of the rail curve. */
 export type ContactParams={offsetA:number;offsetB:number;azimuth?:number;angle?:number;length?:number;hand?:1|-1;distance?:number;side?:1|-1};
@@ -39,7 +41,8 @@ export type Pattern=
 export type Parameter={id:string;value:number;unit?:'mm'|'deg'|'1'};
 export type Terminal=
  |{kind:'frame';body:string;local:Frame;target:Frame;constraint:'frame'|'axis';tolerance?:{position:number;angle:number}}
- |{kind:'coordinate';joint:string;coordinate:0|1|2};
+ |{kind:'coordinate';joint:string;coordinate:0|1|2}
+ |{kind:'none'};  // a target mechanism without a chosen drive yet
 export type Range={from:number;to:number;samples:number};
 /** `ratio` is the reduction ratio ω_in/ω_out (2 = output turns half as fast), as in the element graph. */
 export type Target=
@@ -94,7 +97,7 @@ export function parseMechanism(input:unknown):Mechanism{
  unique(m.bodies,'Körper');unique(m.elements,'Element');unique(m.joints,'Gelenk');unique(m.contacts,'Kontakt');unique(m.parameters,'Parameter');
  const bodies=new Map(m.bodies.map(b=>[b.id,b]));
  if(m.bodies.filter(b=>b.ground).length!==1)throw Error('Genau ein Körper ist das Gestell (ground).');
- for(const b of m.bodies){b.frame=frame(b.frame,`Körper ${b.id}`);if(b.display&&(b.display.kind!=='box'||b.display.size?.length!==3||b.display.size.some(n=>!(num(n,'Anzeige')>0))||b.display.offset&&b.display.offset.length!==3))throw Error(`Körper ${b.id}: Anzeigebox ungültig.`);if(b.shaft){num(b.shaft.diameter,'Welle');num(b.shaft.start,'Welle');num(b.shaft.end,'Welle');if(!(b.shaft.diameter>0&&b.shaft.start<b.shaft.end))throw Error(`Körper ${b.id}: ungültige Welle.`);}}
+ for(const b of m.bodies){b.frame=frame(b.frame,`Körper ${b.id}`);const d=b.display;if(d&&!(d.kind==='box'&&d.size?.length===3&&d.size.every(n=>num(n,'Anzeige')>0)&&(!d.offset||d.offset.length===3)||d.kind==='mesh'&&typeof d.asset==='string'&&Array.isArray(d.parts)&&d.parts.every(x=>typeof x==='string')))throw Error(`Körper ${b.id}: Anzeige ungültig.`);if(b.shaft){num(b.shaft.diameter,'Welle');num(b.shaft.start,'Welle');num(b.shaft.end,'Welle');if(!(b.shaft.diameter>0&&b.shaft.start<b.shaft.end))throw Error(`Körper ${b.id}: ungültige Welle.`);}}
  for(const e of m.elements){
   if(!e.source||(e.source.kind!=='printed'&&e.source.kind!=='library'))throw Error(`Element ${e.id}: Herkunft fehlt.`);
   if(!Array.isArray(e.surfaces)||!Array.isArray(e.interfaces)||!Array.isArray(e.mounts))throw Error(`Element ${e.id}: Listen fehlen.`);
@@ -113,6 +116,7 @@ export function parseMechanism(input:unknown):Mechanism{
   for(const side of ['a','b'] as const){const s=j[side];if(!s||!bodies.has(s.body))throw Error(`Gelenk ${j.id}: Körper fehlt.`);s.local=frame(s.local,`Gelenk ${j.id}`);}
   if(j.a.body===j.b.body)throw Error(`Gelenk ${j.id}: verbindet einen Körper mit sich selbst.`);
   if(j.shift!==undefined)num(j.shift,`Gelenk ${j.id} Versatz`);
+  if(j.limits&&!(num(j.limits.min,`Gelenk ${j.id} Grenze`)<num(j.limits.max,`Gelenk ${j.id} Grenze`)))throw Error(`Gelenk ${j.id}: Grenzen min < max.`);
  }
  const elements=new Map(m.elements.map(e=>[e.id,e]));
  for(const c of m.contacts){
@@ -133,6 +137,7 @@ export function parseMechanism(input:unknown):Mechanism{
  }
  for(const key of ['input','output'] as const){const t=m[key];if(!t)throw Error(`${key}: Anschluss fehlt.`);
   if(t.kind==='frame'){if(!bodies.has(t.body))throw Error(`${key}: Körper fehlt.`);t.local=frame(t.local,key);t.target=frame(t.target,key);if(t.constraint!=='frame'&&t.constraint!=='axis')throw Error(`${key}: constraint frame|axis.`);if(t.tolerance){num(t.tolerance.position,key);num(t.tolerance.angle,key);}}
+  else if(t.kind==='none'){}
   else if(t.kind==='coordinate'){const j=m.joints.find(j=>j.id===t.joint);if(!j)throw Error(`${key}: Gelenk fehlt.`);if(!Number.isInteger(t.coordinate)||t.coordinate<0||t.coordinate>=jointDofs(j.joint))throw Error(`${key}: Koordinate außerhalb der Gelenkfreiheit.`);}
   else throw Error(`${key}: Anschlussart fehlt.`);}
  if(!m.range||!Number.isInteger(m.range.samples)||m.range.samples<1||m.range.samples>400||!Number.isFinite(num(m.range.from,'range'))||!Number.isFinite(num(m.range.to,'range')))throw Error('range: 1–400 Stellungen.');

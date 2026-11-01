@@ -30,3 +30,14 @@
 .sources label.check{display:inline-flex;gap:3px;align-items:center;margin:0}
 button.danger{border-color:#8a4444;color:#ffb3b3}
 .button-row{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0}
+
+#axes{min-width:320px;max-width:460px}
+#axes h3{margin:4px 0;font-size:13px}
+.axis-row{display:grid!important;grid-template-columns:90px 1fr 70px;gap:6px;align-items:center;margin:3px 0!important}
+.axis-row input{margin:0!important}
+.part-list{max-height:420px;overflow:auto}
+.part-row{display:grid;grid-template-columns:1fr 110px;gap:4px;align-items:center;margin:2px 0}
+.part-row[aria-selected=true] .part-name{border-color:#ffcc66}
+.part-name{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.part-row select{margin:0;padding:4px}
+#properties button[data-axis-tool][aria-pressed=true]{background:#5a4a1e;border-color:#ffcc66}

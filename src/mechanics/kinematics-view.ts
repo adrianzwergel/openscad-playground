@@ -3,7 +3,7 @@
 // poses. Lightweight on purpose; exact tooth geometry comes from generation.
 import * as THREE from 'three';
 import type {Frame} from './kinematics/math';
-import {compose} from './kinematics/math';
+import {compose,inverse} from './kinematics/math';
 import type {Expanded,Element} from './kinematics/model';
 import type {Surface} from './kinematics/surfaces';
 import {pitchPlane} from './kinematics/surfaces';
@@ -20,6 +20,7 @@ const soup=(positions:Float32Array)=>{const g=new THREE.BufferGeometry();g.setAt
 
 export type MotionSolution={mechanism:Expanded;poses:Pose[];transfer:Transfer;checks:Check[];error:number;mobility:{message:string;freedom:number}};
 const toMatrix=(f:Frame)=>new THREE.Matrix4().compose(new THREE.Vector3(...f.position),new THREE.Quaternion(...f.rotation),new THREE.Vector3(1,1,1));
+const palette=[0x63cbb3,0x7aa7e8,0xe8a24a,0xc98fe0,0x9bd46a,0xe87a7a,0x6ad0e0,0xe0d06a];
 const material=(color:number,opacity=1)=>new THREE.MeshStandardMaterial({color,roughness:.6,metalness:.1,transparent:opacity<1,opacity});
 
 /** Geometry of one surface in its element frame (axis = z, pitch plane at pitchPlane). */
@@ -49,8 +50,14 @@ export class KinematicsView{
  readonly group=new THREE.Group();
  private items:{object:THREE.Object3D;body:string;local:Frame}[]=[];
  private holders=new Map<string,{holder:THREE.Group;color:number}>();private generation=0;
+ /** Imported model parts by asset and part id (triangle soups in the model's frame at pose 0). */
+ assets:(asset:string)=>{parts:{id:string;positions:Float32Array}[]}|undefined=()=>undefined;
+ private geometries=new Map<string,THREE.BufferGeometry>();
+ /** Parts highlighted in the view (asset/part keys) and per-body colours. */
+ highlight=new Set<string>();
+ readonly parts:THREE.Mesh[]=[];
  private solution?:MotionSolution;
- clear(){this.generation++;this.solution=undefined;this.items=[];this.holders.clear();for(const child of [...this.group.children]){this.group.remove(child);child.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Line){if(!o.geometry.userData.library)o.geometry.dispose();(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose());}});}}
+ clear(){this.generation++;this.solution=undefined;this.items=[];this.holders.clear();this.parts.length=0;for(const child of [...this.group.children]){this.group.remove(child);child.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Line){if(!o.geometry.userData.library)o.geometry.dispose();(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose());}});}}
  get poses(){return this.solution?.poses.length??0;}
  show(solution:MotionSolution){
   this.clear();this.solution=solution;const m=solution.mechanism;
@@ -67,6 +74,10 @@ export class KinematicsView{
   }
   for(const b of m.bodies){
    if(b.shaft){const shaft=new THREE.Mesh(new THREE.CylinderGeometry(b.shaft.diameter/2,b.shaft.diameter/2,b.shaft.end-b.shaft.start,12),material(0xb8c4cc));shaft.rotation.x=Math.PI/2;shaft.position.z=(b.shaft.start+b.shaft.end)/2;const holder=new THREE.Group();holder.add(shaft);add(holder,b.id,{position:[0,0,0],rotation:[0,0,0,1]});}
+   if(b.display?.kind==='mesh'){const asset=this.assets(b.display.asset),holder=new THREE.Group(),color=b.ground?0x7d8a96:palette[m.bodies.indexOf(b)%palette.length];
+    for(const id of b.display.parts){const part=asset?.parts.find(p=>p.id===id);if(!part)continue;const key=`${b.display.asset}/${id}`;let g=this.geometries.get(key);if(!g){g=soup(part.positions);g.userData.library=true;this.geometries.set(key,g);}
+     const mesh=new THREE.Mesh(g,material(this.highlight.has(key)?0xffcc66:color));mesh.userData.pick={body:b.id,asset:b.display.asset,part:id};holder.add(mesh);this.parts.push(mesh);}
+    add(holder,b.id,inverse(b.frame));}
    if(b.display?.kind==='box'){const box=new THREE.Mesh(new THREE.BoxGeometry(...b.display.size),material(0x8fa3c8,.85));const holder=new THREE.Group();box.position.set(...(b.display.offset??[0,0,0]));holder.add(box);add(holder,b.id,{position:[0,0,0],rotation:[0,0,0,1]});}
   }
   // Path joints: the guide curve on the a-side body.
@@ -80,6 +91,10 @@ export class KinematicsView{
  private replace(id:string,object:THREE.Object3D){const h=this.holders.get(id);if(!h)return;for(const c of [...h.holder.children]){h.holder.remove(c);c.traverse(o=>{if(o instanceof THREE.Mesh){if(!o.geometry.userData.library)o.geometry.dispose();(o.material as THREE.Material).dispose();}});}h.holder.add(object);}
  /** Replaces placeholders by generated printable parts (triangle soups in element coordinates). */
  setParts(parts:Record<string,Float32Array>){for(const [id,positions] of Object.entries(parts)){const h=this.holders.get(id);if(h)this.replace(id,new THREE.Mesh(soup(positions),material(h.color)));}}
+ /** Places every item from given body frames (live sliders) without rebuilding the view. */
+ setFrames(bodies:Record<string,Frame>){for(const item of this.items){const body=bodies[item.body];if(!body)continue;item.object.matrix.copy(toMatrix(compose(body,item.local)));item.object.matrixWorldNeedsUpdate=true;}}
+ /** Imported part under a ray, with the hit in the part's model coordinates (pose 0). */
+ pick(ray:THREE.Raycaster){const hit=ray.intersectObjects(this.parts,false)[0];if(!hit)return undefined;const local=hit.point.clone().applyMatrix4(new THREE.Matrix4().copy(hit.object.matrixWorld).invert());return {...hit.object.userData.pick as {body:string;asset:string;part:string},local:local.toArray() as [number,number,number],world:hit.point.toArray() as [number,number,number]};}
  /** Shows pose k (fractional values interpolate to the nearest pose). */
  setPose(k:number){
   const s=this.solution;if(!s)return;const pose=s.poses[Math.max(0,Math.min(s.poses.length-1,Math.round(k)))];

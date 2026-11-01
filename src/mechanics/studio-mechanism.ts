@@ -12,10 +12,16 @@ import {templates} from './kinematics/templates';
 import {partMesh} from './kinematics/generate/part';
 import {stl} from './kinematics/generate/mesh';
 import type {Element,Contact} from './kinematics/model';
+import {importModel,storeAsset,loadAsset,rememberAsset} from './model-import';
+import type {Asset} from './model-import';
+import {fitCylinder,fitEdge,fitTwoPoints} from './kinematics/axis-fit';
+import type {AxisFit} from './kinematics/axis-fit';
+import {solve} from './kinematics/solver';
+import {quaternionFromBasis,cross as crossV,unit} from './kinematics/math';
 import {KinematicsView} from './kinematics-view';
 import type {MotionSolution} from './kinematics-view';
 
-type Item='mechanism'|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
+type Item='mechanism'|'model'|'axis-new'|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
 export type EditorHost={doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
@@ -26,19 +32,33 @@ export class MechanismEditor{
  readonly handles=new THREE.Group();
  activeId?:string;private item:Item='mechanism';private fitNext=false;
  // Generated parts depend only on elements, contacts and parameters; joint edits reuse them.
- private partCache?:{key:string;parts:Record<string,Float32Array>};private partsPending=false;private worker?:Worker;private preview?:MotionSolution;private previewError='';
+ private partCache?:{key:string;parts:Record<string,Float32Array>};private partsPending=false;
+ private assets=new Map<string,Asset>();
+ /** Live axis values (joint id → first coordinate) set by the sliders. */
+ private axisValues:Record<string,number>={};
+ /** Assignment brush: clicked parts go to this link. */
+ private brush='';
+ /** Axis picking: the tool and the joint draft it fills. */
+ private tool?:{mode:'cylinder'|'edge'|'points';first?:[number,number,number];joint?:string};
+ private draft={a:'ground',b:'',kind:'revolute' as 'revolute'|'prismatic'};
+ private lastFit?:AxisFit;private selectedPart='';private worker?:Worker;private preview?:MotionSolution;private previewError='';
  constructor(private host:EditorHost){}
  get active(){return !!this.activeId&&!!this.entry();}
  private entry(){return this.host.doc().mechanisms?.find(m=>m.id===this.activeId);}
  mechanism(){return this.entry()?.mechanism;}
- enter(id:string){this.activeId=id;this.item='mechanism';this.fitNext=true;this.refresh();}
- exit(){this.activeId=undefined;this.worker?.terminate();this.worker=undefined;this.view.clear();this.clearHandles();this.preview=undefined;}
+ private assetsTried=new Set<string>();
+ enter(id:string){if(this.activeId!==id){this.axisValues={};this.tool=undefined;this.brush='';}this.activeId=id;this.item=this.mechanism()?.bodies.some(b=>b.display?.kind==='mesh')?'model':'mechanism';this.fitNext=true;this.refresh();}
+ exit(){this.activeId=undefined;this.axisValues={};this.tool=undefined;this.brush='';this.worker?.terminate();this.worker=undefined;this.view.clear();this.clearHandles();this.preview=undefined;}
  motionSource(){const e=this.entry();return e?{label:e.label,mechanism:e.mechanism}:undefined;}
 
  // ---------- preview ----------
  refresh(){
   if(!this.active){if(this.activeId)this.exit();return;}
-  const m=this.mechanism()!;this.worker?.terminate();const w=new Worker('./mechanics-kinematics-worker.js');this.worker=w;
+  // Imported models come from the browser database; each is tried once, then shown without it.
+  const m=this.mechanism()!,missing=[...new Set(m.bodies.flatMap(b=>b.display?.kind==='mesh'?[b.display.asset]:[]))].filter(id=>!this.assets.has(id)&&!this.assetsTried.has(id));
+  if(missing.length){missing.forEach(id=>this.assetsTried.add(id));void Promise.all(missing.map(id=>loadAsset(id).then(a=>{if(a)this.assets.set(id,a);}).catch(()=>{}))).then(()=>{const lost=missing.filter(id=>!this.assets.has(id));if(lost.length)this.host.status('3D-Modell fehlt im Browser-Speicher: '+lost.join(', '));this.refresh();this.renderProperties();});return;}
+  this.view.assets=id=>this.assets.get(id);
+  this.worker?.terminate();const w=new Worker('./mechanics-kinematics-worker.js');this.worker=w;
   const key=JSON.stringify([m.elements,m.contacts,m.parameters]),cached=this.partCache?.key===key?this.partCache.parts:undefined;
   w.onmessage=({data})=>{if(this.worker!==w)return;
    if(data.type==='parts'){w.terminate();this.worker=undefined;this.partsPending=false;this.partCache={key,parts:data.parts};this.view.setParts(data.parts);this.renderStatus();return;}
@@ -47,7 +67,7 @@ export class MechanismEditor{
    else{this.previewError='';this.preview=data.solution;this.view.show(data.solution);if(cached)this.view.setParts(cached);}
    this.drawHandles();this.renderStatus();if(this.fitNext&&this.preview){this.fitNext=false;this.host.fit();}};
   this.partsPending=!cached&&m.elements.some(e=>e.source.kind==='printed'&&e.surfaces.length);
-  w.postMessage({mechanism:m,range:{from:m.range.from,to:m.range.from,samples:1},parts:cached?undefined:'printed'});
+  w.postMessage({mechanism:m,range:{from:this.inputValue(m),to:this.inputValue(m),samples:1},fixed:this.fixed(m),parts:cached?undefined:'printed'});
   this.drawHandles();
  }
  private renderStatus(){const p=document.getElementById('mechanism-preview');if(!p)return;
@@ -64,12 +84,75 @@ export class MechanismEditor{
    j.joint.curve.points.forEach((p,i)=>{const world=compose(base,{position:p,rotation:[0,0,0,1]}).position,size=Math.max(6,Math.min(30,j.joint.kind==='path'?j.joint.curve.cornerRadius/8:8));
     const h=new THREE.Mesh(new THREE.SphereGeometry(size,12,8),new THREE.MeshBasicMaterial({color:selected?0xffcc66:0xc98f2e}));h.position.fromArray(world);h.name=`path:${j.id}:${i}`;h.userData.pathPoint={joint:j.id,index:i};this.handles.add(h);});}
  }
- pick(ray:THREE.Raycaster){return ray.intersectObjects(this.handles.children,false)[0]?.object;}
+ /** Pointer over something editable: a path handle or a model part. */
+ hover(ray:THREE.Raycaster){return !!ray.intersectObjects(this.handles.children,false)[0]||!!this.view.pick(ray);}
+ /** Click in the 3D view. Returns a handle to drag; part clicks are handled here. */
+ click(ray:THREE.Raycaster):THREE.Object3D|undefined{
+  const handle=ray.intersectObjects(this.handles.children,false)[0]?.object;if(handle&&!this.tool)return handle;
+  const hit=this.view.pick(ray);if(!hit)return undefined;this.pickPart(hit.body,hit.asset,hit.part,hit.local);return undefined;}
+ /** A picked model part: axis tool, assignment brush or selection. Also the entry point for tests. */
+ pickPart(body:string,asset:string,part:string,local:[number,number,number]){
+  const m=this.mechanism();if(!m)return;
+  if(this.tool){const positions=this.assets.get(asset)?.parts.find(p=>p.id===part)?.positions;if(!positions)return;
+   try{let fit:AxisFit|undefined;
+    if(this.tool.mode==='cylinder')fit=fitCylinder(positions,local);
+    else if(this.tool.mode==='edge')fit=fitEdge(positions,local);
+    else if(!this.tool.first){this.tool.first=local;this.host.status('Erster Punkt gesetzt. Zweiten Punkt anklicken.');return;}
+    else fit=fitTwoPoints(this.tool.first,local);
+    if(fit.kind==='plane'){this.host.status('Ebene Fläche erkannt – für eine Drehachse den Zylindermantel (Bohrung, Welle, Gehäuse) anklicken.');return;}
+    this.applyAxis(fit);}catch(e){this.host.status('Achse nicht erkannt: '+(e instanceof Error?e.message:e));}
+   return;}
+  const key=`${asset}/${part}`;
+  if(this.brush){if(this.brush!==body)this.assignPart(asset,part,this.brush);return;}
+  this.selectedPart=key;this.view.highlight=new Set([key]);this.item='model';this.refresh();this.renderProperties();}
+ /** Picks a part by name at a point in model coordinates (entry for tests and scripts). */
+ pickByName(name:string,local:[number,number,number]){const m=this.mechanism();if(!m)return false;
+  for(const b of m.bodies)if(b.display?.kind==='mesh'){const asset=this.assets.get(b.display.asset),part=asset?.parts.find(p=>p.name===name||p.name.endsWith(name));if(part&&b.display.parts.includes(part.id)){this.pickPart(b.id,b.display.asset,part.id,local);return true;}}
+  return false;}
+ private assignPart(asset:string,part:string,target:string){
+  this.host.change(()=>{const m=this.mechanism()!;for(const b of m.bodies)if(b.display?.kind==='mesh'&&b.display.asset===asset)b.display.parts=b.display.parts.filter(p=>p!==part);
+   const t=m.bodies.find(b=>b.id===target)!;if(t.display?.kind!=='mesh'||t.display.asset!==asset){if(t.display?.kind==='mesh'){this.host.status('Ein Glied zeigt Teile genau eines Modells.');return;}t.display={kind:'mesh',asset,parts:[]};}t.display.parts.push(part);},`Teil → ${target}`);}
+ /** Creates or updates the drafted joint from a detected axis: z along the axis, origin on it, in pose-0 coordinates. */
+ private applyAxis(fit:AxisFit){
+  const m=this.mechanism()!,z=unit(fit.direction),x=unit(crossV(Math.abs(z[0])<.9?[1,0,0]:[0,1,0],z)),y=crossV(z,x),frame:Frame={position:fit.point.map(n=>Math.round(n*1000)/1000) as V,rotation:quaternionFromBasis(x,y,z)};
+  this.lastFit=fit;const target=this.tool?.joint;this.tool=undefined;
+  const frameOf=(id:string)=>m.bodies.find(b=>b.id===id)?.frame??identity();
+  if(target){this.host.change(()=>{const j=this.mechanism()!.joints.find(x=>x.id===target)!;j.a.local=compose(inverse(frameOf(j.a.body)),frame);j.b.local=compose(inverse(frameOf(j.b.body)),frame);},'Achse neu erkannt');this.item=`joint:${target}`;}
+  else{const {a,b,kind}=this.draft;if(!b||a===b){this.host.status('Glied A und B wählen.');return;}const id=`achse${m.joints.filter(j=>!j.id.startsWith('halt-')).length+1}`;
+   this.host.change(()=>{const mm=this.mechanism()!;mm.joints=mm.joints.filter(j=>j.id!==`halt-${b}`);mm.joints.push({id,joint:{kind},a:{body:a,local:compose(inverse(frameOf(a)),frame)},b:{body:b,local:compose(inverse(frameOf(b)),frame)},limits:kind==='revolute'?{min:-180,max:180}:{min:0,max:200}});
+    if(mm.input.kind==='none'){mm.input={kind:'coordinate',joint:id,coordinate:0};mm.output={kind:'coordinate',joint:id,coordinate:0};mm.range={from:kind==='revolute'?-180:0,to:kind==='revolute'?180:200,samples:37};}},`${kind==='revolute'?'Drehachse':'Linearachse'} ${id} angelegt (${fit.kind==='cylinder'?`Zylinder r=${fit.radius?.toFixed(2)} mm`:'Kante'})`);
+   this.item=`joint:${id}`;}
+  this.renderProperties();}
+ private inputValue(m:Mechanism){return m.input.kind==='coordinate'&&this.axisValues[m.input.joint]!==undefined?this.axisValues[m.input.joint]:m.range.from;}
+ private fixed(m:Mechanism){const out:Record<string,number[]>={};for(const [id,v] of Object.entries(this.axisValues))if(m.joints.some(j=>j.id===id)&&!(m.input.kind==='coordinate'&&m.input.joint===id))out[id]=[v];return out;}
+ /** Sliders: one per axis; moving one re-solves the pose in place. */
+ renderAxes(root=document.getElementById('axes')){
+  if(!root)return;root.replaceChildren();const m=this.mechanism();root.hidden=!m;if(!m)return;
+  const axes=m.joints.filter(j=>!j.id.startsWith('halt-')&&['revolute','prismatic','cylindrical','screw','path'].includes(j.joint.kind));
+  if(!axes.length){root.append(el('p',{className:'muted',textContent:'Noch keine Achsen. Im Modell Glieder bilden und Achsen anklicken.'}));return;}
+  root.append(el('h3',{textContent:'Achsen live'}));
+  for(const j of axes){const unitLabel=j.joint.kind==='revolute'||j.joint.kind==='screw'?'°':'mm',lo=j.limits?.min??(unitLabel==='°'?-180:-200),hi=j.limits?.max??(unitLabel==='°'?180:200),value=this.axisValues[j.id]??(m.input.kind==='coordinate'&&m.input.joint===j.id?m.range.from:Math.max(lo,Math.min(hi,0)));
+   const slider=el('input',{type:'range',min:String(lo),max:String(hi),step:String((hi-lo)/720),value:String(value)});slider.dataset.axis=j.id;slider.setAttribute('aria-label','Achse '+j.id);const out=el('output',{textContent:`${value.toFixed(1)} ${unitLabel}`});
+   slider.oninput=()=>{const v=Number(slider.value);this.axisValues[j.id]=v;out.textContent=`${v.toFixed(1)} ${unitLabel}`;this.livePose();};
+   root.append(el('label',{className:'axis-row'},el('span',{textContent:j.id}),slider,out));}
+  const reset=el('button',{textContent:'Alle Achsen auf Null'});reset.onclick=()=>{this.axisValues={};this.renderAxes();this.livePose();};root.append(reset,el('p',{id:'axes-report',className:'muted'}));
+ }
+ private liveToken=0;
+ private livePose(){const token=++this.liveToken;requestAnimationFrame(async()=>{if(token!==this.liveToken)return;const m=this.mechanism();if(!m)return;
+  try{const s=await solve({...structuredClone(m),range:{from:this.inputValue(m),to:this.inputValue(m),samples:1}},{yield:false,fixed:this.fixed(m),iterations:60});if(token!==this.liveToken)return;
+   this.view.setFrames(s.poses[0].bodies);const open=s.checks.find(c=>c.id==='closure'&&c.state==='fail'),r=document.getElementById('axes-report');if(r){r.textContent=open?'Geht in dieser Stellung nicht auf: '+open.message:'Stellung gelöst.';r.dataset.state=open?'open':'ok';r.dataset.frames=JSON.stringify(Object.fromEntries(Object.entries(s.poses[0].bodies).map(([k,f])=>[k,f.position.map(n=>Math.round(n*100)/100)])));}}
+  catch(e){const r=document.getElementById('axes-report');if(r)r.textContent='Nicht lösbar: '+(e instanceof Error?e.message:e);}});}
  selectHandle(o:THREE.Object3D){const point=o.userData.pathPoint;if(point){this.item=`joint:${point.joint}`;this.renderProperties();this.drawHandles();}}
  /** Writes a dragged path point back into the document (in the guide's a-side frame). */
  onDrag(o:THREE.Object3D){const point=o.userData.pathPoint,m=this.mechanism();if(!point||!m)return;const j=m.joints.find(x=>x.id===point.joint);if(!j||j.joint.kind!=='path')return;
   const local=compose(inverse(compose(this.bodyFrame(j.a.body),j.a.local)),{position:o.position.toArray() as V,rotation:[0,0,0,1]});j.joint.curve.points[point.index]=local.position.map(n=>Math.round(n*100)/100) as V;}
 
+ private axisTools(joint?:string){
+  const tool=(mode:'cylinder'|'edge'|'points',label:string,hint:string)=>{const b=el('button',{textContent:label,title:hint});b.dataset.axisTool=mode;b.setAttribute('aria-pressed',String(this.tool?.mode===mode));b.onclick=()=>{this.tool=this.tool?.mode===mode?undefined:{mode,joint};this.host.status(this.tool?hint:'Werkzeug beendet.');this.renderProperties();};return b;};
+  const out:HTMLElement[]=[el('div',{className:'button-row'},tool('cylinder','Zylinder anklicken','Zylindermantel anklicken (Bohrung, Welle, Gelenkgehäuse): Drehachse = Zylinderachse.'),tool('edge','Kante anklicken','Nahe an eine gerade Kante klicken: Achse entlang der Kante.'),tool('points','Zwei Punkte','Zwei Punkte am Modell anklicken: Achse von Punkt 1 nach Punkt 2.'))];
+  if(this.lastFit)out.push(el('p',{className:'muted',textContent:`Zuletzt erkannt: ${this.lastFit.kind==='cylinder'?`Zylinder, Radius ${this.lastFit.radius?.toFixed(2)} mm`:'Kante/Punkte'} · Punkt (${this.lastFit.point.map(n=>n.toFixed(1)).join(', ')}) · Richtung (${this.lastFit.direction.map(n=>n.toFixed(3)).join(', ')})`}));
+  return out;
+ }
  // ---------- explorer ----------
  renderTree(root:HTMLElement){
   root.append(el('div',{className:'tree-group',textContent:'Mechanismen'}));
@@ -78,6 +161,7 @@ export class MechanismEditor{
    root.append(el('div',{className:'tree-row'},open));
    if(this.activeId!==m.id)continue;
    const sub=(label:string,item:Item)=>{const b=el('button',{textContent:label,className:'tree-sub'});b.setAttribute('aria-selected',String(this.item===item));b.onclick=()=>{this.item=item;this.renderProperties();this.drawHandles();this.host.leave();};root.append(el('div',{className:'tree-row'},b));};
+   if(m.mechanism.bodies.some(b=>b.display?.kind==='mesh'))sub('  🧩 Modell & Glieder','model');sub('  ＋ Achse anlegen','axis-new');
    sub('  Parameter','parameters');sub('  Ein-/Ausgang, Bereich','io');
    for(const b of m.mechanism.bodies)if(!b.ground)sub(`  ▭ ${b.id}`,`body:${b.id}`);
    for(const j of m.mechanism.joints)sub(`  ⟳ ${j.id} (${j.joint.kind})`,`joint:${j.id}`);
@@ -87,8 +171,19 @@ export class MechanismEditor{
   }
   const add=el('div',{className:'mechanism-add'});
   for(const [key,t] of Object.entries(templates)){const b=el('button',{textContent:'+ '+t.label});b.dataset.mechanismTemplate=key;b.onclick=()=>{const id='mech-'+crypto.randomUUID().slice(0,8);this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label:t.label.replace(' (Vorlage)',''),mechanism:t.build()}];},`${t.label} angelegt`);this.enter(id);this.host.leave();};add.append(b);}
-  root.append(add);
+  const file=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});file.id='model-file';
+  const load=el('button',{textContent:'+ Aus 3D-Modell (STL, OBJ, GLB)'});load.dataset.mechanismModel='true';load.onclick=()=>file.click();
+  file.onchange=async()=>{const files=[...(file.files??[])];file.value='';if(files.length)await this.importFiles(files);};
+  add.append(load,file);root.append(add);
  }
+ /** New mechanism from model files: every part starts on the frame (Basis). */
+ async importFiles(files:File[]){
+  try{this.host.status('Modell wird gelesen …');const asset=await importModel(files);await storeAsset(asset);rememberAsset(asset);this.assets.set(asset.id,asset);
+   const id='mech-'+crypto.randomUUID().slice(0,8),label=asset.name.replace(/\.(stl|obj|glb|gltf)/gi,'').slice(0,60)||'Modell';
+   this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label,mechanism:{format:'kinematics-1',parameters:[],bodies:[{id:'ground',frame:identity(),ground:true,display:{kind:'mesh',asset:asset.id,parts:asset.parts.map(p=>p.id)}}],elements:[],joints:[],contacts:[],patterns:[],input:{kind:'none'},output:{kind:'none'},range:{from:0,to:0,samples:1}}}];},
+    `Modell geladen: ${asset.parts.length} Teile${asset.scale!==1?' (in Metern erkannt, auf mm skaliert)':''}`);
+   this.enter(id);this.host.leave();}
+  catch(e){this.host.status('Modell nicht lesbar: '+(e instanceof Error?e.message:e));}}
 
  // ---------- properties ----------
  renderProperties(root:HTMLElement=document.getElementById('properties')!):void{
@@ -115,6 +210,28 @@ export class MechanismEditor{
    const del=el('button',{textContent:'Mechanismus löschen',className:'danger'});del.onclick=()=>{const id=this.activeId;this.exit();this.host.change(()=>{const d=this.host.doc();d.mechanisms=(d.mechanisms??[]).filter(x=>x.id!==id);},'Mechanismus gelöscht');this.host.leave();};
    root.append(el('div',{className:'button-row'},addBody,addGear,addContact,addPattern),back,del);return;
   }
+  if(this.item==='model'){
+   const meshBodies=m.bodies.filter(b=>b.display?.kind==='mesh'),asset=meshBodies[0]?.display?.kind==='mesh'?this.assets.get(meshBodies[0].display.asset):undefined;
+   root.append(el('h3',{textContent:'🧩 Modell & Glieder'}),el('p',{className:'muted',textContent:'Ein Glied ist ein starrer Verbund. Teile anklicken und einem Glied zuordnen; die Basis steht still.'}));
+   const addLink=el('button',{textContent:'+ Glied'});addLink.dataset.addLink='true';addLink.onclick=()=>{const id=`glied${m.bodies.length}`;edit('Glied angelegt',x=>{x.bodies.push({id,frame:identity(),display:{kind:'mesh',asset:asset?.id??'',parts:[]}});x.joints.push({id:`halt-${id}`,joint:{kind:'fixed'},a:{body:'ground',local:identity()},b:{body:id,local:identity()}});});this.brush=id;};
+   const links=m.bodies.map(b=>[b.id,b.ground?`${b.id} (Basis)`:b.id] as [string,string]);
+   root.append(addLink,select('Klick weist zu',this.brush,[['','– nur auswählen –'],...links],v=>{this.brush=v;this.renderProperties();}));
+   if(!asset){root.append(el('p',{className:'muted',textContent:'Modell wird geladen …'}));return;}
+   const table=el('div',{className:'part-list'});
+   for(const part of asset.parts){const owner=meshBodies.find(b=>b.display?.kind==='mesh'&&b.display.parts.includes(part.id))?.id??'';const key=`${asset.id}/${part.id}`;
+    const row=el('div',{className:'part-row'});row.dataset.part=part.id;row.setAttribute('aria-selected',String(this.selectedPart===key));
+    const s=el('select');for(const [v,t] of links)s.add(new Option(t,v));s.value=owner;s.setAttribute('aria-label','Glied für '+part.name);s.onchange=()=>this.assignPart(asset.id,part.id,s.value);
+    const name=el('button',{textContent:part.name,className:'part-name'});name.onclick=()=>{this.selectedPart=key;this.view.highlight=new Set([key]);this.refresh();this.renderProperties();};
+    row.append(name,s);table.append(row);}
+   root.append(heading(`Teile (${asset.parts.length})`),table);return;
+  }
+  if(this.item==='axis-new'){
+   const links=m.bodies.map(b=>[b.id,b.ground?`${b.id} (Basis)`:b.id] as [string,string]);if(!this.draft.b)this.draft.b=m.bodies.find(b=>!b.ground)?.id??'';
+   root.append(el('h3',{textContent:'＋ Achse anlegen'}),el('p',{className:'muted',textContent:'Achse zwischen zwei Gliedern: Typ wählen, dann am Modell die Geometrie anklicken, aus der die Achse folgt.'}),
+    select('Glied A (trägt)',this.draft.a,links,v=>{this.draft.a=v;}),select('Glied B (bewegt sich)',this.draft.b,links,v=>{this.draft.b=v;}),
+    select('Typ',this.draft.kind,[['revolute','Drehachse'],['prismatic','Linearachse']],v=>{this.draft.kind=v as 'revolute'|'prismatic';}));
+   root.append(...this.axisTools());return;
+  }
   if(this.item==='parameters'){
    root.append(el('p',{className:'muted',textContent:'Zahl oder Ausdruck aus früheren Parametern, z. B. torHoehe/3. Werte im Dokument können Ausdrücke als {"expr": …} tragen.'}));
    m.parameters.forEach((p,i)=>{const raw=typeof p.value==='number'?String(p.value):(p.value as {expr:string}).expr;root.append(el('div',{className:'param-row'},text(p.id,raw,v=>edit('Parameter geändert',x=>{const n=Number(v);x.parameters[i].value=(v!==''&&Number.isFinite(n)?n:{expr:v}) as number;})),remove('×',x=>{x.parameters.splice(i,1);})));});
@@ -132,7 +249,7 @@ export class MechanismEditor{
    const id=this.item.slice(5),b=m.bodies.find(x=>x.id===id);if(!b){this.item='mechanism';return this.renderProperties(root);}
    const write=(fn:(b:Body)=>void)=>edit('Körper geändert',x=>fn(x.bodies.find(y=>y.id===id)!));
    root.append(el('h3',{textContent:`▭ ${id}`}),...frameFields('Lage',b.frame,f=>write(x=>{x.frame=f;})));
-   if(b.display)root.append(...triple('Anzeigebox [mm]',b.display.size,(i,n)=>write(x=>{x.display!.size[i]=Math.max(.1,n);})));
+   if(b.display?.kind==='box')root.append(...triple('Anzeigebox [mm]',b.display.size,(i,n)=>write(x=>{if(x.display?.kind==='box')x.display.size[i]=Math.max(.1,n);})));
    root.append(el('p',{className:'muted',textContent:'Die Lage ist nur der Startwert; die Gelenke bestimmen, wo der Körper wirklich steht.'}),
     remove('Körper entfernen',x=>{x.bodies=x.bodies.filter(y=>y.id!==id);x.joints=x.joints.filter(j=>j.a.body!==id&&j.b.body!==id);x.elements=x.elements.filter(e=>e.mounts.every(mt=>mt.body!==id));x.patterns.forEach(p=>{p.source=p.source.filter(s=>s!==id);});}));return;
   }
@@ -154,6 +271,9 @@ export class MechanismEditor{
     const addPoint=el('button',{textContent:'+ Punkt'});addPoint.onclick=()=>write(x=>{if(x.joint.kind!=='path')return;const pts=x.joint.curve.points,last=pts[pts.length-1],prev=pts[pts.length-2];pts.push(add(last,[last[0]-prev[0],last[1]-prev[1],last[2]-prev[2]]) as V);});
     root.append(heading('Punkte (im Rahmen von Körper A)'),table,addPoint,el('p',{className:'muted',textContent:'Punkte auch im 3D-Fenster ziehen. Jede Ecke wird mit dem Eckenradius verrundet.'}));
    }
+   if(j.joint.kind!=='fixed'&&j.joint.kind!=='spherical'){const unitLabel=j.joint.kind==='revolute'||j.joint.kind==='screw'?'°':'mm',lim=j.limits??(unitLabel==='°'?{min:-180,max:180}:{min:0,max:200});
+    root.append(heading(`Bereich [${unitLabel}]`),number('Min',lim.min,n=>write(x=>{x.limits={...(x.limits??lim),min:n};})),number('Max',lim.max,n=>write(x=>{x.limits={...(x.limits??lim),max:n};})));
+    if(m.bodies.some(b=>b.display?.kind==='mesh'))root.append(heading('Achse am Modell neu erkennen'),...this.axisTools(id));}
    root.append(...frameFields('Gelenk an A',j.a.local,f=>write(x=>{x.a.local=f;})),...frameFields('Gelenk an B',j.b.local,f=>write(x=>{x.b.local=f;})),
     remove('Gelenk entfernen',x=>{x.joints=x.joints.filter(y=>y.id!==id);x.patterns.forEach(p=>{p.source=p.source.filter(s=>s!==id);});if(x.input.kind==='coordinate'&&x.input.joint===id||x.output.kind==='coordinate'&&x.output.joint===id)throw Error('Gelenk ist Ein- oder Ausgang; zuerst dort ein anderes wählen.');}));
    const addJoint=el('button',{textContent:'+ Gelenk'});addJoint.onclick=()=>{const nid=`gelenk${m.joints.length+1}`;edit('Gelenk hinzugefügt',x=>{x.joints.push({id:nid,joint:{kind:'revolute'},a:{body:'ground',local:identity()},b:{body:x.bodies.find(b=>!b.ground)?.id??'ground',local:identity()}});});this.item=`joint:${nid}`;};
