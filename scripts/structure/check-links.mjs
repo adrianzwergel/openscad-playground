@@ -1,6 +1,6 @@
 // Teil B7: one optimised structure per link for the demos (bearings planned first). Every link is
 // connected, strong enough, closed, clear of its own moving parts and of all other links over the
-// whole range of motion. Writes STLs and a rendering per demo when OUT is set.
+// whole range of motion, strong and stiff enough under the design loads. Writes STLs and a rendering per demo when OUT is set.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
 import {adopted} from './adopted.mjs';
 import {planBearings,applyBearings} from '../../src/mechanics/kinematics/bearings.ts';
@@ -25,5 +25,7 @@ for(const name of selected){
    if(out)fs.writeFileSync(path.join(out,`${name}-${x.link}.stl`),stlBinary(x.result.mesh,x.link));}});
  if(out&&items.length)render(path.join(out,`${name}.png`),items,[{azimuth:-35,elevation:20},{azimuth:55,elevation:15},{azimuth:-120,elevation:30}],460);
  assert.ok(links.every(x=>x.result&&x.checks.every(c=>c.state!=='fail')),name+': nicht alle Glieder in Ordnung');
+ // Under the design loads (20 N per anchor, PLA, safety 3) every link must also be strong and stiff enough.
+ for(const x of links)for(const id of ['strength','stiffness'])assert.equal(x.checks.find(c=>c.id===id)?.state,'pass',`${name}/${x.link}: ${x.checks.find(c=>c.id===id)?.message}`);
 }
 console.log('Strukturen: alle Glieder erzeugt und geprüft.');

@@ -1,38 +1,55 @@
 // Space frame analysis for printed lattices: struts are round Euler–Bernoulli
 // beams joined rigidly at the nodes (a printed node does not hinge). Used for
 // sizing and the strength check after the truss layout has chosen topology.
-// 6 degrees of freedom per node, dense Cholesky (networks of ~100 nodes).
+// 6 degrees of freedom per node, skyline Cholesky in reverse Cuthill–McKee order.
 import type {V} from './vec.ts';
 import {sub,norm,scale,cross,unit} from './vec.ts';
-import type {TrussNode,Strut,Material} from './truss.ts';
+import type {TrussNode,Strut,Material,Section} from './truss.ts';
 
 /** `energy`: uᵀKu of the element, `axial`: its axial share (for sensitivities). */
 export type EndForces={N:number;V:number;T:number;M:number;length:number;energy:number;axial:number};
 
-function localAxes(d:V):[V,V,V]{const x=unit(d),h:V=Math.abs(x[2])<.9?[0,0,1]:[1,0,0],y=unit(cross(h,x)),z=cross(x,y);return [x,y,z];}
-/** Local 12×12 stiffness of a round beam (axes x along the strut). */
-function beamLocal(L:number,r:number,E:number){
- const G=E/2.6,A=Math.PI*r*r,I=Math.PI*r**4/4,J=2*I,k=new Float64Array(144),set=(i:number,j:number,v:number)=>{k[i*12+j]+=v;if(i!==j)k[j*12+i]+=v;};
- const a=E*A/L,t=G*J/L,b12=12*E*I/L**3,b6=6*E*I/L**2,b4=4*E*I/L,b2=2*E*I/L;
+/** Local axes: x along the strut; z towards `normal` where given (a plate section), else any perpendicular. */
+function localAxes(d:V,normal?:V):[V,V,V]{const x=unit(d);if(normal){const y0=cross(normal,x);if(norm(y0)>1e-6){const y=unit(y0);return [x,y,cross(x,y)];}}const h:V=Math.abs(x[2])<.9?[0,0,1]:[1,0,0],y=unit(cross(h,x)),z=cross(x,y);return [x,y,z];}
+/** Local 12×12 stiffness of a beam (axes x along the strut): a round bar of radius r, or the given section. */
+function beamLocal(L:number,r:number,E:number,section?:Section){
+ const G=E/2.6,A=section?.A??Math.PI*r*r,Ir=Math.PI*r**4/4,Iz=section?.Iz??Ir,Iy=section?.Iy??Ir,J=section?.J??2*Ir,k=new Float64Array(144),set=(i:number,j:number,v:number)=>{k[i*12+j]+=v;if(i!==j)k[j*12+i]+=v;};
+ const a=E*A/L,t=G*J/L;let b12=12*E*Iz/L**3,b6=6*E*Iz/L**2,b4=4*E*Iz/L,b2=2*E*Iz/L;
  set(0,0,a);set(6,6,a);set(0,6,-a);set(3,3,t);set(9,9,t);set(3,9,-t);
  // Bending in the local x–y plane (v, θz) and x–z plane (w, θy).
  set(1,1,b12);set(7,7,b12);set(1,7,-b12);set(1,5,b6);set(1,11,b6);set(7,5,-b6);set(7,11,-b6);set(5,5,b4);set(11,11,b4);set(5,11,b2);
+ b12=12*E*Iy/L**3;b6=6*E*Iy/L**2;b4=4*E*Iy/L;b2=2*E*Iy/L;
  set(2,2,b12);set(8,8,b12);set(2,8,-b12);set(2,4,-b6);set(2,10,-b6);set(8,4,b6);set(8,10,b6);set(4,4,b4);set(10,10,b4);set(4,10,b2);
  return k;
 }
 export function solveFrame(nodes:TrussNode[],struts:Strut[],cases:V[][],m:Material){
- const dof=new Int32Array(nodes.length).fill(-1);let n=0;nodes.forEach((x,i)=>{if(!x.fixed){dof[i]=n;n+=6;}});
- const K=new Float64Array(n*n),elements=struts.map(s=>{const d=sub(nodes[s.j].p,nodes[s.i].p),L=Math.max(norm(d),1e-6),r=Math.sqrt(s.area/Math.PI),R=localAxes(d),k=beamLocal(L,r,m.E);return {s,L,R,k};});
+ // Free nodes in reverse Cuthill–McKee order: the stiffness matrix becomes a narrow band (skyline storage).
+ const adj=nodes.map(()=>[] as number[]);for(const s of struts){adj[s.i].push(s.j);adj[s.j].push(s.i);}
+ const order:number[]=[],seen=new Uint8Array(nodes.length);nodes.forEach((x,i)=>{if(x.fixed)seen[i]=1;});
+ const free=nodes.map((_,i)=>i).filter(i=>!seen[i]).sort((a,b)=>adj[a].length-adj[b].length);
+ for(const s0 of free){if(seen[s0])continue;seen[s0]=1;const q=[s0];for(let h=0;h<q.length;h++){order.push(q[h]);for(const j of adj[q[h]].filter(j=>!seen[j]).sort((a,b)=>adj[a].length-adj[b].length)){seen[j]=1;q.push(j);}}}
+ order.reverse();
+ const dof=new Int32Array(nodes.length).fill(-1);let n=0;for(const i of order){dof[i]=n;n+=6;}
+ // Skyline: row r stores columns first[r]..r.
+ const first=new Int32Array(n);for(let r=0;r<n;r++)first[r]=r;
+ for(const s of struts){const a=dof[s.i],b=dof[s.j];if(a<0||b<0)continue;const lo=Math.min(a,b),hi=Math.max(a,b);for(let r=hi;r<hi+6;r++)first[r]=Math.min(first[r],lo);}
+ for(let i=0;i<nodes.length;i++){const a=dof[i];if(a<0)continue;for(let r=a;r<a+6;r++)first[r]=Math.min(first[r],a);}
+ const off=new Int32Array(n+1);for(let r=0;r<n;r++)off[r+1]=off[r]+(r-first[r]+1);
+ const K=new Float64Array(off[n]),at=(r:number,c:number)=>off[r]+(c-first[r]);
+ const elements=struts.map(s=>{const d=sub(nodes[s.j].p,nodes[s.i].p),L=Math.max(norm(d),1e-6),r=Math.sqrt(s.area/Math.PI),R=localAxes(d,s.section?.normal),k=beamLocal(L,r,m.E,s.section);return {s,L,R,k};});
  // Global = Tᵀ k T with T = blockdiag(R,R,R,R); R rows are the local axes.
  const toGlobal=(e:typeof elements[number])=>{const g=new Float64Array(144);for(let bi=0;bi<4;bi++)for(let bj=0;bj<4;bj++)for(let a=0;a<3;a++)for(let b=0;b<3;b++){let v=0;for(let p=0;p<3;p++)for(let q=0;q<3;q++)v+=e.R[p][a]*e.k[(bi*3+p)*12+bj*3+q]*e.R[q][b];g[(bi*3+a)*12+bj*3+b]=v;}return g;};
  for(const e of elements){const g=toGlobal(e),ids=[dof[e.s.i],dof[e.s.j]];
-  for(let p=0;p<2;p++)for(let q=0;q<2;q++){const I=ids[p],J=ids[q];if(I<0||J<0)continue;for(let r=0;r<6;r++)for(let c=0;c<6;c++)K[(I+r)*n+J+c]+=g[(p*6+r)*12+q*6+c];}}
- // Regularise against the typical stiffness (not the largest: one very stiff strut must not lock the rest).
- let dsum=0;for(let i=0;i<n;i++)dsum+=K[i*n+i];const reg=(dsum/Math.max(1,n))*1e-9+1e-9;for(let i=0;i<n;i++)K[i*n+i]+=reg;
- for(let j=0;j<n;j++){let s=K[j*n+j];for(let k=0;k<j;k++)s-=K[j*n+k]*K[j*n+k];if(s<=0)return null;const l=Math.sqrt(s);K[j*n+j]=l;for(let i=j+1;i<n;i++){let t=K[i*n+j];const ri=i*n,rj=j*n;for(let k=0;k<j;k++)t-=K[ri+k]*K[rj+k];K[ri+j]=t/l;}}
+  for(let p=0;p<2;p++)for(let q=0;q<2;q++){const I=ids[p],J=ids[q];if(I<0||J<0)continue;for(let r=0;r<6;r++)for(let c=0;c<6;c++){const R=I+r,C=J+c;if(C<=R)K[at(R,C)]+=g[(p*6+r)*12+q*6+c];}}}
+ // Regularise each degree of freedom relative to its own stiffness: an absolute spring would hold slender parts in
+ // place that nothing else holds (with very stiff anchor ties it reached the stiffness of a thin column).
+ for(let i=0;i<n;i++)K[at(i,i)]+=K[at(i,i)]*1e-10+1e-9;
+ for(let i=0;i<n;i++){const fi=first[i],oi=off[i]-fi;
+  for(let j=fi;j<=i;j++){const fj=first[j],oj=off[j]-fj;let t=K[oi+j];for(let k=Math.max(fi,fj);k<j;k++)t-=K[oi+k]*K[oj+k];
+   if(j<i)K[oi+j]=t/K[off[j]+j-fj];else{if(t<=0)return null;K[oi+i]=Math.sqrt(t);}}}
  const us=cases.map(f=>{const y=new Float64Array(n);nodes.forEach((x,i)=>{if(dof[i]>=0)for(let c=0;c<3;c++)y[dof[i]+c]=f[i]?.[c]??0;});
-  for(let i=0;i<n;i++){let s=y[i];for(let k=0;k<i;k++)s-=K[i*n+k]*y[k];y[i]=s/K[i*n+i];}
-  for(let i=n-1;i>=0;i--){let s=y[i];for(let k=i+1;k<n;k++)s-=K[k*n+i]*y[k];y[i]=s/K[i*n+i];}
+  for(let i=0;i<n;i++){const fi=first[i],oi=off[i]-fi;let t=y[i];for(let k=fi;k<i;k++)t-=K[oi+k]*y[k];y[i]=t/K[oi+i];}
+  for(let i=n-1;i>=0;i--){const fi=first[i],oi=off[i]-fi;y[i]/=K[oi+i];const v=y[i];for(let k=fi;k<i;k++)y[k]-=K[oi+k]*v;}
   return nodes.map((_,i)=>dof[i]<0?new Float64Array(6):y.subarray(dof[i],dof[i]+6));});
  // End forces per element and case in local axes: N axial, V shear, T torsion, M bending (largest end).
  const forces:EndForces[][]=elements.map(e=>us.map(u=>{const ue=new Float64Array(12);for(const [b,node] of [[0,e.s.i],[1,e.s.j]] as [number,number][])for(let blk=0;blk<2;blk++)for(let p=0;p<3;p++){let v=0;for(let q=0;q<3;q++)v+=e.R[p][q]*u[node][blk*3+q];ue[b*6+blk*3+p]=v;}

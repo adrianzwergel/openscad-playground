@@ -8,7 +8,10 @@ import {sub,norm,scale,add,dot} from './vec.ts';
 
 export type TrussNode={p:V;fixed:boolean;anchor?:number;load?:boolean};
 /** `keep`: never pruned (the only way to an anchor). */
-export type Strut={i:number;j:number;rigid?:boolean;keep?:boolean;area:number};
+/** `section`: a non-round cross-section (a plate strip): area, second moments about the local y and z axes, torsion
+ * constant and the direction of local z (the plate normal). Without it the strut is a round bar of `area`. */
+export type Section={A:number;Iy:number;Iz:number;J:number;normal:V};
+export type Strut={i:number;j:number;rigid?:boolean;keep?:boolean;area:number;section?:Section};
 export type Material={E:number;sigma:number;density:number;rMin:number;bucklingFactor:number};
 export const PLA:Material={E:3500,sigma:50/3,density:1.24e-3,rMin:2.5,bucklingFactor:3};
 

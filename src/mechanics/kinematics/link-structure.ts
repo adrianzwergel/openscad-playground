@@ -60,7 +60,7 @@ const CAP=20;
 function sweptDistance(p:V,steps:Step[],k:number,index:PrimIndex,stop:number):number{
  if(k===steps.length)return index.distance(p);
  const st=steps[k];let best=Infinity;
- for(let q=st.lo;;){const d=sweptDistance(st.map(p,q),steps,k+1,index,stop);best=Math.min(best,d);if(best<=stop||q>=st.hi)break;const v=st.speed(p,q);q=Math.min(st.hi,q+(d>CAP?d-CAP+.6:Math.max(d*.7,.6))/v);}
+ for(let q=st.lo;;){const d=sweptDistance(st.map(p,q),steps,k+1,index,stop);best=Math.min(best,d);if(best<=stop||q>=st.hi)break;const v=st.speed(p,q);q=Math.min(st.hi,q+(d>CAP?Math.max(d*.7,d-CAP+.6):Math.max(d*.7,.6))/v);}
  return best;
 }
 
@@ -101,9 +101,10 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
    const group=members.filter(b=>!used.has(b.id)&&Math.abs(Math.abs(dot(rotate(b.frame.rotation,[0,0,1]),z))-1)<1e-3&&Math.abs(level(b)-level(a))<8);if(group.length<2)continue;
    const h=group.reduce((x,b)=>x+level(b),0)/group.length,xAxis=norm(cross([0,0,1],z))>.1?scale(cross([0,0,1],z),1/norm(cross([0,0,1],z))):[1,0,0] as V,yAxis=cross(z,xAxis),o=scale(z,h);
    const pts:[number,number][]=[];for(const b of group){const c=b.frame.position,r=featureSize(b.feature).radius+4,u=dot(c,xAxis),v=dot(c,yAxis);for(let k=0;k<12;k++)pts.push([u+r*Math.cos(k*Math.PI/6),v+r*Math.sin(k*Math.PI/6)]);}
-   const hull=convexHull(pts),id=`${l}/platte${++n}`;
-   const frame:Frame={position:add(o,add(scale(xAxis,0),scale(yAxis,0))),rotation:quatBasis(xAxis,yAxis,z)};
-   list.push({id,frame,feature:{kind:'plate',points:hull,thickness:4},role:'load',load:0,group:id,clip:true});
+   // The plate's frame sits in the middle of its outline (its node is where the plate is, not on the link origin's normal).
+   const outline=convexHull(pts),cu=outline.reduce((x,p)=>x+p[0],0)/outline.length,cv=outline.reduce((x,p)=>x+p[1],0)/outline.length,hull=outline.map(([u,v])=>[u-cu,v-cv] as [number,number]),id=`${l}/platte${++n}`;
+   const frame:Frame={position:add(o,add(scale(xAxis,cu),scale(yAxis,cv))),rotation:quatBasis(xAxis,yAxis,z)};
+   list.push({id,frame,feature:{kind:'plate',points:hull,thickness:6},role:'load',load:0,group:id,clip:true});
    for(const b of group){b.group=id;used.add(b.id);}}}
  // Seats of a joint get an approach zone on their outer side: the neighbour on the other side of the
  // joint must not wrap its structure around them (it may be built first).
@@ -112,7 +113,7 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   access.get(x.link)!.push(cyl(compose(line.frame,{position:[0,0,z+out*4],rotation:[0,0,0,1]}),r,out>0?0:-45,out>0?45:0));}
  const bossesOf=(l:string)=>[...anchors.get(l)!.flatMap(a=>featureGeometry(a.feature,a.frame).solids),...access.get(l)!];
  const ground=tree.ground,groundPts=modelPoints(m,assets,ground,4000).map(p=>inLink(ground,toFrame(p)).position);
- const railAccess:Frame[]=[];
+ const railAccess:Frame[]=[],feetFallback=new Map<number,V>();
  {// Feet: the ground stands on a floor under its anchors (rail holders first, they are anchors too).
   const list=anchors.get(ground)!;
   // A path rail on the ground is held from its outer side every 110 mm.
@@ -122,8 +123,12 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
     list.push({id:`${e.id}/halter${i+1}`,frame:compose(pf,{position:[0,-2*mod,z1],rotation:[1,0,0,0]}),feature:{kind:'pad',width:22,depth:3.5*mod,thickness:5,holes:[[0,0]],hole:3.4},role:'load',load:s.load});}}
   const pos=list.map(a=>a.frame.position),floor=Math.min(...pos.map(p=>p[2]-12),...groundPts.map(p=>p[2]));
   const xs=pos.map(p=>p[0]),ys=pos.map(p=>p[1]),x0=Math.min(...xs)-20,x1=Math.max(...xs)+20,y0=Math.min(...ys)-20,y1=Math.max(...ys)+20;
-  const long=Math.max(x1-x0,y1-y0)>500,feet:V[]=[];
-  if(long){const alongX=x1-x0>=y1-y0,n=Math.max(2,Math.round(Math.max(x1-x0,y1-y0)/300)+1);for(let i=0;i<n;i++){const t=i/(n-1);for(const side of [-1,1]){const c=alongX?[x0+(x1-x0)*t,(y0+y1)/2+side*Math.max(25,(y1-y0)/2)]:[(x0+x1)/2+side*Math.max(25,(x1-x0)/2),y0+(y1-y0)*t];feet.push([c[0],c[1],floor]);}}}
+  const long=Math.max(x1-x0,y1-y0)>500,feet:V[]=[];feetFallback.clear();const fallback=feetFallback;
+  // A long track stands on pairs of feet; their stance grows with its height, so sideways loads go into the legs as
+  // tension and compression instead of bending a flat bridge. A foot without room falls back to the narrow stance.
+  const top=Math.max(...pos.map(p=>p[2]));
+  if(long){const alongX=x1-x0>=y1-y0,n=Math.max(2,Math.round(Math.max(x1-x0,y1-y0)/300)+1),across=alongX?(y1-y0)/2:(x1-x0)/2,narrow=Math.max(25,across),wide=Math.max(narrow,.6*(top-floor));
+   for(let i=0;i<n;i++){const t=i/(n-1);for(const side of [-1,1]){const at=(w:number):V=>alongX?[x0+(x1-x0)*t,(y0+y1)/2+side*w,floor]:[(x0+x1)/2+side*w,y0+(y1-y0)*t,floor];feet.push(at(wide));fallback.set(feet.length-1,at(narrow));}}}
   else{const w=Math.max(30,(x1-x0)/2),h=Math.max(30,(y1-y0)/2),cx=(x0+x1)/2,cy=(y0+y1)/2;for(const [a,b] of [[-1,-1],[1,-1],[1,1],[-1,1]])feet.push([cx+a*w,cy+b*h,floor]);}
   feet.forEach((p,i)=>list.push({id:`fuss${i+1}`,frame:{position:p,rotation:[1,0,0,0]},feature:{kind:'pad',width:30,depth:30,thickness:5,holes:[[-8,0],[8,0]],hole:4.5},role:'support'}));
  }
@@ -153,12 +158,13 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   if(!list.some(a=>a.role==='load')||!list.some(a=>a.role==='support')){entry.error='Glied hat keine Haltepunkte zum Verbinden.';continue;}
   if(s.only&&!s.only.includes(l))continue;
   if(s.inspect){const own=indexOf(l,false),others=tree.links.filter(x=>x!==l&&adjacent(l,x)).map(x=>({x,index:indexOf(x),steps:path(m,tree,l,x)}));s.inspect(l,list,clearanceFor(l),p=>[{link:l,d:own.distance(p)},...others.map(o=>({link:o.x,d:sweptDistance(p,o.steps,0,o.index,-1)}))]);continue;}
+  if(l===ground)for(const [i,p] of feetFallback){const a=list.find(x=>x.id===`fuss${i+1}`);if(a&&clearanceFor(l)(add(a.frame.position,[0,0,8]))<12)a.frame={...a.frame,position:p};}
   try{
    const result=await generateStructure({id:l,anchors:list,clearance:clearanceFor(l),settings:{...s.structure,region:s.region}},(stage,f)=>progress?.(l,stage,f));
    entry.result=result;entry.checks.push(...result.report.checks);
    // Later links avoid this structure: struts and nodes as primitives of this link.
    // The mesh is a little fuller than its struts (blends, node spheres): later links keep an extra millimetre.
-   for(const st of result.struts){for(const [x,real] of [[{kind:'capsule',a:st.a,b:st.b,r:st.r+1},{kind:'capsule',a:st.a,b:st.b,r:st.r}],...[st.a,st.b].map(p=>[{kind:'sphere',center:p,r:st.r*1.12+1},{kind:'sphere',center:p,r:st.r*1.12}])] as [Prim,Prim][]){put(l,x);padded.add(x);realOf.get(l)!.push(real);}}
+   for(const [x,real] of [...result.struts.map(st=>[{kind:'capsule',a:st.a,b:st.b,r:st.r+1},{kind:'capsule',a:st.a,b:st.b,r:st.r}]),...result.joints.map(j=>[{kind:'sphere',center:j.center,r:j.r+1},{kind:'sphere',center:j.center,r:j.r}])] as [Prim,Prim][]){put(l,x);padded.add(x);realOf.get(l)!.push(real);}
   }catch(e){entry.error=e instanceof Error?e.message:String(e);entry.checks.push({id:'generate',state:'fail',message:entry.error});}
  }
  // ---- final check with everything in place: each surface against all other links over their motion ----
