@@ -1,19 +1,25 @@
 import {legoPart,legoSearchable,legoCapabilities} from './graph/lego';
 import {CatalogPreview} from './catalog-preview';
-import {defaultCatalog,partAllowed,parseCatalog} from './graph/catalog';
+import {defaultCatalog,partAllowed,parseCatalog,partKey} from './graph/catalog';
 import type {SearchCatalog} from './graph/catalog';
 import {registry} from './graph/registry';
 
 const labels:Record<string,string>={teeth:'Zähne',module:'Modul [mm]',width:'Breite [mm]',bore:'Bohrung [mm]',length:'Länge [mm]',lead:'Vorschub [mm/U]',starts:'Gänge',diameter:'Durchmesser [mm]'};
 const familyNames:Record<string,string>={spur:'Stirnrad',bevel:'Kegelrad','gt2-pulley':'GT2-Scheibe','gt2-belt':'GT2-Riemen',worm:'Schnecke','worm-wheel':'Schneckenrad','tr8-screw':'TR8-Spindel','tr8-nut':'TR8-Mutter',rack:'Zahnstange'};
 function shortName(p:SearchCatalog['parts'][number],base:SearchCatalog){return p.family==='lego-technic'?p.name:p.name!==base.parts.find(x=>x.id===p.id)!.name?p.name:[familyNames[p.family]??p.family,p.params.teeth?`${p.params.teeth} Z`:p.params.length?`${p.params.length} mm`:'',p.params.starts?`${p.params.starts} G`:p.params.lead?`${p.params.lead} mm/U`:''].filter(Boolean).join(' · ');}
+/** Groups by kind of transmission, whatever the parts' make: LEGO spur gears are spur gears. The first rule names the group. */
+export const catalogKinds:{title:string;rules:string[]}[]=[
+ {title:'Stirnräder',rules:['external-spur','lego-spur']},{title:'Kegelräder',rules:['bevel-mesh','lego-bevel-90']},{title:'Schnecke / Schneckenrad',rules:['worm-mesh','lego-worm']},
+ {title:'GT2-Zahnriemen',rules:['gt2-belt']},{title:'Spindel / Mutter',rules:['screw-nut']},{title:'Ritzel / Zahnstange',rules:['rack-drive']},
+];
 export function renderStock(c:SearchCatalog,names:Record<string,string>,stroke:number|undefined,edit:(change:(c:SearchCatalog)=>void)=>void){
  const root=document.getElementById('catalog-items')!,query=(document.getElementById('catalog-filter') as HTMLInputElement).value.toLowerCase();
  const opened=new Set([...root.querySelectorAll('details[open]')].map(e=>(e as HTMLElement).dataset.key));root.replaceChildren();
  const whitelist=document.getElementById('catalog-whitelist') as HTMLInputElement;whitelist.checked=c.whitelist;whitelist.onchange=()=>edit(c=>{c.whitelist=whitelist.checked;});
  document.getElementById('catalog-clear-filters')!.onclick=()=>edit(c=>{c.excludedRules=[];c.whitelist=false;for(const p of c.parts){delete p.allowed;delete p.listed;delete p.quantity;}});
  const permitted=c.parts.filter(p=>partAllowed(c,p)).length;
- document.getElementById('search-types')!.textContent=`${permitted} / ${c.parts.length} Teile freigegeben · ${c.whitelist?'Warenkorb aktiv':'Gesamtkatalog mit Einzelfiltern'}. Typen: ${Object.keys(names).filter(id=>!c.excludedRules.includes(id)).map(id=>names[id]).join(', ')||'keine'}. Spindel und Zahnstange benötigen einen linearen Ausgang.`;
+ document.getElementById('search-types')!.textContent=`${permitted} / ${c.parts.length} Teile freigegeben · ${c.whitelist?'Warenkorb aktiv':'Gesamtkatalog mit Einzelfiltern'}. Typen: ${catalogKinds.filter(k=>k.rules.some(id=>!c.excludedRules.includes(id))).map(k=>k.title).join(', ')||'keine'}. Spindel und Zahnstange benötigen einen linearen Ausgang.`;
+ void names;
  const details=(key:string,title:string)=>{const d=document.createElement('details'),s=document.createElement('summary');d.dataset.key=key;d.open=opened.has(key);s.textContent=title;d.append(s);return d;};
  const checkbox=(parent:HTMLElement,text:string,value:boolean,action:(value:boolean)=>void)=>{const l=document.createElement('label'),i=document.createElement('input');i.type='checkbox';i.checked=value;i.onchange=()=>action(i.checked);l.append(i,document.createTextNode(' '+text));parent.append(l);return i;};
  const base=defaultCatalog(),seen=new Set<string>();
@@ -24,13 +30,15 @@ export function renderStock(c:SearchCatalog,names:Record<string,string>,stroke:n
   const remove=document.createElement('button');remove.textContent='×';remove.setAttribute('aria-label',label.textContent+' entfernen');remove.onclick=()=>edit(c=>{const part=c.parts.find(x=>x.id===p.id)!;delete part.listed;delete part.quantity;});row.append(label,qty,remove);cart.append(row);
  }
  if(!cart.children.length)cart.textContent=c.whitelist?'Warenkorb leer – keine Teile freigegeben.':'Warenkorb leer – gesamter Katalog verfügbar.';
- for(const rule of registry.rules.values()){
-  if(!rule.search)continue;
-  const families=new Set(rule.search.catalog({stroke}).flatMap(p=>p.elements.map(e=>e.family)));if(rule.id==='gt2-belt')families.add('gt2-belt');
-  const allParts=c.parts.filter(p=>families.has(p.family)),parts=allParts.filter(p=>!query||`${names[rule.id]} ${p.name} ${p.family} ${JSON.stringify(p.params)}`.toLowerCase().includes(query));if(!parts.length)continue;
-  const group=details(rule.id,`${names[rule.id]}`);group.dataset.rule=rule.id;group.open=true;
-  if(rule.id==='lego-spur'){const hint=document.createElement('p');hint.className='muted';hint.textContent='Parallel-, 90°- und Schneckenpaarungen. ◇ Sondermodelle ohne Suchregel.';group.append(hint);}
-  checkbox(group,'Gruppe für Suche freigeben',!c.excludedRules.includes(rule.id),value=>edit(c=>{c.excludedRules=value?c.excludedRules.filter(id=>id!==rule.id):[...c.excludedRules,rule.id];})).dataset.catalogRule=rule.id;
+ // Parts of each kind: those its rules can place (by the stock definition, so edited parts stay in their group).
+ const keyOf=new Map(base.parts.map(p=>[p.id,partKey(p.family,p.params)])),kinds=[...catalogKinds.map(k=>{const keys=new Set<string>();for(const id of k.rules){const rule=registry.rules.get(id);if(!rule?.search)continue;for(const choice of rule.search.catalog({stroke}))for(const e of choice.elements)keys.add(partKey(e.family,e.params));}
+   return {...k,has:(p:SearchCatalog['parts'][number])=>keys.has(keyOf.get(p.id)!)||k.rules.includes('gt2-belt')&&p.family==='gt2-belt'};}),
+  {title:'Weitere LEGO-Teile (ohne Paarungsregel)',rules:[] as string[],has:(p:SearchCatalog['parts'][number])=>p.family==='lego-technic'}];
+ for(const kind of kinds){const rule={id:kind.rules[0]??'lego-other'};
+  const parts=c.parts.filter(p=>!seen.has(p.id)&&kind.has(p)).filter(p=>!query||`${kind.title} ${p.name} ${p.family} ${JSON.stringify(p.params)}`.toLowerCase().includes(query));if(!parts.length)continue;
+  const group=details(rule.id,kind.title);group.dataset.rule=rule.id;group.open=true;
+  if(parts.some(p=>p.family==='lego-technic')){const hint=document.createElement('p');hint.className='muted';hint.textContent='LEGO-Teile stehen bei ihrer Bauart und sind gesperrt, bis du sie freigibst (Bearbeiten). ◇ Sondermodelle ohne Suchregel.';group.append(hint);}
+  if(kind.rules.length)checkbox(group,'Gruppe für Suche freigeben',kind.rules.some(id=>!c.excludedRules.includes(id)),value=>edit(c=>{c.excludedRules=value?c.excludedRules.filter(id=>!kind.rules.includes(id)):[...new Set([...c.excludedRules,...kind.rules])];})).dataset.catalogRule=rule.id;
   for(const p of parts){
    if(seen.has(p.id))continue;seen.add(p.id);
    const row=document.createElement('article');row.className='catalog-row';row.dataset.partId=p.id;

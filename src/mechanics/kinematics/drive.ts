@@ -30,6 +30,7 @@ export const driveSpec=(id:string)=>{const s=driveCatalog.find(x=>x.id===id);if(
 export type DriveGear={reference:number;rates:Record<string,number>;offsets?:Record<string,number>;label:string;ratio:number;notes:string[]};
 /** `frame`: flange centre on the carrying link, z along the shaft (pointing out of the motor). `target`:
  * reduction (motor turns per axis turn) for rotary axes, millimetres per motor turn for linear axes and paths. */
+/** `lego`: no longer used (LEGO parts come from the catalog like any other part). */
 export type Drive={id:string;spec:string;body:string;frame:Frame;axis:string;target:number;tolerance:number;maxStages?:number;lego?:boolean;gear?:DriveGear};
 
 /** Quaternion turning +z onto `v`. */
@@ -129,7 +130,10 @@ export type TaskInfo={drive:string;kind:'rotation'|'translation'|'path';carrier:
 export type DriveTask={request:RouteRequest;options:RouteOptions;info:TaskInfo};
 const PINION={module:2,teeth:20,radius:20};
 /** The route request of a drive in the frame of its carrying link at the given pose. */
-export function driveTask(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frames:Record<string,Frame>,values:Record<string,number>,o:{budget?:number;seed?:number}={}):DriveTask{
+/** `catalog`: what the Studio's catalog leaves to the search: transmission rules switched off and parts locked (part keys,
+ * family and parameters as in graph/catalog). Without it every rule and part may be used except LEGO. */
+export type DriveCatalog={excludedRules:string[];lockedParts:string[]};
+export function driveTask(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frames:Record<string,Frame>,values:Record<string,number>,o:{budget?:number;seed?:number;catalog?:DriveCatalog}={}):DriveTask{
  const j=axisJoint(m,d.axis),side=j.a.body===d.body?'a':j.b.body===d.body?'b':undefined;
  if(!side)throw Error(`Der Motor muss auf einem der beiden Glieder der Achse ${j.id} sitzen (${j.a.body} oder ${j.b.body}).`);
  const c=j[side],driven=(side==='a'?j.b:j.a).body,sign=side==='a'?1:-1,WC=frames[d.body];if(!WC||!frames[driven])throw Error('Stellung der Glieder unbekannt.');
@@ -152,9 +156,10 @@ export function driveTask(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frame
  const a=d.frame.position,b=output.target.position,ab=add(b,scale(a,-1)),reach=(p:V)=>{const t=Math.max(0,Math.min(1,dot(add(p,scale(a,-1)),ab)/Math.max(1e-9,dot(ab,ab))));return norm(add(p,scale(add(a,scale(ab,t)),-1)));};
  const near=(r:{frame:Frame;size:V})=>reach(r.frame.position)-norm(r.size)/2<=260;
  const obstacles:Region[]=[...own.filter(near).map(x=>({id:x.id,frame:x.frame,size:x.size,...(x.body===driven&&kind!=='path'?{role:'output' as const}:x.body===d.body?{role:'carrier' as const}:{})})),...motors.filter(near)];
- const rules=['external-spur','gt2-belt','bevel-mesh','worm-mesh',...(kind==='translation'?['screw-nut','rack-drive']:[]),...(d.lego?['lego-spur','lego-bevel-90','lego-worm']:[])];
+ // The catalog decides: its rules (LEGO pairs with their kind) minus those switched off; locked parts are filtered out.
+ const rules=['external-spur','gt2-belt','bevel-mesh','worm-mesh',...(kind==='translation'?['screw-nut','rack-drive']:[]),...(o.catalog?['lego-spur','lego-bevel-90','lego-worm']:[])].filter(id=>!o.catalog?.excludedRules.includes(id));
  const request:RouteRequest={input:{kind:'frame',body:'s0',local:identity(),target:d.frame,constraint:'frame'},output,environment:{obstacles,margin:1,terminals:'given'},...(kind==='translation'?{motion:'translation' as const,stroke:Math.min(400,hi-lo)}:{})};
- const options:RouteOptions={target,tolerance:d.tolerance,maxStages:d.maxStages??3,budget:o.budget??6000,seed:o.seed??1,rules,axialGap:1};
+ const options:RouteOptions&{lockedParts?:string[]}={target,tolerance:d.tolerance,maxStages:d.maxStages??3,budget:o.budget??6000,seed:o.seed??1,rules,axialGap:1,...(o.catalog?.lockedParts.length?{lockedParts:o.catalog.lockedParts}:{})};
  return {request,options,info:{drive:d.id,kind,carrier:d.body,driven,outPerAxis,reference,lo,hi,frames,...(pinion?{pinion}:{})}};
 }
 

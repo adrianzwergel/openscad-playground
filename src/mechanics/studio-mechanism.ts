@@ -2,6 +2,7 @@
 // bodies, joints (including paths with draggable points), patterns, terminals
 // and range. Edits go through the Studio's change() for validation and undo;
 // the preview pose is solved in the kinematics worker after every change.
+import {defaultCatalog,partAllowed,partKey} from './graph/catalog';
 import * as THREE from 'three';
 import type {StudioDocument} from './studio-model';
 import type {Mechanism,JointRelation,Joint,Body,Pattern} from './kinematics/model';
@@ -292,7 +293,7 @@ export class MechanismEditor{
  private async findGear(id:string){
   const m=this.mechanism(),drives=this.drives(),d=drives.find(x=>x.id===id);if(!m||!d)return;this.search?.worker.terminate();this.search=undefined;
   try{
-   const values=this.values(m),ref=await this.poseAt(m,values),task=driveTask(m,drives,d,a=>this.assets.get(a),ref.poses[0].bodies,values);
+   const values=this.values(m),ref=await this.poseAt(m,values),base=defaultCatalog(),cat=this.host.doc().catalog??base,stock=new Map(base.parts.map(p=>[p.id,partKey(p.family,p.params)])),task=driveTask(m,drives,d,a=>this.assets.get(a),ref.poses[0].bodies,values,{catalog:{excludedRules:cat.excludedRules,lockedParts:cat.parts.filter(p=>!partAllowed(cat,p)).map(p=>stock.get(p.id)??partKey(p.family,p.params))}});
    const w=new Worker('./mechanics-drive-worker.js'),search={drive:id,worker:w,info:task.info,results:[] as NonNullable<MechanismEditor['search']>['results'],state:'running' as 'running'|'done'|'error',text:`Suche läuft · ${task.request.environment!.obstacles.length} Sperrzonen aus dem Modell …`};this.search=search;
    w.onmessage=({data})=>{if(this.search!==search)return;
     if(data.type==='progress')search.text=`Suche läuft · ${Math.round(100*data.visited/data.budget)} % · ${search.results.length} Lösung(en)`;
@@ -348,7 +349,7 @@ export class MechanismEditor{
    ui.number(linear?'Weg je Motorumdrehung [mm/U]':'Untersetzung (Motorumdrehungen je Achsumdrehung)',Math.round(d.target*1000)/1000,n=>{if(n>0&&n<=1000)this.editDrive(id,'Ziel geändert',x=>{x.target=n;});}),
    ui.number('Toleranz [%]',d.tolerance,n=>{if(n>=0&&n<=50)this.editDrive(id,'Toleranz geändert',x=>{x.tolerance=n;});}),
    ui.select('Stufen höchstens',String(d.maxStages??3),[['1','1'],['2','2'],['3','3'],['4','4']],v=>this.editDrive(id,'Stufenzahl geändert',x=>{x.maxStages=Number(v);}))];
-  const lego=el('input',{type:'checkbox',checked:!!d.lego});lego.onchange=()=>this.editDrive(id,'Teileauswahl geändert',x=>{x.lego=lego.checked||undefined;});out.push(el('label',{className:'check'},lego,' auch LEGO-Teile verwenden'));
+  out.push(el('p',{className:'muted',textContent:'Teile und Paarungen: wie im Katalog ausgewählt (links, Reiter „Katalog“).'}));
   // Placement.
   const click=el('button',{textContent:'Auf Fläche klicken'});click.dataset.driveTool=id;click.setAttribute('aria-pressed',String(this.tool?.mode==='motor'));click.onclick=()=>{this.tool=this.tool?.mode==='motor'?undefined:{mode:'motor',drive:id};this.host.status(this.tool?'Fläche am Modell anklicken: der Motor steht darauf, die Welle zeigt von der Fläche weg.':'Werkzeug beendet.');this.renderProperties();};
   const parallel=el('button',{textContent:'Welle parallel zur Achse'});parallel.onclick=()=>this.editDrive(id,'Motorwelle parallel zur Achse',(x,mm)=>{x.frame=parallelTo(mm,x);removeGear(mm,x);placeMotor(mm,x);});

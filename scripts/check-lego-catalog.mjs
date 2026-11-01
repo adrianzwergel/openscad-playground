@@ -12,7 +12,7 @@ import {assessConstruction} from '../src/mechanics/graph/construction.ts';
 const catalog=defaultCatalog();assert.equal(legoParts.length,77);assert.equal(catalog.parts.filter(p=>p.family==='lego-technic').length,77);assert.equal(legoParts.filter(p=>p.search).length,15);
 for(const part of legoParts){const bytes=fs.readFileSync('public/mechanics-assets/ldraw/meshes/'+part.id+'.stl');assert.equal(bytes.length,84+50*bytes.readUInt32LE(80));assert.ok(part.author&&part.license);}
 const legacy={...catalog,parts:catalog.parts.filter(p=>p.family!=='lego-technic')};assert.equal(legacy.parts.length,31);assert.equal(parseCatalog(legacy).parts.length,108);
-const stock=structuredClone(catalog);stock.whitelist=true;for(const p of stock.parts)if(['lego-3648b','lego-3649'].includes(p.id)||p.family==='spur'&&[20,40].includes(p.params.teeth)){p.listed=true;p.quantity=2;}
+const stock=structuredClone(catalog);stock.whitelist=true;for(const p of stock.parts)if(['lego-3648b','lego-3649'].includes(p.id)||p.family==='spur'&&[20,40].includes(p.params.teeth)){p.listed=true;p.allowed=true;p.quantity=2;}
 const a=legoParts.find(p=>p.id==='3648b'),b=legoParts.find(p=>p.id==='3649');
 const pair={family:'lego-technic',params:{model:a.model}},other={family:'lego-technic',params:{model:b.model}};
 const body=i=>({id:'b'+i,kind:'shaft',motion:'rotation',frame:identity(),shaft:{diameter:5,start:-40,end:100}}),terminal=i=>({body:'b'+i,local:identity(),target:identity(),constraint:'frame'});

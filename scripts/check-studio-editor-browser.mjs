@@ -25,12 +25,12 @@ try {
  const input=await page.$('[aria-label="Position [mm] X"]');await input.click();await page.keyboard.down('Control');await page.keyboard.press('A');await page.keyboard.up('Control');await input.type('105');await input.press('Tab');
  await page.click('#save');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('mechanics-studio')).assemblies[0].graph.output.target.position[0]),105);
  await page.click('#undo');
- await page.click('#tab-catalog');assert.equal(await page.$$eval('#catalog-items > details',els=>els.length),9);
+ await page.click('#tab-catalog');assert.equal(await page.$$eval('#catalog-items > details',els=>els.length),7);
  await page.type('#catalog-filter','gt2');assert.equal(await page.$$eval('#catalog-items > details',els=>els.length),1);
  await page.$eval('#catalog-filter',e=>{e.value='';e.dispatchEvent(new Event('input'));});
  await page.evaluate(()=>{for(const d of document.querySelectorAll('#catalog details'))d.open=true;for(const id of [...document.querySelectorAll('[data-catalog-rule]')].map(e=>e.dataset.catalogRule))if(id!=='external-spur')document.querySelector(`[data-catalog-rule="${id}"]`).click();const Original=window.Worker;window.Worker=class extends Original{postMessage(data,...rest){if(data.options)window.searchRequest=data;super.postMessage(data,...rest);}};});
  await page.select('#budget','5000');await page.mouse.click(...project([50,0,0]),{button:'right'});await page.waitForSelector('#context-menu:not([hidden])');await page.click('#context-search');await page.waitForSelector('[data-studio-preview]',{timeout:120000});
- const request=await page.evaluate(()=>window.searchRequest);assert.deepEqual(request.options.rules,['external-spur']);assert.equal(request.options.budget,5000);
+ const request=await page.evaluate(()=>window.searchRequest);assert.deepEqual(request.options.rules,['external-spur','lego-spur']);assert.equal(request.options.budget,5000);
  if(!await page.$eval('#cancel',e=>e.disabled))await page.click('#cancel');
  await page.select('#result-sort','parts');await page.click('[data-studio-preview]');
  assert.match(await page.$eval('#status',e=>e.textContent),/Vorschau Lösung/);
