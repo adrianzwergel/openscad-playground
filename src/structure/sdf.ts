@@ -59,8 +59,11 @@ export class PrimIndex{
 
 /** Solids blended smoothly, holes cut sharply. */
 export class Scene{
- readonly solids:PrimIndex;readonly holes:PrimIndex;readonly hard:PrimIndex;readonly blend:number;
- constructor(blend:number,cell=10){this.blend=blend;this.hard=new PrimIndex(cell,cell);this.solids=new PrimIndex(cell,cell+blend);this.holes=new PrimIndex(cell,cell);}
+ readonly solids:PrimIndex;readonly holes:PrimIndex;readonly hard:PrimIndex;readonly pieces:PrimIndex;readonly blend:number;private group:number[]=[];private groups=0;
+ constructor(blend:number,cell=10){this.blend=blend;this.hard=new PrimIndex(cell,cell);this.solids=new PrimIndex(cell,cell+blend);this.holes=new PrimIndex(cell,cell);this.pieces=new PrimIndex(cell,cell+blend);}
+ /** Round cones end to end (a tapered strut): joined sharply among themselves (a blend would bulge at every joint),
+  * blended with everything else. Only the pieces near a point are evaluated. */
+ chain(points:V[],radii:number[]){const g=this.groups++;for(let i=0;i+1<points.length;i++){this.pieces.add({kind:'capsule',a:points[i],b:points[i+1],r:radii[i],rb:radii[i+1]});this.group.push(g);}return this;}
  solid(s:Prim){this.solids.add(s);return this;}
  /** Joined without blending (features that must keep their exact outline). */
  hardSolid(s:Prim){this.hard.add(s);return this;}
@@ -68,9 +71,10 @@ export class Scene{
  distance(p:V){
   const l=this.solids.near(p);let d=this.solids.reach;
   if(l)for(const i of l)d=smin(d,primDistance(p,this.solids.prims[i]),this.blend);
+  const c=this.pieces.near(p);if(c){const best=new Map<number,number>();for(const i of c){const g=this.group[i],v=primDistance(p,this.pieces.prims[i]);if(v<(best.get(g)??Infinity))best.set(g,v);}for(const v of best.values())d=smin(d,v,this.blend);}
   const k=this.hard.near(p);if(k)for(const i of k)d=Math.min(d,primDistance(p,this.hard.prims[i]));
   const h=this.holes.near(p);if(h)for(const i of h)d=Math.max(d,-primDistance(p,this.holes.prims[i]));
   return d;
  }
- bounds(){let min:V=[Infinity,Infinity,Infinity],max:V=[-Infinity,-Infinity,-Infinity];for(const s of [...this.solids.prims,...this.hard.prims]){const b=primBounds(s);min=min.map((n,i)=>Math.min(n,b.min[i])) as V;max=max.map((n,i)=>Math.max(n,b.max[i])) as V;}return {min,max};}
+ bounds(){let min:V=[Infinity,Infinity,Infinity],max:V=[-Infinity,-Infinity,-Infinity];for(const s of [...this.solids.prims,...this.hard.prims,...this.pieces.prims]){const b=primBounds(s);min=min.map((n,i)=>Math.min(n,b.min[i])) as V;max=max.map((n,i)=>Math.max(n,b.max[i])) as V;}return {min,max};}
 }

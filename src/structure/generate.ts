@@ -33,7 +33,8 @@ export type StructureSettings={bracing:number;load:number;margin:number;maxNodes
 export const defaultSettings:StructureSettings={bracing:1,load:20,margin:1,maxNodes:140,resolution:.8,blend:2,iterations:30,relax:14,keep:.25,material:{...PLA,rMin:3},region:35,deflection:.5};
 /** Struts with their radius, the most the free room allows (`cap`), utilisation and largest axial force. */
 /** `joints`: the spheres placed at strut nodes (their radius is limited by the free room). */
-export type StructureResult={id:string;mesh:Mesh;nodes:TrussNode[];struts:{a:V;b:V;r:number;cap:number;utilisation:number;force:number}[];joints:{center:V;r:number}[];report:StructureReport};
+/** Struts: sized radius `r`, the radii of the drawn round cone at its ends (`ra`, `rb`: a taper is drawn smoothly). */
+export type StructureResult={id:string;mesh:Mesh;nodes:TrussNode[];struts:{a:V;b:V;r:number;ra:number;rb:number;cap:number;utilisation:number;force:number}[];joints:{center:V;r:number}[];report:StructureReport};
 /** `print`: build direction with the least overhang (see print.ts). */
 export type StructureReport={print:PrintPlan;deflection:number;struts:number;nodes:number;volume:number;mass:number;utilisation:number;compliance:number;closed:boolean;components:number;triangles:number;clearance:number;connected:boolean;spacing:number;seconds:number;checks:{id:string;state:'pass'|'fail'|'warn';message:string}[]};
 
@@ -288,9 +289,22 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  progress?.('Geometrie',.8);
  const scene=new Scene(s.blend,12),radius=new Map<number,number>();
  net.struts.forEach(st=>{if(st.rigid)return;const r=radiusOf(st);for(const i of [st.i,st.j])radius.set(i,Math.max(radius.get(i)??0,r));});
- net.struts.forEach(st=>{if(st.rigid)return;const r=radiusOf(st);scene.solid({kind:'capsule',a:net.nodes[st.i].p,b:net.nodes[st.j].p,r});});
+ // A node where a strut just goes on straight (a taper's cut) needs no ball: both pieces are drawn as round cones that
+ // meet there with the larger of their radii, so the taper is smooth and no piece is thinner than sized.
+ const through=(i:number)=>{const l=net.struts.filter(st=>!st.rigid&&(st.i===i||st.j===i));if(l.length!==2)return false;const [u,v]=l.map(st=>unit(sub(net.nodes[st.i===i?st.j:st.i].p,net.nodes[i].p)));return dot(u,v)<-Math.cos(20*Math.PI/180);};
+ const endR=(st:Strut,i:number)=>through(i)?(radius.get(i)??radiusOf(st)):radiusOf(st);
+ const cone=new Map<Strut,[number,number]>();net.struts.forEach(st=>{if(!st.rigid)cone.set(st,[endR(st,st.i),endR(st,st.j)]);});
+ // Pieces joined at straight cuts form one chain (a smooth union would bulge at every cut).
+ {const done=new Set<Strut>(),at=(i:number)=>net.struts.filter(st=>!st.rigid&&(st.i===i||st.j===i));
+  for(const st of net.struts){if(st.rigid||done.has(st))continue;
+   // Walk back to the chain's start, then forward collecting points and radii.
+   let cur=st,from=st.i;while(through(from)){const prev=at(from).find(x=>x!==cur)!;if(done.has(prev)||prev===st)break;from=prev.i===from?prev.j:prev.i;cur=prev;}
+   const points:V[]=[net.nodes[from].p],radii:number[]=[];let node=from;
+   for(;;){done.add(cur);const [ra,rb]=cone.get(cur)!,fwd=cur.i===node;radii.push(fwd?ra:rb);node=fwd?cur.j:cur.i;points.push(net.nodes[node].p);
+    const next=through(node)?at(node).find(x=>x!==cur&&!done.has(x)):undefined;if(!next){radii.push(fwd?rb:ra);break;}cur=next;}
+   if(points.length>2)scene.chain(points,radii);else scene.solid({kind:'capsule',a:points[0],b:points[1],r:radii[0],rb:radii[1]});}}
  const joints:{center:V;r:number}[]=[];
- net.nodes.forEach((x,i)=>{if(x.anchor===undefined&&radius.has(i)){const j={center:x.p,r:Math.min(radius.get(i)!*1.12,Math.max(radius.get(i)!*.9,spec.clearance(x.p)-s.blend/2))};joints.push(j);scene.solid({kind:'sphere',...j});}});
+ net.nodes.forEach((x,i)=>{if(x.anchor===undefined&&radius.has(i)&&!through(i)){const j={center:x.p,r:Math.min(radius.get(i)!*1.12,Math.max(radius.get(i)!*.9,spec.clearance(x.p)-s.blend/2))};joints.push(j);scene.solid({kind:'sphere',...j});}});
  geo.forEach((g,k)=>{g.solids.forEach(x=>spec.anchors[k].clip?scene.solid(x):scene.hardSolid(x));g.holes.forEach(x=>scene.hole(x));});
  // Clip by the keep-out field: no material where another part is (anchor bosses are placed by design).
  // The keep-out field is 1-Lipschitz: a coarse 4 mm lattice bounds it from below, exact values only where clipping can act.
@@ -304,7 +318,7 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  const info=inspect(mesh),print=printOrientation(mesh);
  // Clearance of the finished surface (every 7th vertex is plenty at 0.8 mm); the lattice bound skips what cannot be worse.
  let worst=Infinity,worstAt:V=[0,0,0];for(let i=0;i<mesh.vertices.length/3;i+=7){const p:V=[mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]];if(bosses.distance(p)<1||lowerBound(p)>=worst)continue;const c=spec.clearance(p);if(c<worst){worst=c;worstAt=p;}}
- const struts2=net.struts.map((st,k)=>({st,k})).filter(x=>!x.st.rigid).map(({st,k})=>({a:net.nodes[st.i].p,b:net.nodes[st.j].p,r:radiusOf(st),cap:caps.get(st)??radiusOf(st),utilisation:util[k],force:forceOf(k)}));
+ const struts2=net.struts.map((st,k)=>({st,k})).filter(x=>!x.st.rigid).map(({st,k})=>({a:net.nodes[st.i].p,b:net.nodes[st.j].p,r:radiusOf(st),ra:cone.get(st)![0],rb:cone.get(st)![1],cap:caps.get(st)??radiusOf(st),utilisation:util[k],force:forceOf(k)}));
  const maxUtil=Math.max(0,...struts2.map(x=>x.utilisation)),connected=reach2(net);
  const checks:StructureReport['checks']=[
   {id:'connected',state:connected?'pass':'fail',message:connected?'Alle Haltepunkte hängen am Auflager.':'Ein Haltepunkt ist nicht angebunden.'},

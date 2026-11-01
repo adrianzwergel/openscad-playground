@@ -172,7 +172,7 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
    entry.result=result;entry.checks.push(...result.report.checks);
    // Later links avoid this structure: struts and nodes as primitives of this link.
    // The mesh is a little fuller than its struts (blends, node spheres): later links keep an extra millimetre.
-   for(const [x,real] of [...result.struts.map(st=>[{kind:'capsule',a:st.a,b:st.b,r:st.r+1},{kind:'capsule',a:st.a,b:st.b,r:st.r}]),...result.joints.map(j=>[{kind:'sphere',center:j.center,r:j.r+1},{kind:'sphere',center:j.center,r:j.r}])] as [Prim,Prim][]){put(l,x);padded.add(x);realOf.get(l)!.push(real);}
+   for(const [x,real] of [...result.struts.map(st=>[{kind:'capsule',a:st.a,b:st.b,r:st.ra+1,rb:st.rb+1},{kind:'capsule',a:st.a,b:st.b,r:st.ra,rb:st.rb}]),...result.joints.map(j=>[{kind:'sphere',center:j.center,r:j.r+1},{kind:'sphere',center:j.center,r:j.r}])] as [Prim,Prim][]){put(l,x);padded.add(x);realOf.get(l)!.push(real);}
   }catch(e){entry.error=e instanceof Error?e.message:String(e);entry.checks.push({id:'generate',state:'fail',message:entry.error});}
  }
  // ---- final check with everything in place: each surface against all other links over their motion ----
