@@ -21,8 +21,8 @@ type Request={type:'init';init:FieldInit}|{type:'field';run:number;link:string;b
 
 /** The worker's side: answers init and field requests. */
 export function fieldHandler(){
- let env:{clearanceFor:(link:string)=>(p:V)=>number;add:(b:BuiltStructure)=>void}|undefined;
- let added=new Set<string>(),clearances=new Map<string,{clearance:(p:V)=>number;lower:(p:V)=>number}>(),current:{run:number;field?:(p:V)=>number}={run:-1};
+ let env:{clearanceFor:(link:string)=>((p:V)=>number)&{seed:(pairs:Float64Array)=>void};add:(b:BuiltStructure)=>void}|undefined;
+ let added=new Set<string>(),clearances=new Map<string,{clearance:((p:V)=>number)&{seed:(pairs:Float64Array)=>void};lower:ReturnType<typeof latticeBound>}>(),current:{run:number;field?:(p:V)=>number}={run:-1};
  return async(req:Request):Promise<Float64Array|true>=>{
   if(req.type==='init'){const {mechanism,drives,plan,assets,settings}=req.init;env=undefined;added=new Set();clearances=new Map();
    await linkStructures(mechanism,drives,plan,id=>assets[id] as ReturnType<Assets>,{...settings,environment:e=>{env=e;}});return true;}
@@ -32,7 +32,7 @@ export function fieldHandler(){
   const key=`${req.link}:${[...added].sort().join(',')}`;let c=clearances.get(key);
   if(!c){const clearance=env.clearanceFor(req.link);c={clearance,lower:latticeBound(clearance)};clearances.set(key,c);}
   if(req.type==='clearance'){const P=req.points,out=new Float64Array(P.length/3);for(let i=0;i<out.length;i++)out[i]=c.clearance([P[3*i],P[3*i+1],P[3*i+2]]);return out;}
-  if(req.job){const scene=Scene.from(req.job.scene),bosses=new PrimIndex(12,12);for(const p of req.job.bosses)bosses.add(p);current={run:req.run,field:clipField(scene,bosses,c.clearance,c.lower,req.job.resolution)};}
+  if(req.job){if(req.job.lattice)c.lower.seed(req.job.lattice);if(req.job.clearance)c.clearance.seed(req.job.clearance);const scene=Scene.from(req.job.scene),bosses=new PrimIndex(12,12);for(const p of req.job.bosses)bosses.add(p);current={run:req.run,field:clipField(scene,bosses,c.clearance,c.lower,req.job.resolution)};}
   if(current.run!==req.run||!current.field)throw Error('Feld-Auftrag ohne Szene.');
   const field=current.field,P=req.points,out=new Float64Array(P.length/3);
   for(let i=0;i<out.length;i++)out[i]=field([P[3*i],P[3*i+1],P[3*i+2]]);

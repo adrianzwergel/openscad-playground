@@ -35,7 +35,7 @@ export type LinkPool={field:(link:string,built:BuiltStructure[],job:FieldJob,poi
  clearance:(link:string,built:BuiltStructure[],points:Float64Array)=>Promise<Float64Array>};
 /** `pool`: workers for the meshing. `environment`: instead of generating, hand out the environment (for a worker). */
 export type LinkSettings={structure:Partial<StructureSettings>;load:number;payload:number;gap:number;region:number;drives:Partial<DriveLoadSettings>;only?:string[];pool?:LinkPool;
- environment?:(env:{clearanceFor:(link:string)=>(p:V)=>number;add:(b:BuiltStructure)=>void})=>void;inspect?:(link:string,anchors:Anchor[],clearance:(p:V)=>number,parts:(p:V)=>{link:string;d:number}[])=>void};
+ environment?:(env:{clearanceFor:(link:string)=>((p:V)=>number)&{seed:(pairs:Float64Array)=>void};add:(b:BuiltStructure)=>void})=>void;inspect?:(link:string,anchors:Anchor[],clearance:(p:V)=>number,parts:(p:V)=>{link:string;d:number}[])=>void};
 export const defaultLinkSettings:LinkSettings={structure:{},load:20,payload:20,gap:1,region:35,drives:{}};
 export type LinkStructure={link:string;anchors:Anchor[];result?:StructureResult;error?:string;clearance?:number;checks:{id:string;state:'pass'|'fail'|'warn';message:string}[]};
 
@@ -169,7 +169,9 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   return Object.assign((p0:V)=>{const key=keyOf(p0),hit=cache.get(key);if(hit!==undefined)return hit;const p:V=[Math.round(p0[0]*2)/2,Math.round(p0[1]*2)/2,Math.round(p0[2]*2)/2];
    let d=self.distance(p);if(floor!==undefined)d=Math.min(d,p[2]-floor+5);
    for(const o of others){if(d<=0)break;d=Math.min(d,sweptDistance(p,o.steps,0,o.index,0));}
-   d-=s.gap;cache.set(key,d);return d;},{prime:(points:Float64Array,values:Float64Array)=>{for(let i=0;i<values.length;i++){const key=keyOf([points[3*i],points[3*i+1],points[3*i+2]]);if(!cache.has(key))cache.set(key,values[i]);}}});};
+   d-=s.gap;cache.set(key,d);return d;},{prime:(points:Float64Array,values:Float64Array)=>{for(let i=0;i<values.length;i++){const key=keyOf([points[3*i],points[3*i+1],points[3*i+2]]);if(!cache.has(key))cache.set(key,values[i]);}},
+   // The cache as key–value pairs, and taking such pairs over (a worker starts with what the main thread knows).
+   values:()=>Float64Array.from([...cache].flat()),seed:(pairs:Float64Array)=>{for(let i=0;i<pairs.length;i+=2)if(!cache.has(pairs[i]))cache.set(pairs[i],pairs[i+1]);}});};
  // Later links avoid a made structure: struts and nodes as primitives of its link. The mesh is a little fuller than its
  // struts (blends, node spheres): later links keep an extra millimetre.
  const built:BuiltStructure[]=[];
@@ -187,7 +189,7 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
    if(c.rail&&carrierOf(c.rail.link)===l)for(const a of list.filter(x=>x.id.startsWith(`${c.rail!.element}/halter`)))cases.push({[a.id]:rotate(a.frame.rotation,[c.rail.tangential,c.rail.radial,0])});}
   try{
    const pool=s.pool,soFar=[...built],clearance=clearanceFor(l);
-   const result=await generateStructure({id:l,anchors:list,clearance,cases,settings:{...s.structure,region:s.region},...(pool?{pool:(job:FieldJob,points:Float64Array)=>pool.field(l,soFar,job,points),prefetch:async(points:Float64Array)=>clearance.prime(points,await pool.clearance(l,soFar,points))}:{})},(stage,f)=>progress?.(l,stage,f));
+   const result=await generateStructure({id:l,anchors:list,clearance,cases,settings:{...s.structure,region:s.region},...(pool?{pool:(job:FieldJob,points:Float64Array)=>pool.field(l,soFar,{...job,clearance:clearance.values()},points),prefetch:async(points:Float64Array)=>clearance.prime(points,await pool.clearance(l,soFar,points))}:{})},(stage,f)=>progress?.(l,stage,f));
    entry.result=result;entry.checks.push(...result.report.checks);
    const b:BuiltStructure={link:l,struts:result.struts.map(st=>({a:st.a,b:st.b,ra:st.ra,rb:st.rb})),joints:result.joints};built.push(b);register(b);
   }catch(e){entry.error=e instanceof Error?e.message:String(e);entry.checks.push({id:'generate',state:'fail',message:entry.error});}

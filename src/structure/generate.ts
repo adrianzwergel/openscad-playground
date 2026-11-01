@@ -50,10 +50,13 @@ const R_MAX=16;
 /** Ties between grouped anchors without a plate: a round bar of r = 4 mm. */
 const PLATE=Math.PI*4*4;
 /** What a worker needs to build a structure's field: the scene, the anchors' bosses and the mesh resolution. */
-export type FieldJob={scene:SceneData;bosses:Prim[];resolution:number};
+/** `lattice`: the main generation's filled lower-bound lattice (key–value pairs). */
+export type FieldJob={scene:SceneData;bosses:Prim[];resolution:number;lattice?:Float64Array;/** The main thread's clearance cache (key–value pairs). */clearance?:Float64Array};
 /** Lower bound of a 1-Lipschitz field from exact values on a 4 mm lattice (cached). */
+/** `values` / `seed`: the lattice as key–value pairs, to hand a filled lattice to a worker. */
 export function latticeBound(exact:(p:V)=>number){const lattice=new Map<number,number>(),G=4;
- return (p:V)=>{const i=Math.round(p[0]/G),j=Math.round(p[1]/G),k=Math.round(p[2]/G),key=cellKey(i,j,k),c:V=[i*G,j*G,k*G];let v=lattice.get(key);if(v===undefined){v=exact(c);lattice.set(key,v);}return v-norm(sub(p,c));};}
+ return Object.assign((p:V)=>{const i=Math.round(p[0]/G),j=Math.round(p[1]/G),k=Math.round(p[2]/G),key=cellKey(i,j,k),c:V=[i*G,j*G,k*G];let v=lattice.get(key);if(v===undefined){v=exact(c);lattice.set(key,v);}return v-norm(sub(p,c));},
+  {values:()=>Float64Array.from([...lattice].flat()),seed:(pairs:Float64Array)=>{for(let i=0;i<pairs.length;i+=2)if(!lattice.has(pairs[i]))lattice.set(pairs[i],pairs[i+1]);}});}
 /** The structure's field clipped by the keep-out; the anchors' bosses (with their holes) are joined after the clip,
  * unclipped (they sit where the plan put them; a fade around them left a jump inside one grid cell). The cut sits
  * 0.6 mm inside the free side: surface-net vertices interpolate across a sharp cut by up to half a cell. Thin skins:
@@ -62,7 +65,9 @@ export function latticeBound(exact:(p:V)=>number){const lattice=new Map<number,n
 export function clipField(scene:Scene,bosses:PrimIndex,clearance:(p:V)=>number,lower:(p:V)=>number,resolution:number){
  const SKIN=1.2,CUT=.6;
  return (p:V)=>{const d=scene.distance(p);if(d>2*resolution)return d;if(lower(p)>=CUT+Math.max(-d,d<0?SKIN+d:-d))return d;
-  const c=clearance(p),cut=Math.max(d,CUT-c,(SKIN+d-(c-CUT))/2),boss=Math.max(bosses.distance(p),-scene.holes.distance(p));return Math.min(cut,boss);};
+  // Where a boss is the nearest geometry the clip cannot change anything: no clearance needed.
+  const boss=Math.max(bosses.distance(p),-scene.holes.distance(p));if(boss<=d+1e-9)return boss;
+  const c=clearance(p),cut=Math.max(d,CUT-c,(SKIN+d-(c-CUT))/2);return Math.min(cut,boss);};
 }
 export async function generateStructure(spec:StructureSpec,progress?:(stage:string,f:number)=>void):Promise<StructureResult>{
  const t0=performance.now(),s={...defaultSettings,...spec.settings,material:{...defaultSettings.material,...spec.settings?.material}},m=s.material,rMin=m.rMin;
@@ -351,7 +356,7 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  const b=scene.bounds(),res=Math.max(s.resolution,norm(sub(b.max,b.min))/1000);
  const field=clipField(scene,bosses,spec.clearance,lower,res);
  // With a pool the field's values are computed by workers (each builds the same field from plain data).
- const raw=spec.pool?await surfaceNetsBatch(points=>spec.pool!({scene:scene.describe(),bosses:bosses.prims,resolution:res},points),b.min,b.max,res,4,p=>scene.distance(p)):surfaceNets(field,b.min,b.max,res,4,p=>scene.distance(p));
+ const raw=spec.pool?await surfaceNetsBatch(points=>spec.pool!({scene:scene.describe(),bosses:bosses.prims,resolution:res,lattice:lowerBound.values()},points),b.min,b.max,res,4,p=>scene.distance(p)):surfaceNets(field,b.min,b.max,res,4,p=>scene.distance(p));
  const {mesh,dropped}=largestPart(raw);
  progress?.('Prüfung',.95);
  const info=inspect(mesh),print=printOrientation(mesh);

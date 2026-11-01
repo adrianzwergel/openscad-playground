@@ -85,14 +85,12 @@ Abweichungen vom Plan unten (nach Versuchen):
   Filter ist jedes freie Element gestützt. Für flächige Teile und als Vergleich; die
   Glieder der Demos nutzen das Tragwerk.
 
-Noch offen:
-- **Laufzeit unter 30 s** (eigenes Ziel, nicht im Plan): mit Workern 35–55 s im Studio.
-  Netz und Abstandsfeld laufen verteilt (`field-jobs.ts`: jeder Worker baut die Umgebung
-  der Glieder selbst auf; Punkte, die die Grundnetz-Suche fragen wird, werden vorab
-  verteilt gerechnet; große Teile bekommen ein gröberes Netz, höchstens 1000 Zellen über
-  die Diagonale). Was bleibt, ist die Grundnetz-Suche selbst (nacheinander) und das
-  Abtasten der bewegten Nachbarn über lange Wege (Schlitten: 1,2 m); schneller ginge es
-  mit einem vorab gerasterten oder analytischen Abstandsfeld der überstrichenen Räume.
+Laufzeit:
+- Netz und Abstandsfeld laufen auf Workern verteilt (`field-jobs.ts`: jeder
+  Worker baut die Umgebung der Glieder selbst auf und bekommt die schon bekannten Abstände
+  mit; Punkte, die die Grundnetz-Suche fragen wird, werden vorab verteilt gerechnet; große
+  Teile bekommen ein gröberes Netz, höchstens 1000 Zellen über die Diagonale). Im Studio
+  etwa 30–55 s je Demo. Ein festes Zeitziel gibt es nicht.
 
 Tests: `scripts/structure/check-sdf.mjs`, `check-features.mjs`, `check-frame.mjs`, `check-generate.mjs`,
 `check-bearings.mjs`, `check-loads.mjs`, `check-links.mjs [robot|cnc|sled]` (mit `OUT=…`
