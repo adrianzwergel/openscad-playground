@@ -65,10 +65,11 @@ export function barUtilisation(f:EndForces,r:number,m:Material){
  return Math.max(vm/m.sigma,buckling);
 }
 /** Radii so that every strut is used up to its strength (never below the printable minimum). */
-export function sizeFrame(nodes:TrussNode[],struts:Strut[],cases:V[][],m:Material,rounds=5,cap?:(s:Strut)=>number){
+/** `floor`: a strut's smallest radius besides the material's (e.g. a slenderness limit). */
+export function sizeFrame(nodes:TrussNode[],struts:Strut[],cases:V[][],m:Material,rounds=5,cap?:(s:Strut)=>number,floor?:(s:Strut)=>number){
  let result=solveFrame(nodes,struts,cases,m);if(!result)throw Error('Rahmen ist beweglich.');
  for(let r=0;r<rounds;r++){
-  struts.forEach((s,i)=>{if(s.rigid)return;const c=cap?.(s)??40;let lo=Math.min(m.rMin,c),hi=Math.max(lo,c);const ok=(x:number)=>result!.forces[i].every(f=>barUtilisation(f,x,m)<=1);if(ok(lo)){s.area=Math.PI*lo*lo;return;}
+  struts.forEach((s,i)=>{if(s.rigid)return;const c=cap?.(s)??40;let lo=Math.min(Math.max(m.rMin,floor?.(s)??0),c),hi=Math.max(lo,c);const ok=(x:number)=>result!.forces[i].every(f=>barUtilisation(f,x,m)<=1);if(ok(lo)){s.area=Math.PI*lo*lo;return;}
    if(!ok(hi)){s.area=Math.PI*hi*hi;return;}for(let k=0;k<30;k++){const mid=(lo+hi)/2;if(ok(mid))hi=mid;else lo=mid;}s.area=Math.PI*hi*hi;});
   result=solveFrame(nodes,struts,cases,m);if(!result)throw Error('Rahmen ist beweglich.');
  }

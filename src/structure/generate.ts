@@ -290,7 +290,15 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
   // Strength as a rigid-jointed frame, then stiffness; never thicker than the free room.
   progress?.('Bemessung',.75);
   const caps=new Map(cur.struts.map(st=>[st,capOf(cur.nodes,st)]));
-  let framed=sizeFrame(cur.nodes,cur.struts,L,m,5,st=>caps.get(st)!),deflection=sagOf(cur.nodes,framed.us);
+  // Slenderness: a straight member (its pieces through straight cuts together) is at least 1/40 of its length thick,
+  // so long struts do not wobble even where the loads would allow them thinner.
+  const pieceLen=(st:Strut)=>norm(sub(cur.nodes[st.j].p,cur.nodes[st.i].p)),at=new Map<number,Strut[]>();for(const st of cur.struts)if(!st.rigid)for(const i of [st.i,st.j])(at.get(i)??at.set(i,[]).get(i)!).push(st);
+  const straight=(i:number)=>{const l=at.get(i);if(!l||l.length!==2||cur.nodes[i].anchor!==undefined)return false;const [u,v]=l.map(st=>unit(sub(cur.nodes[st.i===i?st.j:st.i].p,cur.nodes[i].p)));return dot(u,v)<-Math.cos(20*Math.PI/180);};
+  const memberLen=new Map<Strut,number>();for(const st of cur.struts){if(st.rigid||memberLen.has(st))continue;const chain=[st];
+   for(const end of [st.i,st.j]){let node=end,prev=st;while(straight(node)){const next=at.get(node)!.find(x=>x!==prev)!;if(chain.includes(next))break;chain.push(next);node=next.i===node?next.j:next.i;prev=next;}}
+   const total=chain.reduce((t,x)=>t+pieceLen(x),0);for(const x of chain)memberLen.set(x,total);}
+  const SLENDER=40,floor=(st:Strut)=>Math.min(caps.get(st)!,Math.max(rMin,(memberLen.get(st)??pieceLen(st))/SLENDER));
+  let framed=sizeFrame(cur.nodes,cur.struts,L,m,5,st=>caps.get(st)!,floor),deflection=sagOf(cur.nodes,framed.us);
   // Stiffness: in the load case that bends most, struts grow by how far their strain energy per volume lies above the
   // mean (optimality criterion for compliance); struts that hardly work keep their size.
   let stalled=false;
@@ -300,6 +308,22 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
    // Once that stalls (the busy struts sit at their room), everything with room left grows.
    let grew=false;for(const {st} of free){const g=stalled?Math.min(1.5,f*1.05):Math.min(1.5,Math.max(1,f*Math.pow(dens.get(st)!/mean,1/4))),r=Math.min(caps.get(st)!,radiusOf(st)*g);if(r>radiusOf(st)+1e-6)grew=true;st.area=Math.PI*r*r;}if(!grew)break;
    const next=solveFrame(cur.nodes,cur.struts,L,m);if(!next)break;framed={...next,util:cur.struts.map((st,i)=>st.rigid?0:Math.max(...next.forces[i].map(x=>barUtilisation(x,radiusOf(st),m))))};const before=deflection;deflection=sagOf(cur.nodes,next.us);if(deflection>before*.99)stalled=true;}
+  // Trim: struts that hardly work (low strain energy per volume, little stress) get thinner step by step while
+  // strength and stiffness still hold; the growth above thickens some more than needed.
+  if(deflection<=s.deflection)for(let it=0;it<12;it++){let wc=0,wd=-1;framed.us.forEach((u,c)=>cur.nodes.forEach((x,i)=>{if(!loaded(x))return;const d=Math.hypot(u[i][0],u[i][1],u[i][2]);if(d>wd){wd=d;wc=c;}}));
+   const free=cur.struts.map((st,i)=>({st,i})).filter(x=>!x.st.rigid),vol=(st:Strut)=>st.area*pieceLen(st),energy=(i:number)=>Math.max(...framed.forces[i].map(f=>f.energy));
+   const mean=free.reduce((t,x)=>t+energy(x.i),0)/Math.max(1e-9,free.reduce((t,x)=>t+vol(x.st),0));
+   const pick=free.filter(x=>radiusOf(x.st)>floor(x.st)+.05&&energy(x.i)/Math.max(1e-9,vol(x.st))<.3*mean&&framed.util[x.i]<.7);if(!pick.length)break;
+   const saved=pick.map(x=>x.st.area);for(const {st} of pick){const r=Math.max(floor(st),radiusOf(st)*.85);st.area=Math.PI*r*r;}
+   const next=solveFrame(cur.nodes,cur.struts,L,m),nu=next&&cur.struts.map((st,i)=>st.rigid?0:Math.max(...next.forces[i].map(x=>barUtilisation(x,radiusOf(st),m))));
+   if(!next||!nu||sagOf(cur.nodes,next.us)>s.deflection||Math.max(...nu)>1){pick.forEach((x,k)=>{x.st.area=saved[k];});break;}
+   framed={...next,util:nu};deflection=sagOf(cur.nodes,next.us);}
+  // With stiffness to spare, all struts with stress to spare get thinner together, as long as both still hold.
+  for(let it=0;it<12&&deflection<.9*s.deflection;it++){const pick=cur.struts.map((st,i)=>({st,i})).filter(x=>!x.st.rigid&&radiusOf(x.st)>floor(x.st)+.05&&framed.util[x.i]<.8);if(!pick.length)break;
+   const saved=pick.map(x=>x.st.area),k=Math.max(.85,Math.pow(deflection/s.deflection,1/4));for(const {st} of pick){const r=Math.max(floor(st),radiusOf(st)*k);st.area=Math.PI*r*r;}
+   const next=solveFrame(cur.nodes,cur.struts,L,m),nu=next&&cur.struts.map((st,i)=>st.rigid?0:Math.max(...next.forces[i].map(x=>barUtilisation(x,radiusOf(st),m))));
+   if(!next||!nu||sagOf(cur.nodes,next.us)>s.deflection||Math.max(...nu)>1){pick.forEach((x,j)=>{x.st.area=saved[j];});break;}
+   framed={...next,util:nu};deflection=sagOf(cur.nodes,next.us);}
   const util=Math.max(0,...cur.struts.map((st,i)=>st.rigid?0:framed.util[i]));
   // The load case that bends most (for the stiffness feedback).
   let worstCase=0,most=-1;framed.us.forEach((u,c)=>cur.nodes.forEach((x,i)=>{if(!loaded(x))return;const d=Math.hypot(u[i][0],u[i][1],u[i][2]);if(d>most){most=d;worstCase=c;}}));

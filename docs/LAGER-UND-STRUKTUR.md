@@ -17,9 +17,9 @@ Plan für die beiden nächsten Etappen nach den Antrieben (KINEMATIK-KERN.md 15)
 
 | Demo | Glieder | Lager (Teil A) | Strukturen (Teil B) | Zeit (Studio / Node, mit Workern) |
 |---|---|---|---|---|
-| Roboterarm | Sockel, Drehteller, Oberarm, Unterarm | 14× 625, 6× 608, 3 Wellen Ø5, 3 Gelenkwellen Ø8 | alle gültig, fest und steif genug; 160–720 g je Glied | ≈ 40 s / 45 s |
-| CNC-Portal | Rahmen, Portal, Wagen, Z | 6× 608 (Fest-/Loslager), 12× LM8UU auf 6 Rundstangen, 3 Flanschmuttern | alle gültig, fest und steif genug; Portal 1,2–1,8 kg | ≈ 35 s / 45 s |
-| Schlitten | Bahn, Wagen | 10× 625 (Getriebe, 4 Laufrollen) | alle gültig, fest und steif genug; Bahn 3–4 kg auf breiten Füßen | ≈ 55 s / 65 s |
+| Roboterarm | Sockel, Drehteller, Oberarm, Unterarm | 14× 625, 6× 608, 3 Wellen Ø5, 3 Gelenkwellen Ø8 | alle gültig, fest und steif genug; 150–610 g je Glied | ≈ 40 s / 45 s |
+| CNC-Portal | Rahmen, Portal, Wagen, Z | 6× 608 (Fest-/Loslager), 12× LM8UU auf 6 Rundstangen, 3 Flanschmuttern | alle gültig, fest und steif genug; Portal ≈ 1,3 kg | ≈ 35 s / 45 s |
+| Schlitten | Bahn, Wagen | 10× 625 (Getriebe, 4 Laufrollen) | alle gültig, fest und steif genug; Bahn ≈ 2,9 kg auf breiten Füßen | ≈ 55 s / 65 s |
 | Gehäuse (ohne Mechanik) | Unterteil, Deckel, Hutschienenclip | – | Arduino Uno R3 auf TH35, 33 + 12 + 6 g | ≈ 5 s |
 
 Gültig heißt: alle Haltepunkte angebunden, ein geschlossenes Netz, frei von Sperrzonen,
@@ -56,7 +56,10 @@ Abweichungen vom Plan unten (nach Versuchen):
   Feder hatte dünne Stützen künstlich gehalten). Lagerplatten als Plattenstreifen
   (Rechteckquerschnitt, weich quer, steif in der Ebene). Streben mit wechselndem
   Freiraum werden in Stücke geteilt und einzeln bemessen (kegelig, als Kette glatt
-  gezeichnet), Radius bis 16 mm. Steifigkeit wächst nach Energiedichte.
+  gezeichnet), Radius bis 16 mm. Steifigkeit wächst nach Energiedichte. Schlankheit: ein
+  gerades Bauteil ist mindestens 1/40 seiner Länge dick (lange Streben wackeln nicht).
+  Danach werden wenig arbeitende Streben, und bei Steifigkeitsreserve alle, schrittweise
+  dünner, solange Festigkeit und 0,5 mm halten (CNC-Portal 1,8 → 1,3 kg).
 - **Lagerplatten:** Sitze paralleler Getriebewellen und Motorflansche auf gleicher Höhe
   werden zu einer 6-mm-Platte (konvexe Hülle) verbunden, wie im Getriebegehäuse.
 - **Freiraum exakt:** Das Abstandsfeld des Tragwerks wird beim Vernetzen mit dem
