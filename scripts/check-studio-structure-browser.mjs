@@ -28,6 +28,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  const first=await p.$eval('#axes input[type=range]',r=>r.dataset.axis);
  await p.evaluate(a=>{const s=document.querySelector(`#axes input[data-axis="${a}"]`);s.value=String(Number(s.max)*.5);s.dispatchEvent(new Event('input'));},first);
  await p.waitForFunction(()=>document.querySelector('#axes-report')?.dataset.state==='ok',{timeout:20000});
+ if(process.env.SHOT){await p.evaluate(()=>document.querySelector('#fit')?.click());await new Promise(r=>setTimeout(r,1500));await p.screenshot({path:process.env.SHOT});}
  // Download one link.
  const link=rows[0].link;await p.click(`[data-structure-stl="${link}"]`);
  let size=0;for(let i=0;i<100&&!size;i++){try{size=(await fs.stat(path.join(dir,(await fs.readdir(dir)).find(f=>f.endsWith('.stl'))))).size;}catch{await new Promise(r=>setTimeout(r,100));}}

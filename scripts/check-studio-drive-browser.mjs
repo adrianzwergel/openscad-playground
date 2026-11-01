@@ -14,7 +14,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  for(const c of cases.filter(c=>!only.length||only.includes(c.demo))){
   const t0=Date.now();
   await p.click(`[data-demo="${c.demo}"]`);await ready();
-  assert.equal(await p.$$eval('.steps li',l=>l.length),5,'five steps');
+  assert.equal(await p.$$eval('.steps li',l=>l.length),7,'seven steps');
   await p.evaluate(id=>[...document.querySelectorAll('#tree button')].find(b=>b.textContent.includes('⚡ '+id)).click(),c.drive);
   await p.waitForSelector(`[data-find-gear="${c.drive}"]`);await p.click(`[data-find-gear="${c.drive}"]`);
   await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#drive-progress')?.dataset.state),{timeout:180000});

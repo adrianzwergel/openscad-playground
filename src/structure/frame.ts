@@ -6,7 +6,8 @@ import type {V} from './vec.ts';
 import {sub,norm,scale,cross,unit} from './vec.ts';
 import type {TrussNode,Strut,Material} from './truss.ts';
 
-export type EndForces={N:number;V:number;T:number;M:number;length:number};
+/** `energy`: uᵀKu of the element, `axial`: its axial share (for sensitivities). */
+export type EndForces={N:number;V:number;T:number;M:number;length:number;energy:number;axial:number};
 
 function localAxes(d:V):[V,V,V]{const x=unit(d),h:V=Math.abs(x[2])<.9?[0,0,1]:[1,0,0],y=unit(cross(h,x)),z=cross(x,y);return [x,y,z];}
 /** Local 12×12 stiffness of a round beam (axes x along the strut). */
@@ -26,7 +27,8 @@ export function solveFrame(nodes:TrussNode[],struts:Strut[],cases:V[][],m:Materi
  const toGlobal=(e:typeof elements[number])=>{const g=new Float64Array(144);for(let bi=0;bi<4;bi++)for(let bj=0;bj<4;bj++)for(let a=0;a<3;a++)for(let b=0;b<3;b++){let v=0;for(let p=0;p<3;p++)for(let q=0;q<3;q++)v+=e.R[p][a]*e.k[(bi*3+p)*12+bj*3+q]*e.R[q][b];g[(bi*3+a)*12+bj*3+b]=v;}return g;};
  for(const e of elements){const g=toGlobal(e),ids=[dof[e.s.i],dof[e.s.j]];
   for(let p=0;p<2;p++)for(let q=0;q<2;q++){const I=ids[p],J=ids[q];if(I<0||J<0)continue;for(let r=0;r<6;r++)for(let c=0;c<6;c++)K[(I+r)*n+J+c]+=g[(p*6+r)*12+q*6+c];}}
- let dmax=0;for(let i=0;i<n;i++)dmax=Math.max(dmax,K[i*n+i]);for(let i=0;i<n;i++)K[i*n+i]+=dmax*1e-9+1e-9;
+ // Regularise against the typical stiffness (not the largest: one very stiff strut must not lock the rest).
+ let dsum=0;for(let i=0;i<n;i++)dsum+=K[i*n+i];const reg=(dsum/Math.max(1,n))*1e-9+1e-9;for(let i=0;i<n;i++)K[i*n+i]+=reg;
  for(let j=0;j<n;j++){let s=K[j*n+j];for(let k=0;k<j;k++)s-=K[j*n+k]*K[j*n+k];if(s<=0)return null;const l=Math.sqrt(s);K[j*n+j]=l;for(let i=j+1;i<n;i++){let t=K[i*n+j];const ri=i*n,rj=j*n;for(let k=0;k<j;k++)t-=K[ri+k]*K[rj+k];K[ri+j]=t/l;}}
  const us=cases.map(f=>{const y=new Float64Array(n);nodes.forEach((x,i)=>{if(dof[i]>=0)for(let c=0;c<3;c++)y[dof[i]+c]=f[i]?.[c]??0;});
   for(let i=0;i<n;i++){let s=y[i];for(let k=0;k<i;k++)s-=K[i*n+k]*y[k];y[i]=s/K[i*n+i];}
@@ -35,7 +37,8 @@ export function solveFrame(nodes:TrussNode[],struts:Strut[],cases:V[][],m:Materi
  // End forces per element and case in local axes: N axial, V shear, T torsion, M bending (largest end).
  const forces:EndForces[][]=elements.map(e=>us.map(u=>{const ue=new Float64Array(12);for(const [b,node] of [[0,e.s.i],[1,e.s.j]] as [number,number][])for(let blk=0;blk<2;blk++)for(let p=0;p<3;p++){let v=0;for(let q=0;q<3;q++)v+=e.R[p][q]*u[node][blk*3+q];ue[b*6+blk*3+p]=v;}
   const f=new Float64Array(12);for(let i=0;i<12;i++){let v=0;for(let j=0;j<12;j++)v+=e.k[i*12+j]*ue[j];f[i]=v;}
-  return {N:f[6],V:Math.max(Math.hypot(f[1],f[2]),Math.hypot(f[7],f[8])),T:Math.abs(f[3]),M:Math.max(Math.hypot(f[4],f[5]),Math.hypot(f[10],f[11])),length:e.L};}));
+  let energy=0;for(let i=0;i<12;i++)energy+=ue[i]*f[i];const d=ue[6]-ue[0],ax=e.k[0]*d*d;
+  return {N:f[6],V:Math.max(Math.hypot(f[1],f[2]),Math.hypot(f[7],f[8])),T:Math.abs(f[3]),M:Math.max(Math.hypot(f[4],f[5]),Math.hypot(f[10],f[11])),length:e.L,energy,axial:ax};}));
  return {us,forces};
 }
 /** Stress of a round bar: axial plus bending plus torsion (von Mises), and Euler buckling ratio. */
@@ -59,5 +62,20 @@ export function sizeFrame(nodes:TrussNode[],struts:Strut[],cases:V[][],m:Materia
   result=solveFrame(nodes,struts,cases,m);if(!result)throw Error('Rahmen ist beweglich.');
   util=struts.map((s,i)=>s.rigid?0:Math.max(...result!.forces[i].map(f=>barUtilisation(f,Math.sqrt(s.area/Math.PI),m))));}
  return {...result,util};
+}
+/** Minimum compliance of a rigid-jointed frame at fixed volume (optimality criteria). Axial stiffness grows with A,
+ * bending and torsion with A², so dC/dA = -(E_axial + 2·E_bending)/A. Areas start uniform at `start`. */
+export function optimizeFrame(nodes:TrussNode[],struts:Strut[],cases:V[][],m:Material,o:{iterations:number;start:number;minArea:number;maxArea?:(s:Strut)=>number;move?:number;onIteration?:(k:number)=>void}){
+ const free=struts.filter(s=>!s.rigid),len=(s:Strut)=>norm(sub(nodes[s.j].p,nodes[s.i].p)),cap=new Map(free.map(s=>[s,Math.max(o.minArea,o.maxArea?.(s)??Infinity)]));for(const s of free)s.area=Math.min(o.start,cap.get(s)!);
+ const volume=free.reduce((v,s)=>v+s.area*len(s),0),move=o.move??.35;let last=Infinity;
+ for(let it=0;it<o.iterations;it++){
+  const r=solveFrame(nodes,struts,cases,m);if(!r)throw Error('Grundstruktur ist beweglich.');o.onIteration?.(it);
+  const c=r.forces.reduce((x,fs)=>x+fs.reduce((y,f)=>y+f.energy,0),0);
+  const sens=struts.map((s,i)=>s.rigid?0:r.forces[i].reduce((x,f)=>x+Math.max(0,f.axial)+2*Math.max(0,f.energy-f.axial),0)/s.area/len(s));
+  let lo=1e-30,hi=1e30;const next=new Map<Strut,number>();
+  for(let b=0;b<200&&hi/lo>1+1e-9;b++){const lambda=Math.sqrt(lo*hi);let v=0;struts.forEach((s,i)=>{if(s.rigid)return;const a=s.area*Math.sqrt(Math.max(1e-30,sens[i])/lambda),x=Math.min(cap.get(s)!,Math.max(o.minArea,Math.max(s.area*(1-move),Math.min(s.area*(1+move),a))));next.set(s,x);v+=x*len(s);});if(v>volume)lo=lambda;else hi=lambda;}
+  for(const [s,a] of next)s.area=a;
+  if(Math.abs(last-c)/c<1e-4&&it>6)break;last=c;
+ }
 }
 export {scale};

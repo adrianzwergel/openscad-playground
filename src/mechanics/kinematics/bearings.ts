@@ -28,12 +28,14 @@ export const bearingCatalog:BearingSpec[]=[
 /** A printed plain bearing: bore with clearance, no purchased part. */
 const plainSpec=(d:number):BearingSpec=>({id:`gleit-${d}`,label:`Gleitlager gedruckt Ø${d} mit Spiel`,kind:'plain',d,D:d,B:Math.max(8,1.5*d),C0:60,price:0});
 
-export type BearingSettings={prefer:'ball'|'plain';gearGap:number;wall:number;fit:number;clearance:number;axisShaft:number;axles:'rotating'|'fixed';hubLength:number;rod:number;rodOffset:number;maxOverhang:number};
-export const defaultBearingSettings:BearingSettings={prefer:'ball',gearGap:2,wall:2.5,fit:.15,clearance:.3,axisShaft:8,axles:'rotating',hubLength:18,rod:8,rodOffset:40,maxOverhang:40};
+/** `linearSpan`: distance between the two linear bearings on one rod (a wide base carries moments). */
+export type BearingSettings={prefer:'ball'|'plain';gearGap:number;wall:number;fit:number;clearance:number;axisShaft:number;axles:'rotating'|'fixed';hubLength:number;rod:number;rodOffset:number;maxOverhang:number;linearSpan:number};
+export const defaultBearingSettings:BearingSettings={prefer:'ball',gearGap:2,wall:2.5,fit:.15,clearance:.3,axisShaft:8,axles:'rotating',hubLength:18,rod:8,rodOffset:40,maxOverhang:40,linearSpan:80};
 
 /** `link`: the link the seat is printed into; `frame` in that link's coordinates (pose 0), z along the axis. */
 /** `keep`: space of the purchased part itself that the structure must leave free (a roller's outer ring). */
-export type Seat={id:string;link:string;line:string;kind:'bearing'|'plain'|'hub'|'linear'|'rod'|'flange'|'nut'|'roller';part?:string;frame:Frame;feature:Feature;support?:boolean;keep?:{frame:Frame;r:number;z0:number;z1:number}};
+/** `load`: share of the design load this seat carries (a floating bearing takes only small radial forces). */
+export type Seat={id:string;link:string;line:string;kind:'bearing'|'plain'|'hub'|'linear'|'rod'|'flange'|'nut'|'roller';part?:string;frame:Frame;feature:Feature;support?:boolean;load?:number;keep?:{frame:Frame;r:number;z0:number;z1:number}};
 export type ShaftLine={id:string;kind:'train'|'motor'|'axis'|'spindle'|'rod'|'roller';link:string;d:number;frame:Frame;z0:number;z1:number;seats:string[];state:'pass'|'fail';message:string};
 export type BearingPlan={lines:ShaftLine[];seats:Seat[];bom:{part:string;label:string;count:number;length?:number}[];checks:{id:string;state:'pass'|'fail';message:string}[];edits:{element:string;bore:number}[]};
 
@@ -121,7 +123,7 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
    const sp=on.find(e=>e.surfaces[0]?.profile.kind==='helical')!,z0=sp.mounts[0].pose.position[2]+sp.envelope.min,z1=sp.mounts[0].pose.position[2]+sp.envelope.max,bb=pick(8,{...s,prefer:'ball'}).filter(x=>x.kind==='ball');
    for(const spec of bb){const fe=bearingFeature(spec,s,1),fz=featureSize(fe),zs=[z0+Math.max(0,-fz.z0)+1,z1-fz.z1-1];
     if(zs.every((z,k)=>!hits(world(carrier,shift(f,z)),fz.radius,z+fz.z0,z+fz.z1,line.id,e=>mine(e)||e.mounts[0].body===carrier||!e.surfaces.length))){
-     zs.forEach((z,k)=>{const seat:Seat={id:`${line.id}/lager${k+1}`,link:carrier,line:line.id,kind:'bearing',part:spec.id,frame:shift(f,z),feature:bearingFeature(spec,s,k?1:-1)};seats.push(seat);line.seats.push(seat.id);placed.push({f:world(carrier,seat.frame),r:fz.radius,z0:fz.z0,z1:fz.z1,line:line.id});});
+     zs.forEach((z,k)=>{const seat:Seat={id:`${line.id}/lager${k+1}`,link:carrier,line:line.id,kind:'bearing',part:spec.id,frame:shift(f,z),feature:bearingFeature(spec,s,k?1:-1),...(k?{load:.3}:{})};seats.push(seat);line.seats.push(seat.id);placed.push({f:world(carrier,seat.frame),r:fz.radius,z0:fz.z0,z1:fz.z1,line:line.id});});
      line.message=`${spec.label} · Fest- und Loslager, Mutterweg dazwischen`;line.z0=z0;line.z1=z1;break;}}
    if(!line.seats.length){line.state='fail';line.message='Spindellager kollidieren.';}
    continue;}
@@ -157,7 +159,8 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
    const sides=ptsA.length?{lo:near(bz0-12)<60,hi:near(bz1+12)<60}:{lo:true,hi:true};if(!sides.lo&&!sides.hi){sides.lo=near(bz0-12)<=near(bz1+12);sides.hi=!sides.lo;}
    const ok=seatLine(line,f,[[bz0,bz1],...occupied],pick(d,s),e=>coax.some(x=>x.e===e),sides,400);
    // The shaft is clamped in B where B's arms are; wheels on B along the axis sit on the same shaft.
-   const hubZ=sides.lo&&!sides.hi?bz0+s.hubLength/2:sides.hi&&!sides.lo?bz1-s.hubLength/2:(bz0+bz1)/2,hub:Feature={kind:'hub',d,length:s.hubLength,wall:s.wall,setScrew:true};
+   // The clamp hub is a flange: the link's arms leave it all around (it carries the whole link).
+   const hubZ=sides.lo&&!sides.hi?bz0+s.hubLength/2:sides.hi&&!sides.lo?bz1-s.hubLength/2:(bz0+bz1)/2,hub:Feature={kind:'hub',d,length:s.hubLength,wall:s.wall+6,setScrew:true};
    const hubFrame=local(B,compose(fw,{position:[0,0,hubZ],rotation:[0,0,0,1]})),seat:Seat={id:`${j.id}/nabe`,link:B,line:line.id,kind:'hub',frame:hubFrame,feature:hub,support:true};seats.push(seat);line.seats.push(seat.id);
    for(const x of coax)edits.push({element:x.e.id,bore:d+.1});
    // The shaft runs from the outer seat through the hub to the last wheel on it.
@@ -170,13 +173,13 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
    // Two round rods beside the travel line, in the plane facing the moving link.
    const pts=modelPoints(m,assets,B),centre=pts.length?scale(pts.reduce((a,p)=>add(a,p),[0,0,0] as V),1/pts.length):add(fw.position,rotate(fw.rotation,[1,0,0]));
    let v=add(centre,scale(fw.position,-1));v=add(v,scale(t,-dot(v,t)));if(norm(v)<1e-6)v=rotate(fw.rotation,[1,0,0]);v=scale(v,1/norm(v));const u=cross(t,v);
-   const lin=bearingCatalog.find(x=>x.id==='LM8UU')!,pad=lin.B/2+8+lin.B/2;
+   const lin=bearingCatalog.find(x=>x.id==='LM8UU')!,pad=s.linearSpan/2+lin.B/2+4;
    const nut=m.elements.find(e=>e.mounts[0].body===B&&e.source.kind==='library'&&!e.surfaces.length);
    for(const side of [-1,1]){
     const base=add(fw.position,scale(u,side*s.rodOffset)),id=`${j.id}/stange${side<0?'A':'B'}`,rf:Frame={position:base,rotation:fw.rotation};
     const line:ShaftLine={id,kind:'rod',link:A,d:s.rod,frame:local(A,rf),z0:lo-pad-12,z1:hi+pad+12,seats:[],state:'pass',message:`Rundstange Ø${s.rod}, ${lin.label}`};lines.push(line);
     for(const [k,z] of [[1,line.z0+6],[2,line.z1-6]] as [number,number][]){const seat:Seat={id:`${id}/halter${k}`,link:A,line:id,kind:'rod',frame:local(A,shift(rf,z)),feature:{kind:'rod',d:s.rod,length:12,wall:s.wall}};seats.push(seat);line.seats.push(seat.id);}
-    for(const [k,z] of [[1,-(8+lin.B)/2],[2,(8+lin.B)/2]] as [number,number][]){const seat:Seat={id:`${id}/linear${k}`,link:B,line:id,kind:'linear',part:lin.id,frame:local(B,shift(rf,z)),feature:{kind:'linear',D:lin.D,B:lin.B,fit:.1,wall:s.wall},support:true};seats.push(seat);line.seats.push(seat.id);}
+    for(const [k,z] of [[1,-s.linearSpan/2],[2,s.linearSpan/2]] as [number,number][]){const seat:Seat={id:`${id}/linear${k}`,link:B,line:id,kind:'linear',part:lin.id,frame:local(B,shift(rf,z)),feature:{kind:'linear',D:lin.D,B:lin.B,fit:.1,wall:s.wall},support:true};seats.push(seat);line.seats.push(seat.id);}
    }
    if(nut){const nf=elementWorld(nut),seat:Seat={id:`${j.id}/mutter`,link:B,line:j.id,kind:'nut',part:'TR8-Flanschmutter',frame:local(B,nf),feature:{kind:'nut',flange:22,body:10.2,circle:16,hole:3.5,thickness:5}};seats.push(seat);}
   }

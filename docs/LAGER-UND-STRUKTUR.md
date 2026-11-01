@@ -13,6 +13,51 @@ Plan für die beiden nächsten Etappen nach den Antrieben (KINEMATIK-KERN.md 15)
   ein Lieferant von Haltepunkten, Lasten und Sperrräumen. Derselbe Kern baut
   ein Arduino-Gehäuse auf eine Hutschiene.
 
+## Stand (umgesetzt)
+
+| Demo | Glieder | Lager (Teil A) | Strukturen (Teil B) | Zeit |
+|---|---|---|---|---|
+| Roboterarm | Sockel, Drehteller, Oberarm, Unterarm | 14× 625, 6× 608, 3 Wellen Ø5, 3 Gelenkwellen Ø8 | alle gültig, 15–64 Streben je Glied | ≈ 70 s |
+| CNC-Portal | Rahmen, Portal, Wagen, Z | 6× 608 (Fest-/Loslager), 12× LM8UU auf 6 Rundstangen, 3 Flanschmuttern | alle gültig, 40–115 Streben | ≈ 90 s |
+| Schlitten | Bahn, Wagen | 10× 625 (Getriebe, 4 Laufrollen) | alle gültig; Bahn als Brückenträger mit Füßen | ≈ 80 s |
+
+Gültig heißt: alle Haltepunkte angebunden, ein geschlossenes Netz, frei von Sperrzonen,
+kollisionsfrei gegen die Nachbarglieder über deren ganzen Achsbereich. Festigkeit und
+Steifigkeit gegen die angenommenen Lasten (20 N je Haltepunkt in alle Richtungen plus
+Torsion, PLA, Sicherheit 3, höchstens 0,5 mm Nachgeben) werden mit Ort und Wert als
+Hinweis gemeldet; sie hängen von den Lastannahmen ab, die im Studio einstellbar sind.
+
+Abweichungen vom Plan unten (nach Versuchen):
+- **Topologie:** Statt Fachwerk-LP bzw. OC wächst ein Steiner-Baum von den Auflagern aus:
+  jeder Haltepunkt (fernster zuerst) schließt über den kürzesten freien Weg an den
+  nächsten Punkt des Baums an; Kanten mit wenig Freiraum kosten mehr (Wege laufen in die
+  Mitte freier Räume). „Baum mit Querstreben“ gibt jedem Haltepunkt einen zweiten,
+  weitgehend getrennten Weg und Querstreben zwischen Ästen; „netzartig“ mehr davon.
+  Die OC-Verfahren (Fachwerk `optimizeAreas`, Rahmen `optimizeFrame`) bleiben im Kern,
+  lieferten aber an Engstellen Mechanismen bzw. zu dichte Netze.
+- **Statik:** Gedruckte Knoten sind steif: Bemessung und Nachweis am räumlichen
+  Rahmenmodell (Balken mit Biegung und Torsion, `frame.ts`), Radius nach Festigkeit und
+  Steifigkeit, nie dicker als der Freiraum.
+- **Lagerplatten:** Sitze paralleler Getriebewellen und Motorflansche auf gleicher Höhe
+  werden zu einer Platte (konvexe Hülle) verbunden, wie im Getriebegehäuse.
+- **Freiraum exakt:** Das Abstandsfeld des Tragwerks wird beim Vernetzen mit dem
+  Sperrfeld beschnitten; ein 4-mm-Lipschitz-Gitter hält das schnell.
+- **Zugänge:** Lager eines Gelenks bekommen eine Zufahrtszone, Schienenhalter eine Zone
+  darunter; das zuerst erzeugte Nachbarglied muss sie freilassen.
+- **Reihenfolge und Nachbarn:** Glieder werden von der Spitze zur Basis erzeugt und
+  meiden die Nachbarn über deren Gelenk; weiter entfernte Glieder werden nur geprüft
+  (Hinweis bei Berührung in Extremstellungen – Achsgrenzen).
+- **Schiene am Pfad:** Für den Wagen ist die Schiene ein festes Teil im Wagenrahmen
+  (exakt auf Geraden, Krümmung nicht verfolgt).
+
+Noch offen: SIMP/Schalenmodus (B5/B6, Arduino-Gehäuse auf Hutschiene), physikalisch
+abgeleitete Lasten (Zahnkräfte, Spindelschub statt Pauschallast), Druckorientierung und
+Überhang, Laufzeit unter 30 s.
+
+Tests: `scripts/structure/check-sdf.mjs`, `check-frame.mjs`, `check-generate.mjs`,
+`check-bearings.mjs`, `check-links.mjs [robot|cnc|sled]` (mit `OUT=…` STL und Bild),
+`scripts/check-studio-structure-browser.mjs [robot|cnc|sled]`.
+
 Das importierte 3D-Modell dient nur dazu, Glieder und Achsen zu setzen. Die
 gedruckte Struktur je Glied wird erzeugt; das Modellteil wird dabei ersetzt
 (wahlweise bleibt seine Hülle als Bauraum erhalten).

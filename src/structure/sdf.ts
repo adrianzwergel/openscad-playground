@@ -9,7 +9,9 @@ export type Prim=
  |{kind:'sphere';center:V;r:number}
  |{kind:'capsule';a:V;b:V;r:number;rb?:number}
  |{kind:'cylinder';frame:Frame;r:number;z0:number;z1:number}
- |{kind:'box';frame:Frame;half:V;round?:number};
+ |{kind:'box';frame:Frame;half:V;round?:number}
+ /** Convex polygon (2D in the frame's xy, counter-clockwise) extruded between z0 and z1. */
+ |{kind:'slab';frame:Frame;points:[number,number][];z0:number;z1:number};
 
 export function primDistance(p:V,s:Prim):number{
  switch(s.kind){
@@ -21,6 +23,7 @@ export function primDistance(p:V,s:Prim):number{
    const r1=s.r,r2=s.rb,rr=r1-r2,a2=l2-rr*rr,il2=1/l2,y=dot(ap,ab),z=y-l2,w=sub(scale(ap,l2),scale(ab,y)),x2=dot(w,w),y2=y*y*l2,z2=z*z*l2,k=Math.sign(rr)*rr*rr*x2;
    if(Math.sign(z)*a2*z2>k)return Math.sqrt(x2+z2)*il2-r2;if(Math.sign(y)*a2*y2<k)return Math.sqrt(x2+y2)*il2-r1;return (Math.sqrt(x2*a2*il2)+y*rr)*il2-r1;}
   case 'cylinder':{const q=applyInverse(s.frame,p),mid=(s.z0+s.z1)/2,h=(s.z1-s.z0)/2,dr=Math.hypot(q[0],q[1])-s.r,dz=Math.abs(q[2]-mid)-h;return Math.min(Math.max(dr,dz),0)+Math.hypot(Math.max(dr,0),Math.max(dz,0));}
+  case 'slab':{const q=applyInverse(s.frame,p),P=s.points;let d=-Infinity;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length],ex=b[0]-a[0],ey=b[1]-a[1],l=Math.hypot(ex,ey)||1;d=Math.max(d,((q[0]-a[0])*ey-(q[1]-a[1])*ex)/l);}const dz=Math.abs(q[2]-(s.z0+s.z1)/2)-(s.z1-s.z0)/2;return Math.min(Math.max(d,dz),0)+Math.hypot(Math.max(d,0),Math.max(dz,0));}
   case 'box':{const q=applyInverse(s.frame,p),r=s.round??0,d=[Math.abs(q[0])-s.half[0]+r,Math.abs(q[1])-s.half[1]+r,Math.abs(q[2])-s.half[2]+r];return Math.min(Math.max(d[0],d[1],d[2]),0)+Math.hypot(Math.max(d[0],0),Math.max(d[1],0),Math.max(d[2],0))-r;}
  }
 }
@@ -32,6 +35,7 @@ export function primBounds(s:Prim):{min:V;max:V}{
   case 'capsule':{const r=Math.max(s.r,s.rb??s.r);return {min:[0,1,2].map(i=>Math.min(s.a[i],s.b[i])-r) as V,max:[0,1,2].map(i=>Math.max(s.a[i],s.b[i])+r) as V};}
   case 'cylinder':{const c=add(s.frame.position,scale(rotateZ(s.frame),(s.z0+s.z1)/2)),r=Math.hypot(s.r,(s.z1-s.z0)/2);return around(c,r);}
   case 'box':return around(s.frame.position,norm(s.half));
+  case 'slab':{const r=Math.max(...s.points.map(([x,y])=>Math.hypot(x,y)))+Math.max(Math.abs(s.z0),Math.abs(s.z1));return around(s.frame.position,r);}
  }
 }
 const rotateZ=(f:Frame):V=>{const [x,y,z,w]=f.rotation;return [2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y)];};
@@ -41,12 +45,15 @@ export const smin=(a:number,b:number,k:number)=>{if(k<=0)return Math.min(a,b);co
 /** Primitives bucketed in a uniform hash grid; queries see only nearby ones. */
 export class PrimIndex{
  readonly prims:Prim[]=[];private cells=new Map<string,number[]>();readonly cell:number;readonly reach:number;
+ private lo:V=[Infinity,Infinity,Infinity];private hi:V=[-Infinity,-Infinity,-Infinity];
  constructor(cell:number,reach:number){this.cell=cell;this.reach=reach;}
- add(s:Prim){const i=this.prims.length;this.prims.push(s);const b=primBounds(s),lo=b.min.map(n=>Math.floor((n-this.reach)/this.cell)),hi=b.max.map(n=>Math.floor((n+this.reach)/this.cell));
+ add(s:Prim){const i=this.prims.length;this.prims.push(s);const b=primBounds(s);for(let k=0;k<3;k++){this.lo[k]=Math.min(this.lo[k],b.min[k]);this.hi[k]=Math.max(this.hi[k],b.max[k]);}const lo=b.min.map(n=>Math.floor((n-this.reach)/this.cell)),hi=b.max.map(n=>Math.floor((n+this.reach)/this.cell));
   for(let x=lo[0];x<=hi[0];x++)for(let y=lo[1];y<=hi[1];y++)for(let z=lo[2];z<=hi[2];z++){const k=x+','+y+','+z,l=this.cells.get(k);if(l)l.push(i);else this.cells.set(k,[i]);}}
  near(p:V){return this.cells.get(Math.floor(p[0]/this.cell)+','+Math.floor(p[1]/this.cell)+','+Math.floor(p[2]/this.cell));}
  /** Distance to the nearest primitive; `reach` when none is within reach. */
- distance(p:V){const l=this.near(p);if(!l)return this.reach;let d=this.reach;for(const i of l)d=Math.min(d,primDistance(p,this.prims[i]));return d;}
+ /** Distance to the box around all primitives (a lower bound of the true distance). */
+ outside(p:V){if(!this.prims.length)return Infinity;let s=0;for(let k=0;k<3;k++){const d=Math.max(this.lo[k]-p[k],0,p[k]-this.hi[k]);s+=d*d;}return Math.sqrt(s);}
+ distance(p:V){const far=this.outside(p);if(far>this.reach)return far;const l=this.near(p);if(!l)return this.reach;let d=this.reach;for(const i of l)d=Math.min(d,primDistance(p,this.prims[i]));return d;}
  get size(){return this.prims.length;}
 }
 

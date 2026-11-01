@@ -82,7 +82,8 @@ export function relax(nodes:TrussNode[],struts:Strut[],forces:number[][],valid:(
  const acc=new Map<number,{num:V;den:number}>();
  struts.forEach((s,k)=>{if(s.rigid)return;const w=Math.max(1e-6,...forces[k].map(Math.abs));for(const [a,b] of [[s.i,s.j],[s.j,s.i]]){if(nodes[a].anchor!==undefined)continue;const d=norm(sub(nodes[b].p,nodes[a].p));if(d<1e-6)continue;const x=acc.get(a)??{num:[0,0,0] as V,den:0};x.num=add(x.num,scale(nodes[b].p,w/d));x.den+=w/d;acc.set(a,x);}});
  let moved=0;
+ const neighbours=new Map<number,number[]>();for(const s of struts){(neighbours.get(s.i)??neighbours.set(s.i,[]).get(s.i)!).push(s.j);(neighbours.get(s.j)??neighbours.set(s.j,[]).get(s.j)!).push(s.i);}
  for(const [i,x] of acc){const target=scale(x.num,1/x.den),from=nodes[i].p;let step=damping;
-  for(let t=0;t<4;t++,step/=2){const p=add(from,scale(sub(target,from),step));if(valid(i,p)){moved=Math.max(moved,norm(sub(p,from)));nodes[i].p=p;break;}}}
+  for(let t=0;t<4;t++,step/=2){const p=add(from,scale(sub(target,from),step));if((neighbours.get(i)??[]).some(j=>norm(sub(nodes[j].p,p))<4))continue;if(valid(i,p)){moved=Math.max(moved,norm(sub(p,from)));nodes[i].p=p;break;}}}
  return moved;
 }

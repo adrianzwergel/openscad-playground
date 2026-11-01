@@ -17,7 +17,9 @@ export type Feature=
  |{kind:'nut';flange:number;body:number;circle:number;hole:number;thickness:number}
  |{kind:'pad';width:number;depth:number;thickness:number;holes:[number,number][];hole:number}
  |{kind:'din';width:number;thickness:number}
- |{kind:'standoff';height:number;outer:number;hole:number};
+ |{kind:'standoff';height:number;outer:number;hole:number}
+ /** A plate joining several seats (convex outline in the frame's xy plane, CCW). */
+ |{kind:'plate';points:[number,number][];thickness:number};
 
 export type FeatureGeometry={solids:Prim[];holes:Prim[];keep:Prim[];ports:V[]};
 const cyl=(frame:Frame,r:number,z0:number,z1:number):Prim=>({kind:'cylinder',frame,r,z0,z1});
@@ -40,6 +42,7 @@ export function featureSize(f:Feature):{radius:number;z0:number;z1:number}{
   case 'pad':return {radius:Math.hypot(f.width,f.depth)/2,z0:-f.thickness,z1:0};
   case 'din':return {radius:f.width*.75,z0:-f.thickness-8,z1:0};
   case 'standoff':return {radius:f.outer/2,z0:-f.height,z1:0};
+  case 'plate':return {radius:Math.max(...f.points.map(([x,y])=>Math.hypot(x,y))),z0:-f.thickness/2,z1:f.thickness/2};
  }
 }
 export function featureGeometry(f:Feature,frame:Frame):FeatureGeometry{
@@ -69,6 +72,7 @@ export function featureGeometry(f:Feature,frame:Frame):FeatureGeometry{
    return {solids:[{kind:'box',frame:at(frame,0,0,-t/2),half:[w/2,22,t/2],round:1},{kind:'box',frame:at(frame,0,18.75,-t-2.5),half:[w/2,1.5,3.5]},{kind:'box',frame:at(frame,0,17.25,-t-5.2),half:[w/2,3,.8]},
      {kind:'box',frame:at(frame,0,-18.75,-t-2.5),half:[w/2,1.5,3.5]},{kind:'box',frame:at(frame,0,-17.25,-t-5.2),half:[w/2,3,.8]}],
     holes:[{kind:'box',frame:at(frame,0,-12,-t/2),half:[w/2+1,1,t/2+1]}],keep:[{kind:'box',frame:at(frame,0,0,-t-5),half:[w/2+2,16.5,4.2]}],ports:rim(frame,w,44,-t/2)};}
+  case 'plate':{const t=f.thickness;return {solids:[{kind:'slab',frame,points:f.points,z0:-t/2,z1:t/2}],holes:[],keep:[],ports:f.points.flatMap((p,i)=>{const q=f.points[(i+1)%f.points.length];return [apply(frame,[p[0],p[1],0]),apply(frame,[(p[0]+q[0])/2,(p[1]+q[1])/2,0])];})};}
   case 'standoff':return {solids:[cyl(frame,f.outer/2,-f.height,0)],holes:[cyl(frame,f.hole/2,-f.height-2,2)],keep:[cyl(frame,f.outer/2+1,0,8)],ports:ring(frame,f.outer/2,[-f.height+1.2],4)};
  }
 }

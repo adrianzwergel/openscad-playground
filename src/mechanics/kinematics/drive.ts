@@ -214,7 +214,8 @@ export async function adoptGear(m:Mechanism,d:Drive,found:Mechanism,info:TaskInf
   const zs=[lastPart[0].mounts[0].pose.position[2]+lastPart[0].envelope.min-1-5,lastPart[lastPart.length-1].mounts[0].pose.position[2]+lastPart[lastPart.length-1].envelope.max+1+5];
   // Height above the path plane (z of the path frame = plane normal of a planar path).
   const pathFrame=(z:number)=>compose(inverse(j.b.local),compose(frameC(lastId),shift(z))).position[2];
-  const z=Math.abs(pathFrame(zs[0]))<=Math.abs(pathFrame(zs[1]))?zs[0]:zs[1],ritzel=spurElement(`${d.id}/ritzel`,`${d.id}/${lastId}`,shift(z),pin.module,pin.teeth,10);
+  // The pinion is the outermost part (away from the motor), so the rail's outer side stays free for its holders.
+  const motorAlong=compose(inverse(frameC(lastId)),d.frame).position[2],z=Math.abs(zs[0]-motorAlong)>=Math.abs(zs[1]-motorAlong)?zs[0]:zs[1],ritzel=spurElement(`${d.id}/ritzel`,`${d.id}/${lastId}`,shift(z),pin.module,pin.teeth,10);
   // Rail on the path's a-side in its frame; z along the path plane normal at the pinion's height.
   const zr=pathFrame(z);
   if(j.joint.kind!=='path')throw Error('Pfad erwartet.');

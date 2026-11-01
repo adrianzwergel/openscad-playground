@@ -23,7 +23,7 @@ import type {Prim} from '../../structure/sdf.ts';
 
 /** `inspect` sees each link's anchors and clearance field before generation (diagnostics). */
 export type LinkSettings={structure:Partial<StructureSettings>;load:number;payload:number;gap:number;region:number;only?:string[];inspect?:(link:string,anchors:Anchor[],clearance:(p:V)=>number,parts:(p:V)=>{link:string;d:number}[])=>void};
-export const defaultLinkSettings:LinkSettings={structure:{},load:40,payload:20,gap:1.5,region:35};
+export const defaultLinkSettings:LinkSettings={structure:{},load:20,payload:20,gap:1,region:35};
 export type LinkStructure={link:string;anchors:Anchor[];result?:StructureResult;error?:string;clearance?:number;checks:{id:string;state:'pass'|'fail'|'warn';message:string}[]};
 
 const toFrame=(p:V):Frame=>({position:p,rotation:[0,0,0,1]});
@@ -71,10 +71,19 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
  const inLink=(link:string,world:Frame)=>compose(inverse(frameOf(link)),world);
  // ---- what each link carries, as primitives in its own coordinates ----
  const carried=new Map<string,Prim[]>(tree.links.map(l=>[l,[]]));const put=(l:string,x:Prim)=>carried.get(l)?.push(x);
+ // A rail along a path joint is the same seen from the wagon at every position: it is carried by the wagon's view
+ // as a fixed part (`along`), not swept along the whole path (exact on straights, curvature not followed).
+ const padded=new Set<Prim>(),realOf=new Map<string,Prim[]>(tree.links.map(l=>[l,[]]));
+ const along=new Map<string,Prim[]>(tree.links.map(l=>[l,[]])),railOf=new Map<string,Set<string>>(),railPrims=new Set<Prim>();
  const cyl=(f:Frame,r:number,z0:number,z1:number):Prim=>({kind:'cylinder',frame:f,r,z0,z1});
  for(const e of m.elements){const link=carrierOf(e.mounts[0].body),f=inLink(link,compose(worldOf(e.mounts[0].body),e.mounts[0].pose)),pitch=e.surfaces[0]?.pitch;
   if(pitch?.kind==='path'){const fn=curve(pitch),n=Math.ceil(fn.length/6),z0=e.surfaces[0].z[0],z1=e.surfaces[0].z[1],mod=e.surfaces[0].profile.kind==='involute'?e.surfaces[0].profile.module:2;
-   for(let i=0;i<=n;i++){const pf=compose(f,fn.frame(fn.length*i/n));put(link,{kind:'box',frame:compose(pf,{position:[0,(mod-4.25*mod)/2,(z0+z1)/2],rotation:[0,0,0,1]}),half:[4,(5.25*mod)/2,(z1-z0)/2]});}continue;}
+   const pj=m.joints.find(j=>j.joint.kind==='path'&&j.a.body===link),wagon=pj?.b.body;
+   for(let i=0;i<=n;i++){const pf=compose(f,fn.frame(fn.length*i/n)),box:Prim={kind:'box',frame:compose(pf,{position:[0,(mod-4.25*mod)/2,(z0+z1)/2],rotation:[0,0,0,1]}),half:[4,(5.25*mod)/2,(z1-z0)/2]};
+    put(link,box);railPrims.add(box);}
+   if(wagon&&pj){for(let x=-150;x<=150;x+=8)along.get(wagon)!.push({kind:'box',frame:compose(pj.b.local,{position:[x,(mod-4.25*mod)/2,(z0+z1)/2],rotation:[0,0,0,1]}),half:[4,(5.25*mod)/2,(z1-z0)/2]});
+    (railOf.get(link)??railOf.set(link,new Set()).get(link)!).add(wagon);}
+   continue;}
   if(pitch?.kind==='line'){const L=pitch.length??200;put(link,{kind:'box',frame:compose(f,{position:[L/2,0,(e.envelope.min+e.envelope.max)/2],rotation:[0,0,0,1]}),half:[L/2,(e.envelope.transverse?.[1]??16),(e.envelope.max-e.envelope.min)/2]});continue;}
   put(link,cyl(f,e.envelope.radius,e.envelope.min,e.envelope.max));}
  for(const l of plan.lines){const shaft=l.kind==='roller'?undefined:cyl(l.frame,l.d/2+.3,l.z0,l.z1);if(shaft)put(l.link,shaft);}
@@ -82,9 +91,20 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
  for(const d of drives){const spec=driveSpec(d.spec),link=carrierOf(d.body),f=inLink(link,compose(worldOf(d.body),d.frame));put(link,{kind:'box',frame:compose(f,{position:[0,0,-spec.size[2]/2],rotation:[0,0,0,1]}),half:scale(spec.size,.5) as V});}
  // ---- anchors per link ----
  const anchors=new Map<string,Anchor[]>(tree.links.map(l=>[l,[]]));
- const seatAnchor=(x:Seat):Anchor=>({id:x.id,frame:x.frame,feature:x.feature,role:x.support?'support':'load',load:s.load});
+ const seatAnchor=(x:Seat):Anchor=>({id:x.id,frame:x.frame,feature:x.feature,role:x.support?'support':'load',load:s.load*(x.load??1)});
  for(const x of plan.seats)anchors.get(x.link)?.push(seatAnchor(x));
  // Anchors of a link are obstacles for every other link (they are printed into it), not for the link itself.
+ // Bearing plates: seats of parallel train shafts (and motor flanges) at the same height share one plate, as in a gearbox.
+ for(const l of tree.links){const list=anchors.get(l)!,members=list.filter(a=>{const x=plan.seats.find(y=>y.id===a.id);if(!x)return false;const line=plan.lines.find(y=>y.id===x.line);return x.kind==='flange'||line?.kind==='train'||line?.kind==='motor'||line?.kind==='spindle';});
+  const used=new Set<string>();let n=0;
+  for(const a of members){if(used.has(a.id))continue;const z=rotate(a.frame.rotation,[0,0,1]),level=(x:Anchor)=>dot(x.frame.position,z)+(x.feature.kind==='flange'?x.feature.thickness/2:0);
+   const group=members.filter(b=>!used.has(b.id)&&Math.abs(Math.abs(dot(rotate(b.frame.rotation,[0,0,1]),z))-1)<1e-3&&Math.abs(level(b)-level(a))<8);if(group.length<2)continue;
+   const h=group.reduce((x,b)=>x+level(b),0)/group.length,xAxis=norm(cross([0,0,1],z))>.1?scale(cross([0,0,1],z),1/norm(cross([0,0,1],z))):[1,0,0] as V,yAxis=cross(z,xAxis),o=scale(z,h);
+   const pts:[number,number][]=[];for(const b of group){const c=b.frame.position,r=featureSize(b.feature).radius+4,u=dot(c,xAxis),v=dot(c,yAxis);for(let k=0;k<12;k++)pts.push([u+r*Math.cos(k*Math.PI/6),v+r*Math.sin(k*Math.PI/6)]);}
+   const hull=convexHull(pts),id=`${l}/platte${++n}`;
+   const frame:Frame={position:add(o,add(scale(xAxis,0),scale(yAxis,0))),rotation:quatBasis(xAxis,yAxis,z)};
+   list.push({id,frame,feature:{kind:'plate',points:hull,thickness:4},role:'load',load:0,group:id,clip:true});
+   for(const b of group){b.group=id;used.add(b.id);}}}
  // Seats of a joint get an approach zone on their outer side: the neighbour on the other side of the
  // joint must not wrap its structure around them (it may be built first).
  const access=new Map<string,Prim[]>(tree.links.map(l=>[l,[]]));
@@ -92,18 +112,23 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   access.get(x.link)!.push(cyl(compose(line.frame,{position:[0,0,z+out*4],rotation:[0,0,0,1]}),r,out>0?0:-45,out>0?45:0));}
  const bossesOf=(l:string)=>[...anchors.get(l)!.flatMap(a=>featureGeometry(a.feature,a.frame).solids),...access.get(l)!];
  const ground=tree.ground,groundPts=modelPoints(m,assets,ground,4000).map(p=>inLink(ground,toFrame(p)).position);
- {// Feet: the ground stands on a floor under its anchors.
-  const list=anchors.get(ground)!,pos=list.map(a=>a.frame.position),floor=Math.min(...pos.map(p=>p[2]-12),...groundPts.map(p=>p[2]));
+ const railAccess:Frame[]=[];
+ {// Feet: the ground stands on a floor under its anchors (rail holders first, they are anchors too).
+  const list=anchors.get(ground)!;
+  // A path rail on the ground is held from its outer side every 110 mm.
+  for(const e of m.elements){const pitch=e.surfaces[0]?.pitch;if(pitch?.kind!=='path'||carrierOf(e.mounts[0].body)!==ground)continue;const fn=curve(pitch),f=inLink(ground,compose(worldOf(e.mounts[0].body),e.mounts[0].pose)),z1=e.surfaces[0].z[1],mod=e.surfaces[0].profile.kind==='involute'?e.surfaces[0].profile.module:2;
+   const n=Math.max(2,Math.round(fn.length/110));for(let i=0;i<=n;i++){const sP=Math.min(fn.length-12,Math.max(12,fn.length*i/n)),pf=compose(f,fn.frame(sP));
+    railAccess.push(compose(pf,{position:[0,-2*mod-30,z1+12],rotation:[0,0,0,1]}));
+    list.push({id:`${e.id}/halter${i+1}`,frame:compose(pf,{position:[0,-2*mod,z1],rotation:[1,0,0,0]}),feature:{kind:'pad',width:22,depth:3.5*mod,thickness:5,holes:[[0,0]],hole:3.4},role:'load',load:s.load});}}
+  const pos=list.map(a=>a.frame.position),floor=Math.min(...pos.map(p=>p[2]-12),...groundPts.map(p=>p[2]));
   const xs=pos.map(p=>p[0]),ys=pos.map(p=>p[1]),x0=Math.min(...xs)-20,x1=Math.max(...xs)+20,y0=Math.min(...ys)-20,y1=Math.max(...ys)+20;
   const long=Math.max(x1-x0,y1-y0)>500,feet:V[]=[];
   if(long){const alongX=x1-x0>=y1-y0,n=Math.max(2,Math.round(Math.max(x1-x0,y1-y0)/300)+1);for(let i=0;i<n;i++){const t=i/(n-1);for(const side of [-1,1]){const c=alongX?[x0+(x1-x0)*t,(y0+y1)/2+side*Math.max(25,(y1-y0)/2)]:[(x0+x1)/2+side*Math.max(25,(x1-x0)/2),y0+(y1-y0)*t];feet.push([c[0],c[1],floor]);}}}
   else{const w=Math.max(30,(x1-x0)/2),h=Math.max(30,(y1-y0)/2),cx=(x0+x1)/2,cy=(y0+y1)/2;for(const [a,b] of [[-1,-1],[1,-1],[1,1],[-1,1]])feet.push([cx+a*w,cy+b*h,floor]);}
   feet.forEach((p,i)=>list.push({id:`fuss${i+1}`,frame:{position:p,rotation:[1,0,0,0]},feature:{kind:'pad',width:30,depth:30,thickness:5,holes:[[-8,0],[8,0]],hole:4.5},role:'support'}));
-  // A path rail on the ground is held from its outer side every 110 mm.
-  for(const e of m.elements){const pitch=e.surfaces[0]?.pitch;if(pitch?.kind!=='path'||carrierOf(e.mounts[0].body)!==ground)continue;const fn=curve(pitch),f=inLink(ground,compose(worldOf(e.mounts[0].body),e.mounts[0].pose)),z1=e.surfaces[0].z[1],mod=e.surfaces[0].profile.kind==='involute'?e.surfaces[0].profile.module:2;
-   const n=Math.max(2,Math.round(fn.length/110));for(let i=0;i<=n;i++){const sP=Math.min(fn.length-12,Math.max(12,fn.length*i/n)),pf=compose(f,fn.frame(sP));
-    list.push({id:`${e.id}/halter${i+1}`,frame:compose(pf,{position:[0,-2*mod,z1],rotation:[1,0,0,0]}),feature:{kind:'pad',width:22,depth:3.5*mod,thickness:5,holes:[[0,0]],hole:3.4},role:'load',load:s.load});}}
  }
+ // Rail holders are reached from below and outside: that corridor stays free of the wagon.
+ for(const f of railAccess)access.get(ground)!.push({kind:'box',frame:f,half:[13,28,12]});
  // End links carry a tool pad at the far end of their model.
  for(const l of tree.links){if(l===ground)continue;const list=anchors.get(l)!;if(list.some(a=>a.role==='load'))continue;
   const pts=modelPoints(m,assets,l,4000).map(p=>inLink(l,toFrame(p)).position),sup=list.filter(a=>a.role==='support').map(a=>a.frame.position);if(!pts.length||!sup.length)continue;
@@ -112,11 +137,12 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
  // ---- generation, tips first ----
  const adjacent=(x:string,y:string)=>tree.parent.get(x)&&[tree.parent.get(x)!.a.body,tree.parent.get(x)!.b.body].includes(y)||tree.parent.get(y)&&[tree.parent.get(y)!.a.body,tree.parent.get(y)!.b.body].includes(x);
  const order=[...tree.links].sort((a,b)=>tree.depth.get(b)!-tree.depth.get(a)!),out:LinkStructure[]=[];
- const indexOf=(l:string,withBosses=true)=>{const x=new PrimIndex(15,40);for(const p of carried.get(l)!)x.add(p);if(withBosses)for(const p of bossesOf(l))x.add(p);return x;};
+ /** Primitives of link `l` as seen from `from`: a rail on `l` that `from` runs along is left out (it is in `from`'s own view). */
+ const indexOf=(l:string,withBosses=true,from?:string,exact=false)=>{const x=new PrimIndex(15,40),skipRail=from&&railOf.get(l)?.has(from);for(const p of carried.get(l)!)if(!(skipRail&&railPrims.has(p))&&!(exact&&padded.has(p)))x.add(p);if(exact)for(const p of realOf.get(l)!)x.add(p);if(withBosses)for(const p of bossesOf(l))x.add(p);return x;};
  const floorOf=(l:string)=>{if(l!==ground)return undefined;const f=anchors.get(ground)!.filter(a=>a.id.startsWith('fuss')).map(a=>a.frame.position[2]);return f.length?Math.min(...f):undefined;};
  const clearanceFor=(l:string,own:string[]=[])=>{
   // Generation avoids the neighbours over their joint; links further away meet only at extreme axis values (checked at the end).
-  const self=indexOf(l,false),others=tree.links.filter(x=>x!==l&&adjacent(l,x)).map(x=>({x,index:indexOf(x),steps:path(m,tree,l,x)})),floor=floorOf(l),cache=new Map<string,number>();
+  const self=indexOf(l,false);for(const p of along.get(l)!)self.add(p);const others=tree.links.filter(x=>x!==l&&adjacent(l,x)).map(x=>({x,index:indexOf(x,true,l),steps:path(m,tree,l,x)})),floor=floorOf(l),cache=new Map<string,number>();
   void own;
   return (p:V)=>{const key=`${Math.round(p[0]*2)},${Math.round(p[1]*2)},${Math.round(p[2]*2)}`,hit=cache.get(key);if(hit!==undefined)return hit;
    let d=self.distance(p);if(floor!==undefined)d=Math.min(d,p[2]-floor+5);
@@ -131,19 +157,36 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
    const result=await generateStructure({id:l,anchors:list,clearance:clearanceFor(l),settings:{...s.structure,region:s.region}},(stage,f)=>progress?.(l,stage,f));
    entry.result=result;entry.checks.push(...result.report.checks);
    // Later links avoid this structure: struts and nodes as primitives of this link.
-   for(const st of result.struts)put(l,{kind:'capsule',a:st.a,b:st.b,r:st.r});
+   // The mesh is a little fuller than its struts (blends, node spheres): later links keep an extra millimetre.
+   for(const st of result.struts){for(const [x,real] of [[{kind:'capsule',a:st.a,b:st.b,r:st.r+1},{kind:'capsule',a:st.a,b:st.b,r:st.r}],...[st.a,st.b].map(p=>[{kind:'sphere',center:p,r:st.r*1.12+1},{kind:'sphere',center:p,r:st.r*1.12}])] as [Prim,Prim][]){put(l,x);padded.add(x);realOf.get(l)!.push(real);}}
   }catch(e){entry.error=e instanceof Error?e.message:String(e);entry.checks.push({id:'generate',state:'fail',message:entry.error});}
  }
  // ---- final check with everything in place: each surface against all other links over their motion ----
  for(const entry of out){const r=entry.result;if(!r)continue;progress?.(entry.link,'Prüfung über den Bewegungsbereich',0);
   const own=new PrimIndex(15,15);for(const a of entry.anchors)for(const prim of featureGeometry(a.feature,a.frame).solids)own.add(prim);
-  const check=(list:string[],every:number)=>{const others=list.map(x=>({x,index:indexOf(x),steps:path(m,tree,entry.link,x)}));let worst=Infinity,who='';const v=r.mesh.vertices;
-   for(let i=0;i<v.length/3;i+=every){const p:V=[v[i*3],v[i*3+1],v[i*3+2]];if(own.distance(p)<1)continue;for(const o of others){const d=sweptDistance(p,o.steps,0,o.index,-1);if(d<worst){worst=d;who=o.x;}}}return {worst,who};};
+  const alongIndex=new PrimIndex(15,40);for(const p of along.get(entry.link)!)alongIndex.add(p);
+  const check=(list:string[],every:number)=>{const others=list.map(x=>({x,index:indexOf(x,true,entry.link,true),steps:path(m,tree,entry.link,x)}));let worst=Infinity,who='';const v=r.mesh.vertices;
+   for(let i=0;i<v.length/3;i+=every){const p:V=[v[i*3],v[i*3+1],v[i*3+2]];if(own.distance(p)<1)continue;for(const o of others){const d=Math.min(sweptDistance(p,o.steps,0,o.index,-1),railOf.get(o.x)?.has(entry.link)?alongIndex.distance(p):Infinity);if(d<worst){worst=d;who=o.x;}}}return {worst,who};};
   const near=check(tree.links.filter(x=>x!==entry.link&&adjacent(entry.link,x)),11);entry.clearance=near.worst;
   entry.checks.push({id:'motion',state:near.worst>=-.3?'pass':'fail',message:`Kleinster Abstand zu den Nachbargliedern über ihren Achsbereich ${near.worst===Infinity?'–':near.worst.toFixed(1)+' mm'}${near.who?` (${near.who})`:''}.`});
-  const far=check(tree.links.filter(x=>x!==entry.link&&!adjacent(entry.link,x)),97);
+  // Links one step further away meet only at extreme axis values: a coarse look is enough for the hint.
+  const far=check(tree.links.filter(x=>x!==entry.link&&!adjacent(entry.link,x)&&path(m,tree,entry.link,x).length<=2),300);
   if(far.worst<-.3)entry.checks.push({id:'reach',state:'warn',message:`Bei extremen Achsstellungen kann ${far.who} dieses Glied berühren – Achsgrenzen prüfen.`});}
  return out;
 }
 export type {Element,Seat};
 export {dot,rotate};
+
+/** Convex hull (Andrew's monotone chain), counter-clockwise. */
+function convexHull(p:[number,number][]):[number,number][]{
+ const pts=[...p].sort((a,b)=>a[0]-b[0]||a[1]-b[1]),cr=(o:[number,number],a:[number,number],b:[number,number])=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+ const lower:[number,number][]=[],upper:[number,number][]=[];
+ for(const q of pts){while(lower.length>=2&&cr(lower[lower.length-2],lower[lower.length-1],q)<=0)lower.pop();lower.push(q);}
+ for(const q of [...pts].reverse()){while(upper.length>=2&&cr(upper[upper.length-2],upper[upper.length-1],q)<=0)upper.pop();upper.push(q);}
+ return [...lower.slice(0,-1),...upper.slice(0,-1)];
+}
+/** Rotation with the given orthonormal axes as columns. */
+function quatBasis(x:V,y:V,z:V):Frame['rotation']{const t=x[0]+y[1]+z[2];if(t>0){const s=Math.sqrt(t+1)*2;return [(y[2]-z[1])/s,(z[0]-x[2])/s,(x[1]-y[0])/s,s/4];}
+ if(x[0]>y[1]&&x[0]>z[2]){const s=Math.sqrt(1+x[0]-y[1]-z[2])*2;return [s/4,(y[0]+x[1])/s,(z[0]+x[2])/s,(y[2]-z[1])/s];}
+ if(y[1]>z[2]){const s=Math.sqrt(1+y[1]-x[0]-z[2])*2;return [(y[0]+x[1])/s,s/4,(z[1]+y[2])/s,(z[0]-x[2])/s];}
+ const s=Math.sqrt(1+z[2]-x[0]-y[1])*2;return [(z[0]+x[2])/s,(z[1]+y[2])/s,s/4,(x[1]-y[0])/s];}

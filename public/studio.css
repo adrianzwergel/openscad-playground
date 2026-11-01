@@ -65,3 +65,5 @@ body[data-mode=mechanism] #workspace{grid-template-rows:45px minmax(160px,1fr) a
 .structure-row{grid-template-columns:1fr auto}
 .structure-row small.fail{color:#ff9a9a}.structure-row small.warn{color:#ffd27a}
 ul.bom{margin:4px 0;padding-left:18px;color:#c8d6df;font-size:12px}
+.steps{flex-wrap:wrap}
+.steps li{flex:1 1 13%;min-width:52px;font-size:10.5px;padding:4px 1px}
