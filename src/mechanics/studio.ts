@@ -13,6 +13,7 @@ import {constructionHulls} from './graph/construction';
 import type {Mechanism} from './graph/contracts';
 import {StudioHistory,importStudio,serializeStudio,parseStudio,adoptSolution} from './studio-model';
 import type {StudioDocument} from './studio-model';
+import {MotionPanel} from './studio-motion';
 const fresh:StudioDocument={version:1,assemblies:[{id:'main',graph:spaceExample()}],routes:[{id:'route-1',assembly:'main',source:'input',target:'output'}]};
 let doc=fresh,loadError='';try{const saved=localStorage.getItem('mechanics-studio');if(saved)doc=importStudio(saved);}catch(e){loadError=`Gespeichertes Projekt konnte nicht geladen werden: ${e}. Speicher wurde nicht verändert.`;}
 const history=new StudioHistory();let dragBefore:StudioDocument|undefined;
@@ -23,11 +24,15 @@ const camera=new THREE.PerspectiveCamera(50,1,.1,10000);camera.position.set(280,
 const transform=new TransformControls(camera,renderer.domElement);scene.add(transform.getHelper());transform.addEventListener('dragging-changed',e=>{orbit.enabled=!e.value;});
 const group=new THREE.Group();scene.add(group);const preview=new THREE.Group();scene.add(preview);let worker:Worker|undefined,revision=0,line:THREE.Line,objects:THREE.Object3D[]=[];
 const hiddenRegions=new Set<string>();const actualOutput=new THREE.Group();scene.add(actualOutput);
+// Motion: the kinematic view replaces the static detail preview while it is open.
+const motion=new MotionPanel(()=>{const item=[...found,...nearFound].find(f=>f.id===selectedResult);if(item&&!item.nearMiss)return {label:`Lösung ${item.id}`,graph:item.graph,range:{from:0,to:720,samples:73}};if(assembly().adopted)return {label:'Übernommene Baugruppe',graph:graph(),range:{from:0,to:720,samples:73}};return undefined;},
+ on=>{detail.group.visible=!on;actualOutput.visible=!on;if(on)preview.visible=false;},text=>{status.textContent=text;});
+scene.add(motion.view.group);
 const detail=new StudioDetailPreview((state,message)=>{if(state==='empty')clear(actualOutput);const el=document.getElementById('detail-status')!;el.dataset.state=state;el.textContent=message;(document.getElementById('detail-retry') as HTMLButtonElement).disabled=state==='empty'||state==='loading';});scene.add(detail.group);
 function clear(g:THREE.Group){for(const o of [...g.children]){g.remove(o);o.traverse(child=>{if(child instanceof THREE.Mesh||child instanceof THREE.Line){child.geometry.dispose();const materials=Array.isArray(child.material)?child.material:[child.material];materials.forEach(m=>m.dispose());}});}}
 
 function stop(){worker?.terminate();worker=undefined;(document.getElementById('cancel') as HTMLButtonElement).disabled=true;}
-function invalidate(){revision++;stop();detail.clear();clear(preview);found=[];nearFound=[];selectedResult=undefined;renderResults();status.textContent='Vorgaben geändert. Erneut suchen.';document.getElementById('search-report')!.textContent='Vorgaben geändert. Erneut suchen.';}
+function invalidate(){revision++;stop();motion.close();detail.clear();clear(preview);found=[];nearFound=[];selectedResult=undefined;renderResults();status.textContent='Vorgaben geändert. Erneut suchen.';document.getElementById('search-report')!.textContent='Vorgaben geändert. Erneut suchen.';}
 function draw(){const selected=list.value;transform.detach();detail.clear();clear(group);clear(preview);objects=[];list.replaceChildren();const g=graph();
  for(const key of ['input','output'] as const){const mesh=new THREE.Mesh(new THREE.CylinderGeometry(3,3,24),new THREE.MeshStandardMaterial({color:key==='input'?0x55dda8:0xffbb55}));mesh.geometry.rotateX(Math.PI/2);mesh.position.fromArray(g[key].target.position);mesh.quaternion.fromArray(g[key].target.rotation);mesh.name=key;group.add(mesh);objects.push(mesh);const axes=new THREE.AxesHelper(22);mesh.add(axes);}
  for(const region of [g.environment?.bounds,...(g.environment?.obstacles??[])].filter(Boolean)){const r=region!,color=r===g.environment?.bounds?0x4488ff:0xff7777;const box=new THREE.BoxGeometry(...r.size),mesh=new THREE.LineSegments(new THREE.EdgesGeometry(box),new THREE.LineBasicMaterial({color}));box.dispose();mesh.position.fromArray(r.frame.position);mesh.quaternion.fromArray(r.frame.rotation);mesh.name='region:'+r.id;mesh.userData.regionId=r.id;mesh.userData.size=r.size;mesh.visible=!hiddenRegions.has(mesh.name);group.add(mesh);objects.push(mesh);

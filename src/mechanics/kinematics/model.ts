@@ -18,7 +18,8 @@ export type Interface=
 export type Envelope={radius:number;min:number;max:number;transverse?:[number,number]};
 export type Mount={interface:string;body:string;pose:Frame};
 export type Element={id:string;source:{kind:'printed'}|{kind:'library';library:string;part:string};surfaces:Surface[];interfaces:Interface[];envelope:Envelope;mounts:Mount[];phase:number;derived?:string};
-export type Body={id:string;frame:Frame;ground?:boolean;shaft?:{diameter:number;start:number;end:number};derived?:string;mirror?:{source:string;plane:Frame}};
+/** `display` is a visual box for bodies without elements (panels, carriages); it has no kinematic effect. */
+export type Body={id:string;frame:Frame;ground?:boolean;shaft?:{diameter:number;start:number;end:number};display?:{kind:'box';size:V;offset?:V};derived?:string;mirror?:{source:string;plane:Frame}};
 export type Joint=
  |{kind:'fixed'}
  |{kind:'revolute'}
@@ -93,7 +94,7 @@ export function parseMechanism(input:unknown):Mechanism{
  unique(m.bodies,'Körper');unique(m.elements,'Element');unique(m.joints,'Gelenk');unique(m.contacts,'Kontakt');unique(m.parameters,'Parameter');
  const bodies=new Map(m.bodies.map(b=>[b.id,b]));
  if(m.bodies.filter(b=>b.ground).length!==1)throw Error('Genau ein Körper ist das Gestell (ground).');
- for(const b of m.bodies){b.frame=frame(b.frame,`Körper ${b.id}`);if(b.shaft){num(b.shaft.diameter,'Welle');num(b.shaft.start,'Welle');num(b.shaft.end,'Welle');if(!(b.shaft.diameter>0&&b.shaft.start<b.shaft.end))throw Error(`Körper ${b.id}: ungültige Welle.`);}}
+ for(const b of m.bodies){b.frame=frame(b.frame,`Körper ${b.id}`);if(b.display&&(b.display.kind!=='box'||b.display.size?.length!==3||b.display.size.some(n=>!(num(n,'Anzeige')>0))||b.display.offset&&b.display.offset.length!==3))throw Error(`Körper ${b.id}: Anzeigebox ungültig.`);if(b.shaft){num(b.shaft.diameter,'Welle');num(b.shaft.start,'Welle');num(b.shaft.end,'Welle');if(!(b.shaft.diameter>0&&b.shaft.start<b.shaft.end))throw Error(`Körper ${b.id}: ungültige Welle.`);}}
  for(const e of m.elements){
   if(!e.source||(e.source.kind!=='printed'&&e.source.kind!=='library'))throw Error(`Element ${e.id}: Herkunft fehlt.`);
   if(!Array.isArray(e.surfaces)||!Array.isArray(e.interfaces)||!Array.isArray(e.mounts))throw Error(`Element ${e.id}: Listen fehlen.`);
