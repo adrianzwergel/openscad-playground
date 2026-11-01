@@ -21,6 +21,8 @@ const soup=(positions:Float32Array)=>{const g=new THREE.BufferGeometry();g.setAt
 export type MotionSolution={mechanism:Expanded;poses:Pose[];transfer:Transfer;checks:Check[];error:number;mobility:{message:string;freedom:number}};
 const toMatrix=(f:Frame)=>new THREE.Matrix4().compose(new THREE.Vector3(...f.position),new THREE.Quaternion(...f.rotation),new THREE.Vector3(1,1,1));
 const palette=[0x63cbb3,0x7aa7e8,0xe8a24a,0xc98fe0,0x9bd46a,0xe87a7a,0x6ad0e0,0xe0d06a];
+/** Colour of a link in the view (index in the body list). */
+export const linkColor=(index:number,ground=false)=>ground?0x7d8a96:palette[index%palette.length];
 const material=(color:number,opacity=1)=>new THREE.MeshStandardMaterial({color,roughness:.6,metalness:.1,transparent:opacity<1,opacity});
 
 /** Geometry of one surface in its element frame (axis = z, pitch plane at pitchPlane). */
@@ -74,7 +76,7 @@ export class KinematicsView{
   }
   for(const b of m.bodies){
    if(b.shaft){const shaft=new THREE.Mesh(new THREE.CylinderGeometry(b.shaft.diameter/2,b.shaft.diameter/2,b.shaft.end-b.shaft.start,12),material(0xb8c4cc));shaft.rotation.x=Math.PI/2;shaft.position.z=(b.shaft.start+b.shaft.end)/2;const holder=new THREE.Group();holder.add(shaft);add(holder,b.id,{position:[0,0,0],rotation:[0,0,0,1]});}
-   if(b.display?.kind==='mesh'){const asset=this.assets(b.display.asset),holder=new THREE.Group(),color=b.ground?0x7d8a96:palette[m.bodies.indexOf(b)%palette.length];
+   if(b.display?.kind==='mesh'){const asset=this.assets(b.display.asset),holder=new THREE.Group(),color=linkColor(m.bodies.indexOf(b),b.ground);
     for(const id of b.display.parts){const part=asset?.parts.find(p=>p.id===id);if(!part)continue;const key=`${b.display.asset}/${id}`;let g=this.geometries.get(key);if(!g){g=soup(part.positions);g.userData.library=true;this.geometries.set(key,g);}
      const mesh=new THREE.Mesh(g,material(this.highlight.has(key)?0xffcc66:color));mesh.userData.pick={body:b.id,asset:b.display.asset,part:id};holder.add(mesh);this.parts.push(mesh);}
     add(holder,b.id,inverse(b.frame));}

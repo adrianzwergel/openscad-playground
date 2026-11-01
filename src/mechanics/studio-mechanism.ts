@@ -17,8 +17,9 @@ import type {Asset} from './model-import';
 import {fitCylinder,fitEdge,fitTwoPoints} from './kinematics/axis-fit';
 import type {AxisFit} from './kinematics/axis-fit';
 import {solve} from './kinematics/solver';
+import {demoRobot} from './demo-robot';
 import {quaternionFromBasis,cross as crossV,unit} from './kinematics/math';
-import {KinematicsView} from './kinematics-view';
+import {KinematicsView,linkColor} from './kinematics-view';
 import type {MotionSolution} from './kinematics-view';
 
 type Item='mechanism'|'model'|'axis-new'|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
@@ -124,14 +125,21 @@ export class MechanismEditor{
    this.item=`joint:${id}`;}
   this.renderProperties();}
  private inputValue(m:Mechanism){return m.input.kind==='coordinate'&&this.axisValues[m.input.joint]!==undefined?this.axisValues[m.input.joint]:m.range.from;}
- private fixed(m:Mechanism){const out:Record<string,number[]>={};for(const [id,v] of Object.entries(this.axisValues))if(m.joints.some(j=>j.id===id)&&!(m.input.kind==='coordinate'&&m.input.joint===id))out[id]=[v];return out;}
+ /** Axes with sliders: every movable joint that is not a placeholder. */
+ private axes(m:Mechanism){
+  const movable=m.joints.filter(j=>!j.id.startsWith('halt-')&&['revolute','prismatic','cylindrical','screw','path'].includes(j.joint.kind));
+  // A model's axes are each driven; in other mechanisms only the input drives, the rest follows.
+  return m.bodies.some(b=>b.display?.kind==='mesh')?movable:movable.filter(j=>m.input.kind==='coordinate'&&m.input.joint===j.id);}
+ private axisDefault(m:Mechanism,j:JointRelation){const deg=j.joint.kind==='revolute'||j.joint.kind==='screw',lo=j.limits?.min??(deg?-180:-200),hi=j.limits?.max??(deg?180:200);return m.input.kind==='coordinate'&&m.input.joint===j.id?m.range.from:Math.max(lo,Math.min(hi,0));}
+ /** Every axis is driven by its own slider, so every axis is held (the input through the range). */
+ private fixed(m:Mechanism){const out:Record<string,number[]>={};for(const j of this.axes(m))if(!(m.input.kind==='coordinate'&&m.input.joint===j.id))out[j.id]=[this.axisValues[j.id]??this.axisDefault(m,j)];return out;}
  /** Sliders: one per axis; moving one re-solves the pose in place. */
  renderAxes(root=document.getElementById('axes')){
   if(!root)return;root.replaceChildren();const m=this.mechanism();root.hidden=!m;if(!m)return;
-  const axes=m.joints.filter(j=>!j.id.startsWith('halt-')&&['revolute','prismatic','cylindrical','screw','path'].includes(j.joint.kind));
+  const axes=this.axes(m);
   if(!axes.length){root.append(el('p',{className:'muted',textContent:'Noch keine Achsen. Im Modell Glieder bilden und Achsen anklicken.'}));return;}
   root.append(el('h3',{textContent:'Achsen live'}));
-  for(const j of axes){const unitLabel=j.joint.kind==='revolute'||j.joint.kind==='screw'?'°':'mm',lo=j.limits?.min??(unitLabel==='°'?-180:-200),hi=j.limits?.max??(unitLabel==='°'?180:200),value=this.axisValues[j.id]??(m.input.kind==='coordinate'&&m.input.joint===j.id?m.range.from:Math.max(lo,Math.min(hi,0)));
+  for(const j of axes){const unitLabel=j.joint.kind==='revolute'||j.joint.kind==='screw'?'°':'mm',lo=j.limits?.min??(unitLabel==='°'?-180:-200),hi=j.limits?.max??(unitLabel==='°'?180:200),value=this.axisValues[j.id]??this.axisDefault(m,j);
    const slider=el('input',{type:'range',min:String(lo),max:String(hi),step:String((hi-lo)/720),value:String(value)});slider.dataset.axis=j.id;slider.setAttribute('aria-label','Achse '+j.id);const out=el('output',{textContent:`${value.toFixed(1)} ${unitLabel}`});
    slider.oninput=()=>{const v=Number(slider.value);this.axisValues[j.id]=v;out.textContent=`${v.toFixed(1)} ${unitLabel}`;this.livePose();};
    root.append(el('label',{className:'axis-row'},el('span',{textContent:j.id}),slider,out));}
@@ -160,21 +168,53 @@ export class MechanismEditor{
    const open=el('button',{textContent:`⚙ ${m.label}`});open.dataset.mechanism=m.id;open.setAttribute('aria-selected',String(this.activeId===m.id&&this.item==='mechanism'));open.onclick=()=>{this.enter(m.id);this.host.leave();};
    root.append(el('div',{className:'tree-row'},open));
    if(this.activeId!==m.id)continue;
+   const model=m.mechanism.bodies.some(b=>b.display?.kind==='mesh');
    const sub=(label:string,item:Item)=>{const b=el('button',{textContent:label,className:'tree-sub'});b.setAttribute('aria-selected',String(this.item===item));b.onclick=()=>{this.item=item;this.renderProperties();this.drawHandles();this.host.leave();};root.append(el('div',{className:'tree-row'},b));};
-   if(m.mechanism.bodies.some(b=>b.display?.kind==='mesh'))sub('  🧩 Modell & Glieder','model');sub('  ＋ Achse anlegen','axis-new');
+   const group=(text:string)=>root.append(el('div',{className:'tree-subgroup',textContent:text}));
+   if(model){sub('  🧩 Modell & Glieder','model');group('Achsen');for(const j of m.mechanism.joints)if(!j.id.startsWith('halt-'))sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);sub('  ＋ Achse anlegen','axis-new');group('Weitere Einstellungen');}
+   else{for(const b of m.mechanism.bodies)if(!b.ground)sub(`  ▭ ${b.id}`,`body:${b.id}`);for(const j of m.mechanism.joints)sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);}
    sub('  Parameter','parameters');sub('  Ein-/Ausgang, Bereich','io');
-   for(const b of m.mechanism.bodies)if(!b.ground)sub(`  ▭ ${b.id}`,`body:${b.id}`);
-   for(const j of m.mechanism.joints)sub(`  ⟳ ${j.id} (${j.joint.kind})`,`joint:${j.id}`);
+   if(model)for(const b of m.mechanism.bodies)if(!b.ground&&b.display?.kind!=='mesh')sub(`  ▭ ${b.id}`,`body:${b.id}`);
    for(const e of m.mechanism.elements)sub(`  ◉ ${e.id}${e.source.kind==='library'?' (Kaufteil)':''}`,`element:${e.id}`);
    for(const c of m.mechanism.contacts)sub(`  ⚙ ${c.id} (${c.mode==='follower'?'Läufer':c.kind})`,`contact:${c.id}`);
    m.mechanism.patterns.forEach((p,i)=>sub(`  ⟷ Muster ${i+1} (${p.kind==='mirror'?'Spiegelung':'Reihe'})`,`pattern:${i}`));
   }
+  root.append(el('div',{className:'tree-group',textContent:'Neu'}));
   const add=el('div',{className:'mechanism-add'});
-  for(const [key,t] of Object.entries(templates)){const b=el('button',{textContent:'+ '+t.label});b.dataset.mechanismTemplate=key;b.onclick=()=>{const id='mech-'+crypto.randomUUID().slice(0,8);this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label:t.label.replace(' (Vorlage)',''),mechanism:t.build()}];},`${t.label} angelegt`);this.enter(id);this.host.leave();};add.append(b);}
+  const demo=el('button',{textContent:'▶ Demo: Roboterarm',className:'primary'});demo.dataset.demo='robot';demo.onclick=()=>void this.loadDemo();
+  const templateBox=el('details',{className:'templates'},el('summary',{textContent:'Vorlagen (Getriebe-Beispiele)'}));
+  for(const [key,t] of Object.entries(templates)){const b=el('button',{textContent:'+ '+t.label});b.dataset.mechanismTemplate=key;b.onclick=()=>{const id='mech-'+crypto.randomUUID().slice(0,8);this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label:t.label.replace(' (Vorlage)',''),mechanism:t.build()}];},`${t.label} angelegt`);this.enter(id);this.host.leave();};templateBox.append(b);}
   const file=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});file.id='model-file';
-  const load=el('button',{textContent:'+ Aus 3D-Modell (STL, OBJ, GLB)'});load.dataset.mechanismModel='true';load.onclick=()=>file.click();
+  const load=el('button',{textContent:'⬆ 3D-Modell laden (STL, OBJ, GLB)'});load.dataset.mechanismModel='true';load.onclick=()=>file.click();
   file.onchange=async()=>{const files=[...(file.files??[])];file.value='';if(files.length)await this.importFiles(files);};
-  add.append(load,file);root.append(add);
+  add.append(load,file,demo,templateBox);root.append(add);
+ }
+ /** The demo arm: stored like an imported model, links and axes ready, sliders work at once. */
+ async loadDemo(){
+  const {asset,mechanism}=demoRobot();await storeAsset(asset);rememberAsset(asset);this.assets.set(asset.id,asset);
+  const id='mech-'+crypto.randomUUID().slice(0,8);
+  this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label:'Demo Roboterarm',mechanism}];},'Demo geladen: drei Achsen – die Regler unter der 3D-Ansicht bewegen den Arm.');
+  this.enter(id);this.item='model';this.host.leave();
+ }
+ /** Renames a link everywhere it is referenced. */
+ private renameBody(from:string,to:string){
+  if(!/^[A-Za-zÄÖÜäöüß0-9_-]{1,40}$/.test(to)){this.host.status('Name: Buchstaben, Ziffern, - und _ (bis 40 Zeichen).');return;}
+  const m=this.mechanism();if(!m||m.bodies.some(b=>b.id===to)){this.host.status('Name ist schon vergeben.');return;}
+  this.host.change(()=>{const x=this.mechanism()!;for(const b of x.bodies)if(b.id===from)b.id=to;for(const j of x.joints){if(j.a.body===from)j.a.body=to;if(j.b.body===from)j.b.body=to;if(j.id===`halt-${from}`)j.id=`halt-${to}`;}
+   for(const e of x.elements)for(const mt of e.mounts)if(mt.body===from)mt.body=to;for(const p of x.patterns)p.source=p.source.map(s=>s===from?to:s);},`Glied umbenannt: ${to}`);
+  if(this.brush===from)this.brush=to;if(this.draft.a===from)this.draft.a=to;if(this.draft.b===from)this.draft.b=to;
+ }
+ /** Step bar for model-based mechanisms: where am I, what next. */
+ private steps(m:Mechanism):HTMLElement{
+  const links=m.bodies.filter(b=>!b.ground),filled=links.filter(b=>b.display?.kind==='mesh'&&b.display.parts.length),axes=m.joints.filter(j=>!j.id.startsWith('halt-')&&j.joint.kind!=='fixed'),loose=links.filter(b=>m.joints.some(j=>j.id===`halt-${b.id}`));
+  const state=[true,filled.length>0&&filled.length===links.length,axes.length>0&&!loose.length,axes.length>0];
+  const hints=['Modell ist geladen.',
+   !links.length?'Mit „+ Glied“ ein bewegliches Glied anlegen, dann Teile anklicken.':filled.length<links.length?`Glied ${links.find(b=>!filled.includes(b))!.id} hat noch keine Teile.`:'Alle Glieder haben Teile.',
+   loose.length?`${loose.map(b=>b.id).join(', ')} hängt noch fest – „＋ Achse anlegen“ und den Zylinder des Gelenks anklicken.`:axes.length?'Jedes Glied hat eine Achse.':'Noch keine Achse.',
+   axes.length?'Regler unter der 3D-Ansicht schieben und prüfen, ob alles richtig mitläuft.':'Erst Achsen anlegen.'];
+  const next=state.findIndex(s=>!s),bar=el('ol',{className:'steps'});
+  [['Modell','model'],['Glieder','model'],['Achsen','axis-new'],['Testen','model']].forEach(([label,item],i)=>{const li=el('li',{textContent:`${state[i]?'✓':i+1} ${label}`});li.dataset.state=state[i]?'done':i===next?'current':'open';li.onclick=()=>{this.item=item as Item;this.renderProperties();};bar.append(li);});
+  const index=next<0?3:next;return el('div',{className:'step-box'},bar,el('p',{className:'step-hint',textContent:'Was jetzt? '+hints[index]}),el('p',{className:'muted',textContent:'Danach (bald): Antrieb setzen – Motor aus dem Katalog, die Suche findet das Getriebe zur Achse.'}));
  }
  /** New mechanism from model files: every part starts on the frame (Basis). */
  async importFiles(files:File[]){
@@ -197,7 +237,7 @@ export class MechanismEditor{
    return [...triple(`${label}: Position [mm]`,f.position,(i,n)=>{const p=[...f.position] as V;p[i]=n;write({...f,position:p});}),...triple(`${label}: Drehung XYZ [°]`,[e.x*deg,e.y*deg,e.z*deg],(i,n)=>{const a=[e.x,e.y,e.z];a[i]=n/deg;write({...f,rotation:new THREE.Quaternion().setFromEuler(new THREE.Euler(a[0],a[1],a[2],'XYZ')).toArray() as Frame['rotation']});})];};
   const remove=(label:string,fn:(m:Mechanism)=>void)=>{const b=el('button',{textContent:label,className:'danger'});b.onclick=()=>{edit(label,fn);this.item='mechanism';};return b;};
   const bodies=m.bodies.map(b=>[b.id,b.id] as [string,string]),joints=m.joints.map(j=>[j.id,`${j.id} (${j.joint.kind})`] as [string,string]);
-  root.append(el('h3',{textContent:`⚙ ${entry.label}`}),el('p',{id:'mechanism-preview',className:'muted'}));this.renderStatus();
+  root.append(el('h3',{textContent:`⚙ ${entry.label}`}));if(m.bodies.some(b=>b.display?.kind==='mesh'))root.append(this.steps(m));root.append(el('p',{id:'mechanism-preview',className:'muted'}));this.renderStatus();
   const back=el('button',{textContent:'← Zur Getriebe-Baugruppe'});back.onclick=()=>{this.exit();this.host.leave();};
 
   if(this.item==='mechanism'){
@@ -212,10 +252,13 @@ export class MechanismEditor{
   }
   if(this.item==='model'){
    const meshBodies=m.bodies.filter(b=>b.display?.kind==='mesh'),asset=meshBodies[0]?.display?.kind==='mesh'?this.assets.get(meshBodies[0].display.asset):undefined;
-   root.append(el('h3',{textContent:'🧩 Modell & Glieder'}),el('p',{className:'muted',textContent:'Ein Glied ist ein starrer Verbund. Teile anklicken und einem Glied zuordnen; die Basis steht still.'}));
+   root.append(el('h3',{textContent:'🧩 Modell & Glieder'}),el('p',{className:'muted',textContent:'Ein Glied ist alles, was sich gemeinsam bewegt. Die Basis steht still. Neues Glied anlegen, dann im 3D-Fenster die Teile anklicken, die dazugehören.'}));
+   const names=el('div',{className:'link-names'});
+   for(const b of m.bodies){const input=el('input',{type:'text',value:b.ground?'Basis (steht still)':b.id,disabled:!!b.ground});input.setAttribute('aria-label','Name von '+b.id);input.onchange=()=>this.renameBody(b.id,input.value.trim());const count=b.display?.kind==='mesh'?b.display.parts.length:0;const swatch=el('span',{className:'swatch',textContent:'■'});swatch.style.color='#'+linkColor(m.bodies.indexOf(b),b.ground).toString(16).padStart(6,'0');names.append(el('div',{className:'link-name'},swatch,input,el('small',{textContent:`${count} Teil${count===1?'':'e'}`})));}
+   root.append(heading('Glieder'),names);
    const addLink=el('button',{textContent:'+ Glied'});addLink.dataset.addLink='true';addLink.onclick=()=>{const id=`glied${m.bodies.length}`;edit('Glied angelegt',x=>{x.bodies.push({id,frame:identity(),display:{kind:'mesh',asset:asset?.id??'',parts:[]}});x.joints.push({id:`halt-${id}`,joint:{kind:'fixed'},a:{body:'ground',local:identity()},b:{body:id,local:identity()}});});this.brush=id;};
-   const links=m.bodies.map(b=>[b.id,b.ground?`${b.id} (Basis)`:b.id] as [string,string]);
-   root.append(addLink,select('Klick weist zu',this.brush,[['','– nur auswählen –'],...links],v=>{this.brush=v;this.renderProperties();}));
+   const links=m.bodies.map(b=>[b.id,b.ground?'Basis':b.id] as [string,string]);
+   root.append(addLink,select('Klick im 3D-Fenster weist zu',this.brush,[['','– nur auswählen –'],...links],v=>{this.brush=v;this.renderProperties();}));
    if(!asset){root.append(el('p',{className:'muted',textContent:'Modell wird geladen …'}));return;}
    const table=el('div',{className:'part-list'});
    for(const part of asset.parts){const owner=meshBodies.find(b=>b.display?.kind==='mesh'&&b.display.parts.includes(part.id))?.id??'';const key=`${asset.id}/${part.id}`;
@@ -226,7 +269,7 @@ export class MechanismEditor{
    root.append(heading(`Teile (${asset.parts.length})`),table);return;
   }
   if(this.item==='axis-new'){
-   const links=m.bodies.map(b=>[b.id,b.ground?`${b.id} (Basis)`:b.id] as [string,string]);if(!this.draft.b)this.draft.b=m.bodies.find(b=>!b.ground)?.id??'';
+   const links=m.bodies.map(b=>[b.id,b.ground?'Basis':b.id] as [string,string]);if(!this.draft.b)this.draft.b=m.bodies.find(b=>!b.ground)?.id??'';
    root.append(el('h3',{textContent:'＋ Achse anlegen'}),el('p',{className:'muted',textContent:'Achse zwischen zwei Gliedern: Typ wählen, dann am Modell die Geometrie anklicken, aus der die Achse folgt.'}),
     select('Glied A (trägt)',this.draft.a,links,v=>{this.draft.a=v;}),select('Glied B (bewegt sich)',this.draft.b,links,v=>{this.draft.b=v;}),
     select('Typ',this.draft.kind,[['revolute','Drehachse'],['prismatic','Linearachse']],v=>{this.draft.kind=v as 'revolute'|'prismatic';}));
@@ -329,6 +372,7 @@ export class MechanismEditor{
   }
  }
 }
+const jointName=(k:string)=>({fixed:'fest',revolute:'Drehachse',prismatic:'Linearachse',cylindrical:'Dreh-Schub',screw:'Schraube',path:'Pfad',spherical:'Kugelgelenk'} as Record<string,string>)[k]??k;
 function spur(id:string,body:string,module:number,teeth:number,width:number):Element{
  const r=module*teeth/2;return {id,source:{kind:'printed'},surfaces:[{id:'teeth',pitch:{kind:'circle',r},profile:{kind:'involute',module,pressureAngle:20,backlash:.15},z:[-width/2,width/2],side:'external'}],interfaces:[{id:'bore',kind:'bore',diameter:5,z:[-width/2,width/2]}],envelope:{radius:r+module,min:-width/2,max:width/2},mounts:[{interface:'bore',body,pose:identity()}],phase:0};
 }

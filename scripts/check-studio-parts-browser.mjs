@@ -11,11 +11,11 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
   const note=await p.$eval(`[data-generate-stl="${id}"]`,b=>b.nextElementSibling.textContent);assert.match(note,/heruntergeladen/,note);
   for(let i=0;i<100;i++){try{const text=await fs.readFile(path.join(dir,file),'utf8');assert.ok(text.startsWith('solid')&&text.includes('facet normal'));return note;}catch{await new Promise(r=>setTimeout(r,100));}}throw Error('download missing: '+file);};
  // Rail along the curved guide.
- await p.click('[data-mechanism-template="rail"]');await ready();await open('zahnstange');
+ await p.evaluate(()=>document.querySelector('[data-mechanism-template="rail"]').click());await ready();await open('zahnstange');
  const railNote=await generate('zahnstange','Ritzel-auf-gebogener-Zahnstange-zahnstange.stl');
  await p.click('#motion-run');await p.waitForFunction(()=>/Stellungen/.test(document.querySelector('#motion-report').textContent),{timeout:120000});
  // Non-circular pair: varying ratio, generated mate.
- await p.click('[data-mechanism-template="noncircular"]');await ready();
+ await p.evaluate(()=>document.querySelector('[data-mechanism-template="noncircular"]').click());await ready();
  await p.click('#motion-run');await p.waitForFunction(()=>/Stellungen/.test(document.querySelector('#motion-report').textContent),{timeout:120000});
  const report=await p.$eval('#motion-report',e=>e.textContent);assert.match(report,/veränderlich/,report);
  await open('radB');const mateNote=await generate('radB','Unrundes-Zahnradpaar-radB.stl');assert.match(mateNote,/Abrollen von radA/);

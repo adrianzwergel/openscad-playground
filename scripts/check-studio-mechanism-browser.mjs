@@ -4,7 +4,7 @@ const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Ch
 try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});
  await p.goto('http://localhost:4001/studio');await p.waitForSelector('canvas');await p.evaluate(()=>localStorage.removeItem('mechanics-studio'));await p.reload();await p.waitForSelector('canvas');
  const text=sel=>p.$eval(sel,e=>e.textContent);
- await p.click('[data-mechanism-template="garage"]');
+ await p.evaluate(()=>document.querySelector('[data-mechanism-template="garage"]').click());
  await p.waitForFunction(()=>/Vorschau gelöst/.test(document.querySelector('#mechanism-preview')?.textContent??''),{timeout:60000});
  assert.match(await text('#mechanism-preview'),/bestimmt/,'garage door has one degree of freedom');
  const tree=await text('#tree');for(const part of ['paneel1','fuehrungA','Muster 1','Muster 2'])assert.ok(tree.includes(part),'explorer lists '+part);
