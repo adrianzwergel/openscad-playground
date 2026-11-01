@@ -3,7 +3,7 @@
 // with hundreds of primitives costs only the handful near a point. Negative is
 // inside. Geometry is meshed only at the very end (mesh.ts).
 import type {V,Frame} from './vec.ts';
-import {sub,dot,norm,applyInverse,scale,add} from './vec.ts';
+import {sub,dot,norm,applyInverse,scale,add,cellKey} from './vec.ts';
 
 export type Prim=
  |{kind:'sphere';center:V;r:number}
@@ -44,12 +44,12 @@ export const smin=(a:number,b:number,k:number)=>{if(k<=0)return Math.min(a,b);co
 
 /** Primitives bucketed in a uniform hash grid; queries see only nearby ones. */
 export class PrimIndex{
- readonly prims:Prim[]=[];private cells=new Map<string,number[]>();readonly cell:number;readonly reach:number;
+ readonly prims:Prim[]=[];private cells=new Map<number,number[]>();readonly cell:number;readonly reach:number;
  private lo:V=[Infinity,Infinity,Infinity];private hi:V=[-Infinity,-Infinity,-Infinity];
  constructor(cell:number,reach:number){this.cell=cell;this.reach=reach;}
  add(s:Prim){const i=this.prims.length;this.prims.push(s);const b=primBounds(s);for(let k=0;k<3;k++){this.lo[k]=Math.min(this.lo[k],b.min[k]);this.hi[k]=Math.max(this.hi[k],b.max[k]);}const lo=b.min.map(n=>Math.floor((n-this.reach)/this.cell)),hi=b.max.map(n=>Math.floor((n+this.reach)/this.cell));
-  for(let x=lo[0];x<=hi[0];x++)for(let y=lo[1];y<=hi[1];y++)for(let z=lo[2];z<=hi[2];z++){const k=x+','+y+','+z,l=this.cells.get(k);if(l)l.push(i);else this.cells.set(k,[i]);}}
- near(p:V){return this.cells.get(Math.floor(p[0]/this.cell)+','+Math.floor(p[1]/this.cell)+','+Math.floor(p[2]/this.cell));}
+  for(let x=lo[0];x<=hi[0];x++)for(let y=lo[1];y<=hi[1];y++)for(let z=lo[2];z<=hi[2];z++){const k=cellKey(x,y,z),l=this.cells.get(k);if(l)l.push(i);else this.cells.set(k,[i]);}}
+ near(p:V){return this.cells.get(cellKey(Math.floor(p[0]/this.cell),Math.floor(p[1]/this.cell),Math.floor(p[2]/this.cell)));}
  /** Distance to the nearest primitive; `reach` when none is within reach. */
  /** Distance to the box around all primitives (a lower bound of the true distance). */
  outside(p:V){if(!this.prims.length)return Infinity;let s=0;for(let k=0;k<3;k++){const d=Math.max(this.lo[k]-p[k],0,p[k]-this.hi[k]);s+=d*d;}return Math.sqrt(s);}

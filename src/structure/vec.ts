@@ -28,4 +28,6 @@ export function axisAngle(axis:V,degrees:number):Q{const a=unit(axis),h=degrees*
 export function toward(v:V):Q{const z:V=[0,0,1],c=cross(z,v),s=norm(c),d=v[2]/norm(v);if(s<1e-9)return d>0?[0,0,0,1]:[1,0,0,0];return axisAngle(scale(c,1/s),Math.atan2(s/norm(v),d)*180/Math.PI);}
 /** Two unit vectors perpendicular to `z` (and to each other). */
 export function basis(z:V):[V,V]{const a=unit(z),h:V=Math.abs(a[0])<.9?[1,0,0]:[0,1,0],x=unit(cross(h,a));return [x,cross(a,x)];}
+/** Number key of an integer lattice point (|coordinates| < 65536): a Map with number keys is much faster than with strings. */
+export const cellKey=(x:number,y:number,z:number)=>((x+65536)*131072+(y+65536))*131072+(z+65536);
 export function lcg(seed:number){let s=(seed>>>0)||1;return ()=>{s=(1664525*s+1013904223)>>>0;return s/4294967296;};}

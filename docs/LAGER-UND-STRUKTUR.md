@@ -15,48 +15,87 @@ Plan für die beiden nächsten Etappen nach den Antrieben (KINEMATIK-KERN.md 15)
 
 ## Stand (umgesetzt)
 
-| Demo | Glieder | Lager (Teil A) | Strukturen (Teil B) | Zeit |
+| Demo | Glieder | Lager (Teil A) | Strukturen (Teil B) | Zeit (Node) |
 |---|---|---|---|---|
-| Roboterarm | Sockel, Drehteller, Oberarm, Unterarm | 14× 625, 6× 608, 3 Wellen Ø5, 3 Gelenkwellen Ø8 | alle gültig, 15–64 Streben je Glied | ≈ 70 s |
-| CNC-Portal | Rahmen, Portal, Wagen, Z | 6× 608 (Fest-/Loslager), 12× LM8UU auf 6 Rundstangen, 3 Flanschmuttern | alle gültig, 40–115 Streben | ≈ 90 s |
-| Schlitten | Bahn, Wagen | 10× 625 (Getriebe, 4 Laufrollen) | alle gültig; Bahn als Brückenträger mit Füßen | ≈ 80 s |
+| Roboterarm | Sockel, Drehteller, Oberarm, Unterarm | 14× 625, 6× 608, 3 Wellen Ø5, 3 Gelenkwellen Ø8 | alle gültig, fest und steif genug; 160–590 g je Glied | ≈ 60 s |
+| CNC-Portal | Rahmen, Portal, Wagen, Z | 6× 608 (Fest-/Loslager), 12× LM8UU auf 6 Rundstangen, 3 Flanschmuttern | alle gültig, fest und steif genug; Portal 1,8 kg | ≈ 75 s |
+| Schlitten | Bahn, Wagen | 10× 625 (Getriebe, 4 Laufrollen) | alle gültig, fest und steif genug; Bahn 3,2 kg auf breiten Füßen | ≈ 150 s |
+| Gehäuse (ohne Mechanik) | Unterteil, Deckel, Hutschienenclip | – | Arduino Uno R3 auf TH35, 33 + 12 + 6 g | ≈ 5 s |
 
 Gültig heißt: alle Haltepunkte angebunden, ein geschlossenes Netz, frei von Sperrzonen,
-kollisionsfrei gegen die Nachbarglieder über deren ganzen Achsbereich. Festigkeit und
-Steifigkeit gegen die angenommenen Lasten (20 N je Haltepunkt in alle Richtungen plus
-Torsion, PLA, Sicherheit 3, höchstens 0,5 mm Nachgeben) werden mit Ort und Wert als
-Hinweis gemeldet; sie hängen von den Lastannahmen ab, die im Studio einstellbar sind.
+kollisionsfrei gegen die Nachbarglieder über deren ganzen Achsbereich. **Fest und steif
+genug** heißt: unter den Bemessungslasten höchstens 100 % Auslastung (Zug/Druck, Biegung,
+Torsion, Knicken; PLA mit Sicherheit 3) und höchstens 0,5 mm Verformung an jedem
+belasteten Haltepunkt. Bemessungslasten sind
+- 20 N je Haltepunkt in x, y, z und als Torsion um die Auflager (einstellbar) und
+- die Kräfte der Antriebe bei blockiertem Motor (`loads.ts`): Moment je Welle aus den
+  Übersetzungen, Zahnkräfte T/r tangential und tan 20° radial, Riemenzug, Spindelschub
+  2π·T·η/Steigung ins Festlager und in die Mutter, nach dem Hebelgesetz auf die Lager
+  einer Welle verteilt; das Ritzel des Schlittens belastet jeden Schienenhalter einmal.
+  Anteil 0,5 des Haltemoments (mit Werkstoffsicherheit 3 also Sicherheit 1,5 gegen den
+  blockierten Motor), im Studio einstellbar.
+
+`check-links.mjs` und der Browsertest verlangen Festigkeit und Steifigkeit für alle drei
+Demos; im Studio werden auch andere gefundene Getriebe (hier ein anderes M2 am Roboter)
+geprüft und bestehen.
 
 Abweichungen vom Plan unten (nach Versuchen):
 - **Topologie:** Statt Fachwerk-LP bzw. OC wächst ein Steiner-Baum von den Auflagern aus:
   jeder Haltepunkt (fernster zuerst) schließt über den kürzesten freien Weg an den
-  nächsten Punkt des Baums an; Kanten mit wenig Freiraum kosten mehr (Wege laufen in die
-  Mitte freier Räume). „Baum mit Querstreben“ gibt jedem Haltepunkt einen zweiten,
-  weitgehend getrennten Weg und Querstreben zwischen Ästen; „netzartig“ mehr davon.
-  Die OC-Verfahren (Fachwerk `optimizeAreas`, Rahmen `optimizeFrame`) bleiben im Kern,
-  lieferten aber an Engstellen Mechanismen bzw. zu dichte Netze.
-- **Statik:** Gedruckte Knoten sind steif: Bemessung und Nachweis am räumlichen
-  Rahmenmodell (Balken mit Biegung und Torsion, `frame.ts`), Radius nach Festigkeit und
-  Steifigkeit, nie dicker als der Freiraum.
+  nächsten Punkt des Baums an; Kanten mit wenig Freiraum kosten mehr. Im Netzmodus
+  bekommt jeder belastete Haltepunkt (auch jeder Sitz einer Lagerplatte) weitere,
+  getrennte Wege **bis zu den Auflagern** – zwei spannen eine Ebene, drei ein Dreibein,
+  das Lasten aus jeder Richtung über Zug und Druck abträgt (Wege in den nächsten Ast
+  liefen alle in einen Stamm). Enge Auflager und Haltepunkte binden mit mehreren Ports an.
+- **Rückkopplung:** Streben, die an ihrem Freiraum überlastet sind oder viel
+  Biegeenergie aufnehmen, markieren Engstellen; der nächste Entwurf geht um sie herum,
+  ein zu weicher bekommt mehr Verstrebung; bis zu sechs Entwürfe, der beste bleibt.
+- **Statik:** Räumliches Rahmenmodell mit steifen Knoten (`frame.ts`, Skyline-Cholesky in
+  Cuthill-McKee-Ordnung; Stabilisierung relativ zur eigenen Diagonale – eine absolute
+  Feder hatte dünne Stützen künstlich gehalten). Lagerplatten als Plattenstreifen
+  (Rechteckquerschnitt, weich quer, steif in der Ebene). Streben mit wechselndem
+  Freiraum werden in Stücke geteilt und einzeln bemessen (kegelig, als Kette glatt
+  gezeichnet), Radius bis 16 mm. Steifigkeit wächst nach Energiedichte.
 - **Lagerplatten:** Sitze paralleler Getriebewellen und Motorflansche auf gleicher Höhe
-  werden zu einer Platte (konvexe Hülle) verbunden, wie im Getriebegehäuse.
+  werden zu einer 6-mm-Platte (konvexe Hülle) verbunden, wie im Getriebegehäuse.
 - **Freiraum exakt:** Das Abstandsfeld des Tragwerks wird beim Vernetzen mit dem
   Sperrfeld beschnitten; ein 4-mm-Lipschitz-Gitter hält das schnell.
-- **Zugänge:** Lager eines Gelenks bekommen eine Zufahrtszone, Schienenhalter eine Zone
-  darunter; das zuerst erzeugte Nachbarglied muss sie freilassen.
-- **Reihenfolge und Nachbarn:** Glieder werden von der Spitze zur Basis erzeugt und
-  meiden die Nachbarn über deren Gelenk; weiter entfernte Glieder werden nur geprüft
-  (Hinweis bei Berührung in Extremstellungen – Achsgrenzen).
-- **Schiene am Pfad:** Für den Wagen ist die Schiene ein festes Teil im Wagenrahmen
-  (exakt auf Geraden, Krümmung nicht verfolgt).
+- **Zugänge, Reihenfolge, Schiene:** wie zuvor (Zufahrtszonen, Spitze zuerst, Schiene im
+  Wagenrahmen fest – exakt auf Geraden).
+- **Druck (B4):** Jedes Teil bekommt die Aufbaurichtung mit dem wenigsten Überhang
+  (> 45°) abzüglich der halben Auflagefläche (`print.ts`), die STL liegt so auf dem
+  Bett. Wandstärke: von Oberflächenpunkten entlang fünf Strahlen ins Material; unter
+  1,2 mm wird gemeldet (Stellen, an denen eine Strebe eine Sperrzone streift).
+- **Gehäuse (B6, `shell.ts`):** Platine aus einem Katalog (Arduino Uno R3), Boden und
+  Wände als Platten, Abstandshalter auf dem Lochbild, Buchsen nach oben offen und vom
+  Deckel verschlossen, Schlitze über den Stiftleisten, Deckelschrauben in Domen außen.
+  Der Hutschienenclip ist ein eigenes Teil (fester Haken, freigeschnittene Rastzunge mit
+  Einführschräge und Lasche, 0,63 % Dehnung beim Aufrasten), von innen verschraubt über
+  dem offenen Kanal der Schiene – so drucken alle drei Teile flach ohne Stützen. Im
+  Studio als ZIP (drei STL in Druckrichtung, Hinweise).
+- **SIMP (B5, `simp.ts`):** Dichteoptimierung auf Voxeln (Hexaeder, PCG, Dichtefilter,
+  OC) mit dem Überhangfilter nach Langelaar (Druck in +z ab der Auflagerunterseite).
+  Am Halter aus `check-generate`: Tragwerk 141 g, 0,35 mm; SIMP bei 8 % Volumen
+  205–226 g, 0,06–0,08 mm – rund dreimal so steif je Gramm, aber 30 s statt 2 s, und
+  bei der Masse des Tragwerks bildet ein 8-mm-Gitter dessen dünne Streben nicht ab. Mit
+  Filter ist jedes freie Element gestützt. Für flächige Teile und als Vergleich; die
+  Glieder der Demos nutzen das Tragwerk.
 
-Noch offen: SIMP/Schalenmodus (B5/B6, Arduino-Gehäuse auf Hutschiene), physikalisch
-abgeleitete Lasten (Zahnkräfte, Spindelschub statt Pauschallast), Druckorientierung und
-Überhang, Laufzeit unter 30 s.
+Noch offen:
+- **Laufzeit unter 30 s:** Zahlenschlüssel und schnellere Abstands- und Netzwege haben
+  die Zeiten gesenkt, aber Netzerzeugung und das Abstandsfeld gegen die bewegten
+  Nachbarn laufen auf einem Kern. Für unter 30 s müssen beide auf Worker verteilt
+  werden (die Umgebung eines Glieds muss dafür in jedem Worker aufbaubar sein).
+- Dünne Häute, wo eine Strebe eine Sperrzone streift, werden gemeldet, nicht entfernt.
+- Das Gehäuse ist verschraubt; die Features Schnapphaken (mit Fenster und Dehnung) und
+  M3-Einpressmutter stehen im Kern bereit, nutzen es aber noch nicht.
 
-Tests: `scripts/structure/check-sdf.mjs`, `check-frame.mjs`, `check-generate.mjs`,
-`check-bearings.mjs`, `check-links.mjs [robot|cnc|sled]` (mit `OUT=…` STL und Bild),
-`scripts/check-studio-structure-browser.mjs [robot|cnc|sled]`.
+Tests: `scripts/structure/check-sdf.mjs`, `check-features.mjs`, `check-frame.mjs`, `check-generate.mjs`,
+`check-bearings.mjs`, `check-loads.mjs`, `check-links.mjs [robot|cnc|sled]` (mit `OUT=…`
+STL und Bild), `check-shell.mjs`, `check-simp.mjs`;
+`scripts/check-studio-structure-browser.mjs [robot|cnc|sled]`,
+`scripts/check-studio-shell-browser.mjs`. Werkzeuge: `diag.mjs` (Auslastung, Verformung,
+Freiraum je Strebe, auch für ein mit `dump-studio.mjs` gespeichertes Studio-Dokument).
 
 Das importierte 3D-Modell dient nur dazu, Glieder und Achsen zu setzen. Die
 gedruckte Struktur je Glied wird erzeugt; das Modellteil wird dabei ersetzt

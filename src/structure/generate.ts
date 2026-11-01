@@ -3,7 +3,7 @@
 // out. Independent of mechanisms: a gear link, a motor bracket or a housing
 // for an electronics board all come down to anchors, loads and free space.
 import type {V,Frame} from './vec.ts';
-import {sub,add,scale,norm,cross,unit,dot,rotate} from './vec.ts';
+import {sub,add,scale,norm,cross,unit,dot,rotate,cellKey} from './vec.ts';
 import type {Feature} from './features.ts';
 import {featureGeometry,featureSize} from './features.ts';
 import {Scene,PrimIndex} from './sdf.ts';
@@ -48,7 +48,7 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  const t0=performance.now(),s={...defaultSettings,...spec.settings,material:{...defaultSettings.material,...spec.settings?.material}},m=s.material,rMin=m.rMin;
  if(!spec.anchors.some(a=>a.role==='support'))throw Error(`${spec.id}: kein Haltepunkt als Auflager.`);
  // The keep-out field is 1-Lipschitz: values on a 4 mm lattice bound it from below everywhere; exact values only near obstacles.
- const exact=spec.clearance,lattice=new Map<string,number>(),G=4,lowerBound=(p:V)=>{const c=p.map(x=>Math.round(x/G)*G) as V,k=c.join(',');let v=lattice.get(k);if(v===undefined){v=exact(c);lattice.set(k,v);}return v-norm(sub(p,c));};
+ const exact=spec.clearance,lattice=new Map<number,number>(),G=4,lowerBound=(p:V)=>{const i=Math.round(p[0]/G),j=Math.round(p[1]/G),k=Math.round(p[2]/G),key=cellKey(i,j,k),c:V=[i*G,j*G,k*G];let v=lattice.get(key);if(v===undefined){v=exact(c);lattice.set(key,v);}return v-norm(sub(p,c));};
  const atLeast=(p:V,t:number)=>lowerBound(p)>=t||exact(p)>=t;
  const clearanceCapped=(p:V,cap:number)=>{const l=lowerBound(p);return l>=cap?l:exact(p);};
  if(!spec.anchors.some(a=>a.role==='load'))throw Error(`${spec.id}: kein belasteter Haltepunkt.`);
@@ -317,6 +317,14 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  progress?.('Prüfung',.95);
  const info=inspect(mesh),print=printOrientation(mesh);
  // Clearance of the finished surface (every 7th vertex is plenty at 0.8 mm); the lattice bound skips what cannot be worse.
+ // Wall thickness: from surface points (every 13th) along the inward normal and four rays tilted 45° from it, the
+ // deepest the solid gets (a wall of thickness t reaches t/2 in its middle; at an edge one of the rays goes in deep);
+ // thinner than 1.2 mm (three lines of a 0.4 mm nozzle) is too thin to print well.
+ const WALL=1.2;let thin=0,probes=0,thinnest=Infinity,thinAt:V=[0,0,0];
+ for(let i=0;i<mesh.vertices.length/3;i+=13){const p:V=[mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]],e=.2,g:V=[0,1,2].map(k=>{const a=[...p] as V,b=[...p] as V;a[k]+=e;b[k]-=e;return field(a)-field(b);}) as V,gn=norm(g);if(gn<1e-9)continue;
+  const n=scale(g,-1/gn),h:V=Math.abs(n[0])<.9?[1,0,0]:[0,1,0],u=unit(cross(n,h)),w=cross(n,u),rays=[n,...[u,scale(u,-1),w,scale(w,-1)].map(d=>unit(add(n,d)))];probes++;
+  let depth=0;for(const r of rays){for(let x=.15;x<=WALL*1.5;x+=.15){depth=Math.max(depth,-field(add(p,scale(r,x))));if(depth>=WALL/2)break;}if(depth>=WALL/2)break;}
+  const t=2*depth;if(t<WALL*.9){thin++;if(t<thinnest){thinnest=t;thinAt=p;}}}
  let worst=Infinity,worstAt:V=[0,0,0];for(let i=0;i<mesh.vertices.length/3;i+=7){const p:V=[mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]];if(bosses.distance(p)<1||lowerBound(p)>=worst)continue;const c=spec.clearance(p);if(c<worst){worst=c;worstAt=p;}}
  const struts2=net.struts.map((st,k)=>({st,k})).filter(x=>!x.st.rigid).map(({st,k})=>({a:net.nodes[st.i].p,b:net.nodes[st.j].p,r:radiusOf(st),ra:cone.get(st)![0],rb:cone.get(st)![1],cap:caps.get(st)??radiusOf(st),utilisation:util[k],force:forceOf(k)}));
  const maxUtil=Math.max(0,...struts2.map(x=>x.utilisation)),connected=reach2(net);
@@ -325,6 +333,7 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
   {id:'strength',state:maxUtil<=1.001?'pass':'warn',message:`Größte Auslastung ${(maxUtil*100).toFixed(0)} % (Rahmen: Zug/Druck, Biegung, Torsion, Knicken; Sicherheit ${(50/m.sigma).toFixed(1)})${maxUtil>1.001?(()=>{const w=struts2.reduce((x,y)=>y.utilisation>x.utilisation?y:x);return ` an Strebe (${w.a.map(n=>n.toFixed(0)).join(',')})–(${w.b.map(n=>n.toFixed(0)).join(',')}) r=${w.r.toFixed(1)}`;})():''}.`},
   {id:'stiffness',state:deflection<=s.deflection*1.05?'pass':'warn',message:`Größte Verformung an einem Haltepunkt ${deflection.toFixed(2)} mm (zulässig ${s.deflection} mm)${(()=>{let w=-1,d=-1;framed.us.forEach(u=>net.nodes.forEach((x,i)=>{if(!loaded(x))return;const v=Math.hypot(u[i][0],u[i][1],u[i][2]);if(v>d){d=v;w=i;}}));return w>=0&&deflection>s.deflection*1.05?` bei ${spec.anchors[net.nodes[w].anchor!].id}`:'';})()}.`},
   {id:'mesh',state:info.closed&&dropped<.01?'pass':'fail',message:`Netz ${info.closed?'geschlossen':`offen (${info.openEdges} Kanten)`}, ein Teil${dropped>0?` (${(dropped*100).toFixed(2)} % Splitter entfernt)`:''}.`},
+  {id:'wall',state:thin<=.005*Math.max(1,probes)?'pass':'warn',message:thin?`${thin} von ${probes} Stichproben dünner als ${WALL} mm (dünnste ${thinnest.toFixed(1)} mm bei (${thinAt.map(n=>n.toFixed(0)).join(', ')}))${thin>.005*probes?', dort nachdrucken oder Sperrraum prüfen':''}.`:`Wände überall mindestens ${WALL} mm.`},
   {id:'print',state:print.overhang/print.area<=.25?'pass':'warn',message:`Druckrichtung ${print.label}: ${(print.overhang/print.area*100).toFixed(0)} % der Oberfläche hängen über (> ${print.angle}°)${print.overhang/print.area>.25?', Stützen nötig':''}, Bauhöhe ${print.height.toFixed(0)} mm.`},
   {id:'clearance',state:worst>=-.5?'pass':'fail',message:`Kleinster Abstand der Oberfläche zu Sperrzonen ${worst.toFixed(1)} mm${worst<-.3?` bei (${worstAt.map(n=>n.toFixed(0)).join(', ')}), nächster Haltepunkt ${spec.anchors.map(a=>({a,d:norm(sub(a.frame.position,worstAt))})).sort((x,y)=>x.d-y.d)[0].a.id}`:''}.`},
  ];

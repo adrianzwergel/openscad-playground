@@ -21,6 +21,7 @@ import {generateStructure} from '../../structure/generate.ts';
 import {featureGeometry,featureSize} from '../../structure/features.ts';
 const featureSizeOf=(x:{feature:import('../../structure/features.ts').Feature})=>featureSize(x.feature).radius;
 import {PrimIndex} from '../../structure/sdf.ts';
+import {cellKey} from '../../structure/vec.ts';
 import type {Prim} from '../../structure/sdf.ts';
 
 /** `inspect` sees each link's anchors and clearance field before generation (diagnostics). */
@@ -151,9 +152,9 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
  const floorOf=(l:string)=>{if(l!==ground)return undefined;const f=anchors.get(ground)!.filter(a=>a.id.startsWith('fuss')).map(a=>a.frame.position[2]);return f.length?Math.min(...f):undefined;};
  const clearanceFor=(l:string,own:string[]=[])=>{
   // Generation avoids the neighbours over their joint; links further away meet only at extreme axis values (checked at the end).
-  const self=indexOf(l,false);for(const p of along.get(l)!)self.add(p);const others=tree.links.filter(x=>x!==l&&adjacent(l,x)).map(x=>({x,index:indexOf(x,true,l),steps:path(m,tree,l,x)})),floor=floorOf(l),cache=new Map<string,number>();
+  const self=indexOf(l,false);for(const p of along.get(l)!)self.add(p);const others=tree.links.filter(x=>x!==l&&adjacent(l,x)).map(x=>({x,index:indexOf(x,true,l),steps:path(m,tree,l,x)})),floor=floorOf(l),cache=new Map<number,number>();
   void own;
-  return (p:V)=>{const key=`${Math.round(p[0]*2)},${Math.round(p[1]*2)},${Math.round(p[2]*2)}`,hit=cache.get(key);if(hit!==undefined)return hit;
+  return (p:V)=>{const key=cellKey(Math.round(p[0]*2),Math.round(p[1]*2),Math.round(p[2]*2)),hit=cache.get(key);if(hit!==undefined)return hit;
    let d=self.distance(p);if(floor!==undefined)d=Math.min(d,p[2]-floor+5);
    for(const o of others){if(d<=0)break;d=Math.min(d,sweptDistance(p,o.steps,0,o.index,0));}
    d-=s.gap;cache.set(key,d);return d;};};

@@ -18,6 +18,11 @@ export type Feature=
  |{kind:'pad';width:number;depth:number;thickness:number;holes:[number,number][];hole:number}
  |{kind:'din';width:number;thickness:number}
  |{kind:'standoff';height:number;outer:number;hole:number}
+ /** Boss for a heat-set threaded insert (M3: hole 4.0, depth 5.7), its face at z = 0, the boss below. */
+ |{kind:'insert';outer:number;hole:number;depth:number;height:number}
+ /** Snap hook: a cantilever along +z from its root at z = 0 (thickness along x, width along y), a lip at its tip
+  * reaching `lip` out in +x with a lead-in chamfer; it bends towards −x when pushed in. */
+ |{kind:'snap';length:number;width:number;thickness:number;lip:number}
  /** A plate joining several seats (convex outline in the frame's xy plane, CCW). */
  |{kind:'plate';points:[number,number][];thickness:number};
 
@@ -26,6 +31,11 @@ const cyl=(frame:Frame,r:number,z0:number,z1:number):Prim=>({kind:'cylinder',fra
 const at=(f:Frame,x:number,y:number,z:number):Frame=>compose(f,{position:[x,y,z],rotation:[0,0,0,1]});
 const ring=(f:Frame,r:number,zs:number[],count=8)=>zs.flatMap(z=>Array.from({length:count},(_,i)=>{const a=2*Math.PI*(i+.5)/count;return apply(f,[r*Math.cos(a),r*Math.sin(a),z]);}));
 const rim=(f:Frame,w:number,h:number,z:number)=>[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]].map(([x,y])=>apply(f,[x*w/2,y*h/2,z]));
+/** The window a snap hook catches in, cut into the mating wall (frame of the hook, the wall's inner face at x = 0):
+ * as high as the lip plus `play`, as wide as the hook plus `play` on each side. */
+export function snapWindow(f:Extract<Feature,{kind:'snap'}>,frame:Frame,wall:number,play=.3):Prim{const c=f.lip*1.5;return {kind:'box',frame:at(frame,wall/2,0,f.length-c/2-.5),half:[wall/2+1,f.width/2+play,(c+1)/2+play]};}
+/** Strain at the root of a snap hook pushed in by its lip: ε = 1.5·t·δ / L² (PLA stays below about 2 %). */
+export const snapStrain=(f:Extract<Feature,{kind:'snap'}>)=>1.5*f.thickness*f.lip/(f.length*f.length);
 /** Radial screw hole along +x at height z (set screw, clamp). */
 const radial=(f:Frame,z:number,from:number,to:number,r=1.25):Prim=>cyl(compose(at(f,0,0,z),{position:[0,0,0],rotation:axisAngle([0,1,0],90)}),r,from,to);
 
@@ -43,6 +53,8 @@ export function featureSize(f:Feature):{radius:number;z0:number;z1:number}{
   case 'pad':return {radius:Math.hypot(f.width,f.depth)/2,z0:-f.thickness,z1:0};
   case 'din':return {radius:f.width*.75,z0:-f.thickness-8,z1:0};
   case 'standoff':return {radius:f.outer/2,z0:-f.height,z1:0};
+  case 'insert':return {radius:f.outer/2,z0:-f.height,z1:0};
+  case 'snap':return {radius:Math.hypot(f.thickness+f.lip,f.width/2),z0:0,z1:f.length};
   case 'plate':return {radius:Math.max(...f.points.map(([x,y])=>Math.hypot(x,y))),z0:-f.thickness/2,z1:f.thickness/2};
  }
 }
@@ -76,5 +88,12 @@ export function featureGeometry(f:Feature,frame:Frame):FeatureGeometry{
     holes:[{kind:'box',frame:at(frame,0,-12,-t/2),half:[w/2+1,1,t/2+1]}],keep:[{kind:'box',frame:at(frame,0,0,-t-5),half:[w/2+2,16.5,4.2]}],ports:rim(frame,w,44,-t/2)};}
   case 'plate':{const t=f.thickness;return {solids:[{kind:'slab',frame,points:f.points,z0:-t/2,z1:t/2}],holes:[],keep:[],ports:f.points.flatMap((p,i)=>{const q=f.points[(i+1)%f.points.length];return [apply(frame,[p[0],p[1],0]),apply(frame,[(p[0]+q[0])/2,(p[1]+q[1])/2,0])];})};}
   case 'standoff':return {solids:[cyl(frame,f.outer/2,-f.height,0)],holes:[cyl(frame,f.hole/2,-f.height-2,2)],keep:[cyl(frame,f.outer/2+1,0,8)],ports:ring(frame,f.outer/2,[-f.height+1.2],4)};
+  // The insert is pressed in from the face: its hole, a little deeper for the melt, and room above for the iron.
+  case 'insert':return {solids:[cyl(frame,f.outer/2,-f.height,0)],holes:[cyl(frame,f.hole/2,-f.depth-.5,1)],keep:[cyl(frame,f.outer/2+1,0,10)],ports:ring(frame,f.outer/2,[-f.height+1.2],4)};
+  case 'snap':{const t=f.thickness,L=f.length,w=f.width,c=f.lip*1.5;
+   return {solids:[{kind:'box',frame:at(frame,-t/2,0,L/2),half:[t/2,w/2,L/2]},
+     // Lip: square face towards the root (it holds), chamfer towards the tip (it slides in).
+     {kind:'slab',frame:compose(at(frame,0,-w/2,0),{position:[0,0,0],rotation:axisAngle([1,0,0],-90)}),points:[[0,-(L-c-1)],[0,-L],[f.lip,-(L-c-1)]] as [number,number][],z0:0,z1:w}],
+    holes:[],keep:[{kind:'box',frame:at(frame,-t-f.lip/2-.5,0,L/2+1),half:[f.lip/2+.5,w/2+.5,L/2+1]}],ports:rim(frame,2*t,w,0).filter((_,i)=>i%2===0)};}
  }
 }
