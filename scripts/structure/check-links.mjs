@@ -6,6 +6,7 @@ import {adopted} from './adopted.mjs';
 import {planBearings,applyBearings} from '../../src/mechanics/kinematics/bearings.ts';
 import {linkStructures} from '../../src/mechanics/kinematics/link-structure.ts';
 import {soup,stlBinary} from '../../src/structure/mesh.ts';
+import {orientForPrint} from '../../src/structure/print.ts';
 import {render} from './render.mjs';
 const selected=process.argv.slice(2).length?process.argv.slice(2):['robot','cnc','sled'],out=process.env.OUT;
 const colors=[[120,200,180],[130,170,230],[230,170,90],[200,150,225],[160,210,110]];
@@ -22,7 +23,7 @@ for(const name of selected){
    const q=frame.rotation,t=frame.position,rot=v=>{const [x0,y0,z0,w]=q,ix=w*v[0]+y0*v[2]-z0*v[1],iy=w*v[1]+z0*v[0]-x0*v[2],iz=w*v[2]+x0*v[1]-y0*v[0],iw=-x0*v[0]-y0*v[1]-z0*v[2];return [ix*w+iw*-x0+iy*-z0-iz*-y0+t[0],iy*w+iw*-y0+iz*-x0-ix*-z0+t[1],iz*w+iw*-z0+ix*-y0-iy*-x0+t[2]];};
    for(let k=0;k<P.length;k+=3){const w=rot([P[k],P[k+1],P[k+2]]);P[k]=w[0];P[k+1]=w[1];P[k+2]=w[2];}
    items.push({positions:P,color:colors[i%colors.length]});
-   if(out)fs.writeFileSync(path.join(out,`${name}-${x.link}.stl`),stlBinary(x.result.mesh,x.link));}});
+   if(out)fs.writeFileSync(path.join(out,`${name}-${x.link}.stl`),stlBinary(orientForPrint(x.result.mesh,x.result.report.print.up),x.link));}});
  if(out&&items.length)render(path.join(out,`${name}.png`),items,[{azimuth:-35,elevation:20},{azimuth:55,elevation:15},{azimuth:-120,elevation:30}],460);
  assert.ok(links.every(x=>x.result&&x.checks.every(c=>c.state!=='fail')),name+': nicht alle Glieder in Ordnung');
  // Under the design loads (20 N per anchor, PLA, safety 3) every link must also be strong and stiff enough.

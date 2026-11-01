@@ -13,6 +13,8 @@ import type {Mesh} from './mesh.ts';
 import type {TrussNode,Strut,Material} from './truss.ts';
 import {PLA,relax,radiusOf} from './truss.ts';
 import {sizeFrame,solveFrame,barUtilisation} from './frame.ts';
+import {printOrientation} from './print.ts';
+import type {PrintPlan} from './print.ts';
 
 /** `support`: held (the link's connection to its parent or the ground); `load`: carries a load. */
 /** `group`: anchors of one group are rigidly joined (seats in a bearing plate); `clip`: the feature may be cut by keep-outs (a plate). */
@@ -32,7 +34,8 @@ export const defaultSettings:StructureSettings={bracing:1,load:20,margin:1,maxNo
 /** Struts with their radius, the most the free room allows (`cap`), utilisation and largest axial force. */
 /** `joints`: the spheres placed at strut nodes (their radius is limited by the free room). */
 export type StructureResult={id:string;mesh:Mesh;nodes:TrussNode[];struts:{a:V;b:V;r:number;cap:number;utilisation:number;force:number}[];joints:{center:V;r:number}[];report:StructureReport};
-export type StructureReport={deflection:number;struts:number;nodes:number;volume:number;mass:number;utilisation:number;compliance:number;closed:boolean;components:number;triangles:number;clearance:number;connected:boolean;spacing:number;seconds:number;checks:{id:string;state:'pass'|'fail'|'warn';message:string}[]};
+/** `print`: build direction with the least overhang (see print.ts). */
+export type StructureReport={print:PrintPlan;deflection:number;struts:number;nodes:number;volume:number;mass:number;utilisation:number;compliance:number;closed:boolean;components:number;triangles:number;clearance:number;connected:boolean;spacing:number;seconds:number;checks:{id:string;state:'pass'|'fail'|'warn';message:string}[]};
 
 /** Area of the ties inside an anchor (a solid boss): r ≈ 18 mm over a few millimetres, stiffer than any strut. */
 const RIGID=1000;
@@ -298,7 +301,7 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  const b=scene.bounds();
  const raw=surfaceNets(field,b.min,b.max,s.resolution,4,p=>scene.distance(p)),{mesh,dropped}=largestPart(raw);
  progress?.('Prüfung',.95);
- const info=inspect(mesh);
+ const info=inspect(mesh),print=printOrientation(mesh);
  // Clearance of the finished surface (every 7th vertex is plenty at 0.8 mm); the lattice bound skips what cannot be worse.
  let worst=Infinity,worstAt:V=[0,0,0];for(let i=0;i<mesh.vertices.length/3;i+=7){const p:V=[mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]];if(bosses.distance(p)<1||lowerBound(p)>=worst)continue;const c=spec.clearance(p);if(c<worst){worst=c;worstAt=p;}}
  const struts2=net.struts.map((st,k)=>({st,k})).filter(x=>!x.st.rigid).map(({st,k})=>({a:net.nodes[st.i].p,b:net.nodes[st.j].p,r:radiusOf(st),cap:caps.get(st)??radiusOf(st),utilisation:util[k],force:forceOf(k)}));
@@ -308,10 +311,11 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
   {id:'strength',state:maxUtil<=1.001?'pass':'warn',message:`Größte Auslastung ${(maxUtil*100).toFixed(0)} % (Rahmen: Zug/Druck, Biegung, Torsion, Knicken; Sicherheit ${(50/m.sigma).toFixed(1)})${maxUtil>1.001?(()=>{const w=struts2.reduce((x,y)=>y.utilisation>x.utilisation?y:x);return ` an Strebe (${w.a.map(n=>n.toFixed(0)).join(',')})–(${w.b.map(n=>n.toFixed(0)).join(',')}) r=${w.r.toFixed(1)}`;})():''}.`},
   {id:'stiffness',state:deflection<=s.deflection*1.05?'pass':'warn',message:`Größte Verformung an einem Haltepunkt ${deflection.toFixed(2)} mm (zulässig ${s.deflection} mm)${(()=>{let w=-1,d=-1;framed.us.forEach(u=>net.nodes.forEach((x,i)=>{if(!loaded(x))return;const v=Math.hypot(u[i][0],u[i][1],u[i][2]);if(v>d){d=v;w=i;}}));return w>=0&&deflection>s.deflection*1.05?` bei ${spec.anchors[net.nodes[w].anchor!].id}`:'';})()}.`},
   {id:'mesh',state:info.closed&&dropped<.01?'pass':'fail',message:`Netz ${info.closed?'geschlossen':`offen (${info.openEdges} Kanten)`}, ein Teil${dropped>0?` (${(dropped*100).toFixed(2)} % Splitter entfernt)`:''}.`},
+  {id:'print',state:print.overhang/print.area<=.25?'pass':'warn',message:`Druckrichtung ${print.label}: ${(print.overhang/print.area*100).toFixed(0)} % der Oberfläche hängen über (> ${print.angle}°)${print.overhang/print.area>.25?', Stützen nötig':''}, Bauhöhe ${print.height.toFixed(0)} mm.`},
   {id:'clearance',state:worst>=-.5?'pass':'fail',message:`Kleinster Abstand der Oberfläche zu Sperrzonen ${worst.toFixed(1)} mm${worst<-.3?` bei (${worstAt.map(n=>n.toFixed(0)).join(', ')}), nächster Haltepunkt ${spec.anchors.map(a=>({a,d:norm(sub(a.frame.position,worstAt))})).sort((x,y)=>x.d-y.d)[0].a.id}`:''}.`},
  ];
  progress?.('fertig',1);
- return {id:spec.id,mesh,nodes:net.nodes,struts:struts2,joints,report:{deflection,struts:struts2.length,nodes:net.nodes.filter(x=>x.anchor===undefined).length,volume:info.volume,mass:info.volume*m.density,utilisation:maxUtil,compliance:comp,closed:info.closed,components:info.components,triangles:info.triangles,clearance:worst,connected,spacing:h,seconds:(performance.now()-t0)/1000,checks}};
+ return {id:spec.id,mesh,nodes:net.nodes,struts:struts2,joints,report:{print,deflection,struts:struts2.length,nodes:net.nodes.filter(x=>x.anchor===undefined).length,volume:info.volume,mass:info.volume*m.density,utilisation:maxUtil,compliance:comp,closed:info.closed,components:info.components,triangles:info.triangles,clearance:worst,connected,spacing:h,seconds:(performance.now()-t0)/1000,checks}};
 }
 export type {Prim};
 

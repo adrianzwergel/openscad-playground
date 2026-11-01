@@ -52,7 +52,7 @@ export class MechanismEditor{
  private newDrive={axis:'',spec:'nema17'};
  /** Step 6/7: the bearing plan (cached per document state) and generated structures per link. */
  private planCache?:{key:string;plan:BearingPlan};
- private structures=new Map<string,{positions?:Float32Array;stl?:Uint8Array;report?:Record<string,number|boolean>;checks:{id:string;state:string;message:string}[];error?:string}>();
+ private structures=new Map<string,{positions?:Float32Array;stl?:Uint8Array;report?:Record<string,number|boolean>&{print?:{label:string;overhang:number;area:number}};checks:{id:string;state:string;message:string}[];error?:string}>();
  private structureJob?:{worker:Worker;state:'running'|'done'|'error';text:string;key:string};
  private draft={a:'ground',b:'',kind:'revolute' as 'revolute'|'prismatic'};
  private lastFit?:AxisFit;private selectedPart='';private worker?:Worker;private preview?:MotionSolution;private previewError='';
@@ -218,7 +218,20 @@ export class MechanismEditor{
   const file=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});file.id='model-file';
   const load=el('button',{textContent:'⬆ 3D-Modell laden (STL, OBJ, GLB)'});load.dataset.mechanismModel='true';load.onclick=()=>file.click();
   file.onchange=async()=>{const files=[...(file.files??[])];file.value='';if(files.length)await this.importFiles(files);};
-  add.append(load,file,...demoButtons,templateBox);root.append(add);
+  // A housing for a board on a top-hat rail: no mechanism, the parts come as a ZIP of STLs (structure core, shell mode).
+  const shell=el('button',{textContent:'⬇ Gehäuse: Arduino Uno auf Hutschiene (STL)'});shell.dataset.shellDemo='arduino-uno';shell.onclick=()=>this.buildShell('arduino-uno');
+  add.append(load,file,...demoButtons,shell,templateBox);root.append(add);
+ }
+ /** Housing for a board (shell mode of the structure core) in the structure worker; downloads base and lid. */
+ private buildShell(board:string){
+  this.host.status('Gehäuse wird erzeugt …');const w=new Worker('./mechanics-structure-worker.js');
+  w.onmessage=async({data})=>{w.terminate();if(data.type!=='shell'){this.host.status('Gehäuse: '+(data.message??'Fehler'));return;}
+   const z=new JSZip();for(const p of data.parts)z.file(`${board}-${p.id}.stl`,p.stl);
+   z.file('hinweise.txt',[`${data.board}: Gehäuse für eine 35-mm-Hutschiene (EN 60715).`,...data.parts.map((p:{id:string;mass:number;closed:boolean;print:{overhang:number}})=>`${p.id}: ${p.mass.toFixed(0)} g PLA, ${p.closed?'geschlossenes Netz':'Netz offen!'}, liegt in Druckrichtung (${(p.print.overhang*100).toFixed(0)} % Überhang)`),
+    `Rastzunge: ${data.latch.length} mm lang, ${data.latch.thickness} mm dick, beim Aufrasten ${data.latch.travel.toFixed(1)} mm ausgelenkt, ${(data.latch.strain*100).toFixed(2)} % Dehnung.`,
+    'Montage: Platine mit 4 Schrauben M3×6 auf die Abstandshalter, Hutschienenclip mit 4 Schrauben M3×6 von innen durch den Boden, Deckel mit 4 Schrauben M3×10 in die Eckdome. Clip mit dem festen Haken zuerst einhängen, dann aufdrücken; zum Lösen an der Lasche ziehen.'].join('\n'));
+   this.download(await z.generateAsync({type:'blob'}),`gehaeuse-${board}.zip`);this.host.status(`Gehäuse für ${data.board} erzeugt: ${data.parts.map((p:{id:string;mass:number})=>`${p.id} ${p.mass.toFixed(0)} g`).join(', ')}.`);};
+  w.postMessage({kind:'shell',board});
  }
  /** A demo: stored like an imported model, links, axes and motors ready; sliders work at once. */
  async loadDemo(key:keyof typeof demos='robot'){
@@ -405,7 +418,7 @@ export class MechanismEditor{
   out.push(go,progress,el('label',{className:'check'},hide,' Modell ausblenden'));
   const list=el('div',{className:'structure-results',id:'structure-results'});
   for(const [link,x] of this.structures){const r=x.report,row=el('div',{className:'structure-row'});row.dataset.link=link;row.dataset.state=x.error||x.checks.some(c=>c.state==='fail')?'fail':'ok';
-   row.append(el('b',{textContent:link}),el('small',{textContent:x.error?'Fehler: '+x.error:`${r?.struts} Streben · ${Number(r?.mass).toFixed(0)} g · Auslastung ${(Number(r?.utilisation)*100).toFixed(0)} % · ${Number(r?.seconds).toFixed(0)} s`}));
+   row.append(el('b',{textContent:link}),el('small',{textContent:x.error?'Fehler: '+x.error:`${r?.struts} Streben · ${Number(r?.mass).toFixed(0)} g · Auslastung ${(Number(r?.utilisation)*100).toFixed(0)} % · ${Number(r?.seconds).toFixed(0)} s${r?.print?` · Druck ${r.print.label}, ${(r.print.overhang/r.print.area*100).toFixed(0)} % Überhang`:''}`}));
    for(const c of x.checks)if(c.state!=='pass')row.append(el('small',{className:c.state==='warn'?'warn':'fail',textContent:(c.state==='warn'?'! ':'✗ ')+c.message}));
    if(x.stl){const dl=el('button',{textContent:'STL'});dl.dataset.structureStl=link;dl.onclick=()=>this.download(new Blob([x.stl! as BlobPart],{type:'model/stl'}),`${this.entry()!.label}-${link}.stl`.replace(/\s+/g,'-'));row.append(dl);}
    list.append(row);}
