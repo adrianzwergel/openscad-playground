@@ -59,6 +59,13 @@ export class KinematicsView{
  highlight=new Set<string>();
  readonly parts:THREE.Mesh[]=[];
  private solution?:MotionSolution;
+ /** Extra meshes on bodies (bearings, generated structures), kept across re-solves. */
+ private overlays=new Map<string,{body:string;positions:Float32Array;color:number;opacity?:number}[]>();
+ private lastFrames?:Record<string,Frame>;
+ /** Hides the imported model's parts (when generated structures replace them). */
+ hideModel=false;
+ setOverlay(key:string,items:{body:string;positions:Float32Array;color:number;opacity?:number}[]){this.overlays.set(key,items);if(this.solution){const frames=this.lastFrames;this.show(this.solution);if(frames)this.setFrames(frames);}}
+ clearOverlay(key?:string){if(key)this.overlays.delete(key);else this.overlays.clear();if(this.solution){const frames=this.lastFrames;this.show(this.solution);if(frames)this.setFrames(frames);}}
  clear(){this.generation++;this.solution=undefined;this.items=[];this.holders.clear();this.parts.length=0;for(const child of [...this.group.children]){this.group.remove(child);child.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Line){if(!o.geometry.userData.library)o.geometry.dispose();(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose());}});}}
  get poses(){return this.solution?.poses.length??0;}
  show(solution:MotionSolution){
@@ -78,10 +85,11 @@ export class KinematicsView{
    if(b.shaft){const shaft=new THREE.Mesh(new THREE.CylinderGeometry(b.shaft.diameter/2,b.shaft.diameter/2,b.shaft.end-b.shaft.start,12),material(0xb8c4cc));shaft.rotation.x=Math.PI/2;shaft.position.z=(b.shaft.start+b.shaft.end)/2;const holder=new THREE.Group();holder.add(shaft);add(holder,b.id,{position:[0,0,0],rotation:[0,0,0,1]});}
    if(b.display?.kind==='mesh'){const asset=this.assets(b.display.asset),holder=new THREE.Group(),color=linkColor(m.bodies.indexOf(b),b.ground);
     for(const id of b.display.parts){const part=asset?.parts.find(p=>p.id===id);if(!part)continue;const key=`${b.display.asset}/${id}`;let g=this.geometries.get(key);if(!g){g=soup(part.positions);g.userData.library=true;this.geometries.set(key,g);}
-     const mesh=new THREE.Mesh(g,material(this.highlight.has(key)?0xffcc66:color));mesh.userData.pick={body:b.id,asset:b.display.asset,part:id};holder.add(mesh);this.parts.push(mesh);}
+     const mesh=new THREE.Mesh(g,material(this.highlight.has(key)?0xffcc66:color,this.hideModel?.12:1));mesh.userData.pick={body:b.id,asset:b.display.asset,part:id};holder.add(mesh);this.parts.push(mesh);}
     add(holder,b.id,inverse(b.frame));}
    if(b.display?.kind==='box'){const box=new THREE.Mesh(new THREE.BoxGeometry(...b.display.size),material(0x8fa3c8,.85));const holder=new THREE.Group();box.position.set(...(b.display.offset??[0,0,0]));holder.add(box);add(holder,b.id,{position:[0,0,0],rotation:[0,0,0,1]});}
   }
+  for(const items of this.overlays.values())for(const o of items){const g=soup(o.positions);g.userData.library=false;const mesh=new THREE.Mesh(g,material(o.color,o.opacity??1));const holder=new THREE.Group();holder.add(mesh);add(holder,o.body,{position:[0,0,0],rotation:[0,0,0,1]});}
   // Path joints: the guide curve on the a-side body.
   const drawn=new Set<string>();
   for(const j of m.joints){if(j.joint.kind!=='path')continue;const key=JSON.stringify([j.joint.curve,j.a]);if(drawn.has(key))continue;drawn.add(key);
@@ -94,7 +102,7 @@ export class KinematicsView{
  /** Replaces placeholders by generated printable parts (triangle soups in element coordinates). */
  setParts(parts:Record<string,Float32Array>){for(const [id,positions] of Object.entries(parts)){const h=this.holders.get(id);if(h)this.replace(id,new THREE.Mesh(soup(positions),material(h.color)));}}
  /** Places every item from given body frames (live sliders) without rebuilding the view. */
- setFrames(bodies:Record<string,Frame>){for(const item of this.items){const body=bodies[item.body];if(!body)continue;item.object.matrix.copy(toMatrix(compose(body,item.local)));item.object.matrixWorldNeedsUpdate=true;}}
+ setFrames(bodies:Record<string,Frame>){this.lastFrames=bodies;for(const item of this.items){const body=bodies[item.body];if(!body)continue;item.object.matrix.copy(toMatrix(compose(body,item.local)));item.object.matrixWorldNeedsUpdate=true;}}
  /** Imported part under a ray, with the hit in the part's model coordinates (pose 0). */
  pick(ray:THREE.Raycaster){const hit=ray.intersectObjects(this.parts,false)[0];if(!hit)return undefined;const local=hit.point.clone().applyMatrix4(new THREE.Matrix4().copy(hit.object.matrixWorld).invert());return {...hit.object.userData.pick as {body:string;asset:string;part:string},local:local.toArray() as [number,number,number],world:hit.point.toArray() as [number,number,number]};}
  /** Shows pose k (fractional values interpolate to the nearest pose). */

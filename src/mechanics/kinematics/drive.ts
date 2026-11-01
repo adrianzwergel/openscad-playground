@@ -195,7 +195,7 @@ export async function adoptGear(m:Mechanism,d:Drive,found:Mechanism,info:TaskInf
  // Spindle drive: the nut sits where the axis was drawn on the driven link, not where the search left it.
  let nutShift=0;
  const screw=m.joints.find(x=>x.id.startsWith(d.id+'/')&&x.joint.kind==='screw'&&x.b.body===info.driven),nut=added.find(e=>e.mounts[0].body===info.driven&&!e.surfaces.length);
- if(screw&&nut){const t=rotate(frameC(lastId).rotation,[0,0,1]),aim=(j.a.body===info.carrier?j.a:j.b).local.position;nutShift=dot(add(aim,scale(worldC(nut).position,-1)),t);
+ if(screw&&nut){const t=rotate(frameC(lastId).rotation,[0,0,1]),aim=compose(FO,(j.a.body===info.carrier?j.b:j.a).local).position;nutShift=dot(add(aim,scale(worldC(nut).position,-1)),t);
   const move=(pose:Frame)=>compose(inverse(FO),compose({position:scale(t,nutShift),rotation:[0,0,0,1]},compose(FO,pose)));nut.mounts[0].pose=move(nut.mounts[0].pose);screw.b.local=move(screw.b.local);}
  for(const e of added){
   const s=e.surfaces[0];if(!s)continue;

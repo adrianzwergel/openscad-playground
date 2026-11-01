@@ -57,3 +57,11 @@ details.templates summary{cursor:pointer;color:#adbdc7;font-size:12px;padding:4p
 .link-name input{padding:4px!important}
 .link-name small{color:#9db4c4}
 body[data-mode=mechanism] #workspace{grid-template-rows:45px minmax(160px,1fr) auto 0}
+
+.bearing-lines,.structure-results{display:flex;flex-direction:column;gap:4px}
+.bearing-line,.structure-row{display:grid;grid-template-columns:16px auto;gap:2px 6px;padding:4px 6px;border:1px solid #33424e;border-radius:4px;background:#1d272f}
+.bearing-line small,.structure-row small{grid-column:1/-1;color:#9db4c4}
+.bearing-line[data-state=fail],.structure-row[data-state=fail]{border-color:#a05050}
+.structure-row{grid-template-columns:1fr auto}
+.structure-row small.fail{color:#ff9a9a}.structure-row small.warn{color:#ffd27a}
+ul.bom{margin:4px 0;padding-left:18px;color:#c8d6df;font-size:12px}

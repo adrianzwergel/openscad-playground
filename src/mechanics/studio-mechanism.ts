@@ -18,13 +18,16 @@ import {fitCylinder,fitEdge,fitTwoPoints} from './kinematics/axis-fit';
 import type {AxisFit} from './kinematics/axis-fit';
 import {solve} from './kinematics/solver';
 import {demos} from './demos';
+import {planBearings,bearingCatalog} from './kinematics/bearings';
+import type {BearingPlan,BearingSettings} from './kinematics/bearings';
+import JSZip from 'jszip';
 import type {Drive,TaskInfo,Collision} from './kinematics/drive';
 import {driveCatalog,driveSpec,placeMotor,removeGear,removeDrive,heldTrains,modelAxes,owned,driveTask,adoptGear,sweepCollisions,faceNormal,standOn,parallelTo,linearAxis,toward} from './kinematics/drive';
 import {quaternionFromBasis,cross as crossV,unit} from './kinematics/math';
 import {KinematicsView,linkColor} from './kinematics-view';
 import type {MotionSolution} from './kinematics-view';
 
-type Item='mechanism'|'model'|'axis-new'|'drive-new'|`drive:${string}`|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
+type Item='mechanism'|'model'|'axis-new'|'drive-new'|'bearings'|'structure'|`drive:${string}`|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
 export type EditorHost={doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
@@ -47,6 +50,10 @@ export class MechanismEditor{
  private search?:{drive:string;worker:Worker;info:TaskInfo;results:{mechanism:Mechanism;ratio:number;summary:{elements:number;length:number};label:string}[];state:'running'|'done'|'error';text:string};
  private sweeps:Record<string,{state:'running'|'ok'|'hit'|'error';text:string;hits?:Collision[]}>={};
  private newDrive={axis:'',spec:'nema17'};
+ /** Step 6/7: the bearing plan (cached per document state) and generated structures per link. */
+ private planCache?:{key:string;plan:BearingPlan};
+ private structures=new Map<string,{positions?:Float32Array;stl?:Uint8Array;report?:Record<string,number|boolean>;checks:{id:string;state:string;message:string}[];error?:string}>();
+ private structureJob?:{worker:Worker;state:'running'|'done'|'error';text:string;key:string};
  private draft={a:'ground',b:'',kind:'revolute' as 'revolute'|'prismatic'};
  private lastFit?:AxisFit;private selectedPart='';private worker?:Worker;private preview?:MotionSolution;private previewError='';
  constructor(private host:EditorHost){}
@@ -56,7 +63,7 @@ export class MechanismEditor{
  mechanism(){return this.entry()?.mechanism;}
  private assetsTried=new Set<string>();
  enter(id:string){if(this.activeId!==id){this.axisValues={};this.tool=undefined;this.brush='';}this.activeId=id;this.item=this.mechanism()?.bodies.some(b=>b.display?.kind==='mesh')?'model':'mechanism';this.fitNext=true;this.refresh();}
- exit(){this.search?.worker.terminate();this.search=undefined;this.sweeps={};this.activeId=undefined;this.axisValues={};this.tool=undefined;this.brush='';this.worker?.terminate();this.worker=undefined;this.view.clear();this.clearHandles();this.preview=undefined;}
+ exit(){this.search?.worker.terminate();this.search=undefined;this.sweeps={};this.structureJob?.worker.terminate();this.structureJob=undefined;this.structures.clear();this.planCache=undefined;this.view.clearOverlay();this.view.hideModel=false;this.activeId=undefined;this.axisValues={};this.tool=undefined;this.brush='';this.worker?.terminate();this.worker=undefined;this.view.clear();this.clearHandles();this.preview=undefined;}
  /** For a run over the range: the input's own trains turn with it, everything else is held. */
  motionSource(){const e=this.entry();if(!e)return undefined;const m=e.mechanism,input=m.input.kind==='coordinate'?m.input.joint:undefined;return {label:e.label,mechanism:m,fixed:this.held(m,this.values(m),input)};}
 
@@ -194,7 +201,8 @@ export class MechanismEditor{
    const group=(text:string)=>root.append(el('div',{className:'tree-subgroup',textContent:text}));
    const drives=m.drives??[];
    if(model){sub('  🧩 Modell & Glieder','model');group('Achsen');for(const j of m.mechanism.joints)if(!j.id.startsWith('halt-')&&!owned(drives,j.id))sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);sub('  ＋ Achse anlegen','axis-new');
-    group('Antriebe');for(const d of drives)sub(`  ⚡ ${d.id} → ${d.axis}${d.gear?' ✓':''}`,`drive:${d.id}`);sub('  ＋ Antrieb setzen','drive-new');group('Weitere Einstellungen');}
+    group('Antriebe');for(const d of drives)sub(`  ⚡ ${d.id} → ${d.axis}${d.gear?' ✓':''}`,`drive:${d.id}`);sub('  ＋ Antrieb setzen','drive-new');
+    group('Fertigung');sub('  ⊚ Lager & Wellen','bearings');sub('  🕸 Struktur je Glied','structure');group('Weitere Einstellungen');}
    else{for(const b of m.mechanism.bodies)if(!b.ground)sub(`  ▭ ${b.id}`,`body:${b.id}`);for(const j of m.mechanism.joints)sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);}
    sub('  Parameter','parameters');sub('  Ein-/Ausgang, Bereich','io');
    if(model)for(const b of m.mechanism.bodies)if(!b.ground&&b.display?.kind!=='mesh'&&!owned(drives,b.id))sub(`  ▭ ${b.id}`,`body:${b.id}`);
@@ -232,16 +240,19 @@ export class MechanismEditor{
  private steps(m:Mechanism):HTMLElement{
   const drives=this.drives(),links=m.bodies.filter(b=>!b.ground&&!owned(drives,b.id)),filled=links.filter(b=>b.display?.kind==='mesh'&&b.display.parts.length),axes=modelAxes(m,drives),loose=links.filter(b=>m.joints.some(j=>j.id===`halt-${b.id}`));
   const geared=axes.filter(j=>drives.some(d=>d.axis===j.id&&d.gear)),open=axes.filter(j=>!drives.some(d=>d.axis===j.id));
-  const state=[true,filled.length>0&&filled.length===links.length,axes.length>0&&!loose.length,axes.length>0,axes.length>0&&geared.length===axes.length];
+  const plan=geared.length===axes.length&&axes.length?this.plan(m):undefined,built=[...this.structures.values()];
+  const state=[true,filled.length>0&&filled.length===links.length,axes.length>0&&!loose.length,axes.length>0,axes.length>0&&geared.length===axes.length,!!plan&&plan.lines.every(l=>l.state==='pass'),built.length>0&&built.every(x=>x.positions&&x.checks.every(c=>c.state!=='fail'))];
   const hints=['Modell ist geladen.',
    !links.length?'Mit „+ Glied“ ein bewegliches Glied anlegen, dann Teile anklicken.':filled.length<links.length?`Glied ${links.find(b=>!filled.includes(b))!.id} hat noch keine Teile.`:'Alle Glieder haben Teile.',
    loose.length?`${loose.map(b=>b.id).join(', ')} hängt noch fest – „＋ Achse anlegen“ und den Zylinder des Gelenks anklicken.`:axes.length?'Jedes Glied hat eine Achse.':'Noch keine Achse.',
    axes.length?'Regler unter der 3D-Ansicht schieben und prüfen, ob alles richtig mitläuft.':'Erst Achsen anlegen.',
-   open.length?`Achse ${open[0].id} hat noch keinen Antrieb – „＋ Antrieb setzen“.`:geared.length<axes.length?`Antrieb ${drives.find(d=>!d.gear)?.id??''}: „Getriebe finden“ und eine Lösung übernehmen.`:'Jede Achse hat ihr Getriebe. Regler schieben: die Getriebe drehen mit.'];
+   open.length?`Achse ${open[0].id} hat noch keinen Antrieb – „＋ Antrieb setzen“.`:geared.length<axes.length?`Antrieb ${drives.find(d=>!d.gear)?.id??''}: „Getriebe finden“ und eine Lösung übernehmen.`:'Jede Achse hat ihr Getriebe. Regler schieben: die Getriebe drehen mit.',
+   plan?plan.lines.every(l=>l.state==='pass')?'Alle Wellen gelagert – Lagerliste unter „Lager & Wellen“.':'Nicht jede Welle hat Platz für Lager – „Lager & Wellen“ ansehen.':'Erst alle Getriebe übernehmen.',
+   built.length?'Strukturen erzeugt – je Glied als STL herunterladen.':'„Struktur je Glied“: Strukturen erzeugen lassen.'];
   const next=state.findIndex(s=>!s),bar=el('ol',{className:'steps'});
   const firstDrive=drives.find(d=>!d.gear)??drives[0];
-  [['Modell','model'],['Glieder','model'],['Achsen','axis-new'],['Testen','model'],['Antrieb',firstDrive?`drive:${firstDrive.id}`:'drive-new']].forEach(([label,item],i)=>{const li=el('li',{textContent:`${state[i]?'✓':i+1} ${label}`});li.dataset.state=state[i]?'done':i===next?'current':'open';li.onclick=()=>{this.item=item as Item;this.renderProperties();};bar.append(li);});
-  const index=next<0?4:next;return el('div',{className:'step-box'},bar,el('p',{className:'step-hint',textContent:'Was jetzt? '+hints[index]}));
+  [['Modell','model'],['Glieder','model'],['Achsen','axis-new'],['Testen','model'],['Antrieb',firstDrive?`drive:${firstDrive.id}`:'drive-new'],['Lager','bearings'],['Struktur','structure']].forEach(([label,item],i)=>{const li=el('li',{textContent:`${state[i]?'✓':i+1} ${label}`});li.dataset.state=state[i]?'done':i===next?'current':'open';li.onclick=()=>{this.item=item as Item;this.renderProperties();};bar.append(li);});
+  const index=next<0?6:next;return el('div',{className:'step-box'},bar,el('p',{className:'step-hint',textContent:'Was jetzt? '+hints[index]}));
  }
  /** New mechanism from model files: every part starts on the frame (Basis). */
  async importFiles(files:File[]){
@@ -347,6 +358,81 @@ export class MechanismEditor{
   return out;
  }
 
+ // ---------- fabrication: bearings and structures ----------
+ private fabrication(){const e=this.entry()!;return e.fabrication??{};}
+ private editFabrication(message:string,fn:(f:NonNullable<NonNullable<ReturnType<MechanismEditor['entry']>>['fabrication']>)=>void){this.planCache=undefined;this.host.change(()=>{const e=this.entry()!;e.fabrication=e.fabrication??{};fn(e.fabrication);},message);}
+ private assetsOf(m:Mechanism){return (id:string)=>{const a=this.assets.get(id);return a?{parts:a.parts}:undefined;};}
+ /** The bearing plan for the current document (cached). */
+ private plan(m:Mechanism):BearingPlan|undefined{
+  const settings=this.fabrication().bearings??{},key=JSON.stringify([m.bodies.length,m.elements.map(e=>[e.id,e.mounts[0].pose.position]),m.joints.map(j=>[j.id,j.a.local.position,j.limits]),this.drives().map(d=>[d.id,d.frame,!!d.gear]),settings,[...this.assets.keys()]]);
+  if(this.planCache?.key!==key){try{this.planCache={key,plan:planBearings(m,this.drives(),this.assetsOf(m),settings as Partial<BearingSettings>)};}catch{return undefined;}}
+  return this.planCache.plan;
+ }
+ /** Bearings as rings in the view: outer and inner ring of every purchased seat. */
+ private showBearings(plan:BearingPlan){
+  const items:{body:string;positions:Float32Array;color:number}[]=[];
+  for(const x of plan.seats){const spec=bearingCatalog.find(b=>b.id===x.part);if(!spec)continue;const P:number[]=[],n=28,f=x.frame,ro=spec.D/2,ri=spec.d/2+.8,h=spec.B/2;
+   const at=(r:number,a:number,z:number)=>compose(f,{position:[r*Math.cos(a),r*Math.sin(a),z],rotation:[0,0,0,1]}).position;
+   for(let i=0;i<n;i++){const a0=2*Math.PI*i/n,a1=2*Math.PI*(i+1)/n;for(const [r,flip] of [[ro,1],[ri,-1]] as [number,number][]){const q=[at(r,a0,-h),at(r,a1,-h),at(r,a1,h),at(r,a0,h)];if(flip>0)P.push(...q[0],...q[1],...q[2],...q[0],...q[2],...q[3]);else P.push(...q[0],...q[2],...q[1],...q[0],...q[3],...q[2]);}
+    for(const z of [-h,h]){const q=[at(ri,a0,z),at(ro,a0,z),at(ro,a1,z),at(ri,a1,z)];if(z>0)P.push(...q[0],...q[1],...q[2],...q[0],...q[2],...q[3]);else P.push(...q[0],...q[2],...q[1],...q[0],...q[3],...q[2]);}}
+   items.push({body:x.link,positions:Float32Array.from(P),color:0xe8a24a});}
+  this.view.setOverlay('bearings',items);
+ }
+ private bearingsPage(m:Mechanism,ui:{number:(label:string,value:number,write:(n:number)=>void,step?:string)=>HTMLElement;select:(label:string,value:string,options:[string,string][],write:(v:string)=>void)=>HTMLElement}):HTMLElement[]{
+  const out:HTMLElement[]=[el('h3',{textContent:'⊚ Lager & Wellen'}),el('p',{className:'muted',textContent:'Jede Welle bekommt Lager aus dem Katalog: auf ihrer Achse, mit Abstand zu den Rädern und mit einem Weg zum Einsetzen. Die Lagersitze, Motorflansche und Klemmnaben sind die Haltepunkte der Struktur.'})];
+  const s=this.fabrication().bearings??{},set=(k:string,v:string|number)=>this.editFabrication('Lagereinstellung geändert',f=>{f.bearings={...(f.bearings??{}),[k]:v};});
+  out.push(ui.select('Lagerart',String(s.prefer??'ball'),[['ball','Kugellager (Kaufteil)'],['plain','Gleitlager gedruckt (Loch mit Spiel)']],v=>set('prefer',v)),
+   ui.select('Zwischenräder',String(s.axles??'rotating'),[['rotating','Welle dreht, Lager im Glied'],['fixed','feste Achse, Rad läuft darauf']],v=>set('axles',v)),
+   ui.number('Mindestabstand Lager–Zahnrad [mm]',Number(s.gearGap??2),n=>{if(n>=0&&n<=20)set('gearGap',n);}),ui.number('Wand um den Lagersitz [mm]',Number(s.wall??2.5),n=>{if(n>=1&&n<=10)set('wall',n);}),
+   ui.number('Aufmaß Lagersitz (Durchmesser) [mm]',Number(s.fit??.15),n=>{if(n>=-.2&&n<=.6)set('fit',n);},'0.05'),ui.select('Gelenkwellen',String(s.axisShaft??8),[['5','Ø5'],['6','Ø6'],['8','Ø8'],['10','Ø10'],['12','Ø12']],v=>set('axisShaft',Number(v))));
+  const plan=this.plan(m);
+  if(!plan){out.push(el('p',{className:'muted',textContent:'Erst alle Antriebe mit Getriebe versehen.'}));return out;}
+  this.showBearings(plan);
+  const table=el('div',{className:'bearing-lines'});table.id='bearing-lines';
+  for(const l of plan.lines){const row=el('div',{className:'bearing-line'},el('span',{textContent:l.state==='pass'?'✓':'✗'}),el('b',{textContent:l.id}),el('small',{textContent:`${({train:'Getriebewelle',motor:'Motorwelle',axis:'Gelenk',spindle:'Spindel',rod:'Führung',roller:'Laufrollen'} as Record<string,string>)[l.kind]} · in ${l.link} · ${l.message}`}));row.dataset.state=l.state;table.append(row);}
+  out.push(el('h2',{textContent:`Wellen (${plan.lines.length})`}),table,el('h2',{textContent:'Stückliste'}),el('ul',{className:'bom'},...plan.bom.map(b=>el('li',{textContent:`${b.count}× ${b.label}`}))));
+  const go=el('button',{textContent:'Weiter: Struktur je Glied',className:'primary'});go.onclick=()=>{this.item='structure';this.renderProperties();};out.push(go);
+  return out;
+ }
+ private structurePage(m:Mechanism,ui:{number:(label:string,value:number,write:(n:number)=>void,step?:string)=>HTMLElement;select:(label:string,value:string,options:[string,string][],write:(v:string)=>void)=>HTMLElement}):HTMLElement[]{
+  const out:HTMLElement[]=[el('h3',{textContent:'🕸 Struktur je Glied'}),el('p',{className:'muted',textContent:'Jedes Glied wird als optimiertes Tragwerk erzeugt: Streben zwischen Lagersitzen, Motorflanschen und der Verbindung zum Vorgänger, um Räder, Wellen und die bewegten Nachbarglieder herum. Das Modell diente nur zum Platzieren.'})];
+  const s=this.fabrication().structure??{},set=(k:string,v:string|number)=>this.editFabrication('Struktureinstellung geändert',f=>{f.structure={...(f.structure??{}),[k]:v};});
+  out.push(ui.number('Last je Haltepunkt [N]',Number(s.load??40),n=>{if(n>0&&n<=1000)set('load',n);},'5'),ui.number('Dünnste Strebe (Radius) [mm]',Number(s.rMin??2.5),n=>{if(n>=1&&n<=8)set('rMin',n);}),
+   ui.select('Netz',String(s.keep??.25),[['0.4','sehr licht (baumartig)'],['0.25','licht'],['0.12','dicht (netzartig)']],v=>set('keep',Number(v))),ui.select('Auflösung',String(s.resolution??.8),[['1.2','grob (schnell)'],['0.8','mittel'],['0.5','fein']],v=>set('resolution',Number(v))));
+  const job=this.structureJob,go=el('button',{textContent:job?.state==='running'?'Wird erzeugt …':'Strukturen erzeugen',className:'primary'});go.dataset.generateStructures='true';go.disabled=job?.state==='running'||!this.plan(m);go.onclick=()=>this.generateStructures(m);
+  const progress=el('p',{className:'muted',id:'structure-progress',textContent:job?.text??(this.plan(m)?'':'Erst alle Antriebe mit Getriebe versehen.')});if(job)progress.dataset.state=job.state;
+  const hide=el('input',{type:'checkbox',checked:this.view.hideModel});hide.onchange=()=>{this.view.hideModel=hide.checked;this.view.clearOverlay('none');};
+  out.push(go,progress,el('label',{className:'check'},hide,' Modell ausblenden'));
+  const list=el('div',{className:'structure-results',id:'structure-results'});
+  for(const [link,x] of this.structures){const r=x.report,row=el('div',{className:'structure-row'});row.dataset.link=link;row.dataset.state=x.error||x.checks.some(c=>c.state==='fail')?'fail':'ok';
+   row.append(el('b',{textContent:link}),el('small',{textContent:x.error?'Fehler: '+x.error:`${r?.struts} Streben · ${Number(r?.mass).toFixed(0)} g · Auslastung ${(Number(r?.utilisation)*100).toFixed(0)} % · ${Number(r?.seconds).toFixed(0)} s`}));
+   for(const c of x.checks)if(c.state!=='pass')row.append(el('small',{className:c.state==='warn'?'warn':'fail',textContent:(c.state==='warn'?'! ':'✗ ')+c.message}));
+   if(x.stl){const dl=el('button',{textContent:'STL'});dl.dataset.structureStl=link;dl.onclick=()=>this.download(new Blob([x.stl! as BlobPart],{type:'model/stl'}),`${this.entry()!.label}-${link}.stl`.replace(/\s+/g,'-'));row.append(dl);}
+   list.append(row);}
+  out.push(list);
+  if([...this.structures.values()].some(x=>x.stl)){const zip=el('button',{textContent:'Alle Druckteile als ZIP'});zip.dataset.structureZip='true';zip.onclick=async()=>{const z=new JSZip();for(const [link,x] of this.structures)if(x.stl)z.file(`${link}.stl`,x.stl);const plan=this.plan(m);if(plan)z.file('stueckliste.txt',plan.bom.map(b=>`${b.count}x ${b.label}`).join('\n'));this.download(await z.generateAsync({type:'blob'}),`${this.entry()!.label}-druckteile.zip`.replace(/\s+/g,'-'));};out.push(zip);}
+  return out;
+ }
+ private download(blob:Blob,name:string){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
+ /** Runs bearing plan and structure generation in a worker; shows each link as it is done. */
+ private generateStructures(m:Mechanism){
+  this.structureJob?.worker.terminate();this.structures.clear();this.view.clearOverlay('structure');
+  const fab=this.fabrication(),assets:Record<string,{parts:{id:string;positions:Float32Array}[]}>={};
+  for(const b of m.bodies)if(b.display?.kind==='mesh'){const a=this.assets.get(b.display.asset);if(a)assets[a.id]={parts:a.parts.map(p=>({id:p.id,positions:p.positions}))};}
+  const w=new Worker('./mechanics-structure-worker.js'),job={worker:w,state:'running' as 'running'|'done'|'error',text:'Lager werden geplant …',key:''};this.structureJob=job;
+  const st=fab.structure??{},settings={load:Number(st.load??40),structure:{material:{rMin:Number(st.rMin??2.5)},keep:Number(st.keep??.25),resolution:Number(st.resolution??.8)}};
+  const render=()=>{const p=document.getElementById('structure-progress');if(p){p.textContent=job.text;p.dataset.state=job.state;}if(this.item==='structure')this.renderProperties();};
+  w.onmessage=({data})=>{if(this.structureJob!==job)return;
+   if(data.type==='plan'){this.showBearings(data.plan);job.text='Lager geplant. Strukturen werden erzeugt (Spitze zuerst) …';render();}
+   if(data.type==='progress'){job.text=`${data.link}: ${data.stage} …`;const p=document.getElementById('structure-progress');if(p)p.textContent=job.text;}
+   if(data.type==='link'){this.structures.set(data.link,{positions:data.positions,stl:data.stl,report:data.report,checks:data.checks,error:data.error});
+    this.view.setOverlay('structure',[...this.structures.entries()].filter(([,x])=>x.positions).map(([link,x])=>({body:link,positions:x.positions!,color:linkColor(m.bodies.findIndex(b=>b.id===link),false)})));render();}
+   if(data.type==='done'){w.terminate();job.state='done';const fails=[...this.structures.values()].filter(x=>x.error||x.checks.some(c=>c.state==='fail')).length;job.text=fails?`${fails} Glied(er) mit Fehlern.`:`Fertig: ${this.structures.size} Glieder erzeugt und geprüft.`;this.view.hideModel=true;this.view.clearOverlay('none');render();}
+   if(data.type==='error'){w.terminate();job.state='error';job.text='Fehlgeschlagen: '+data.message;render();}};
+  w.postMessage({mechanism:m,drives:this.drives(),assets,bearings:fab.bearings??{},settings});
+  render();
+ }
+
  // ---------- properties ----------
  renderProperties(root:HTMLElement=document.getElementById('properties')!):void{
   root.replaceChildren();const entry=this.entry();if(!entry)return;const m=entry.mechanism;
@@ -397,6 +483,8 @@ export class MechanismEditor{
     select('Typ',this.draft.kind,[['revolute','Drehachse'],['prismatic','Linearachse']],v=>{this.draft.kind=v as 'revolute'|'prismatic';}));
    root.append(...this.axisTools());return;
   }
+  if(this.item==='bearings'){root.append(...this.bearingsPage(m,{number,select}));return;}
+  if(this.item==='structure'){root.append(...this.structurePage(m,{number,select}));return;}
   if(this.item==='drive-new'||this.item.startsWith('drive:')){root.append(...this.drivePage(m,this.item==='drive-new'?undefined:this.item.slice(6),{number,select,frameFields}));return;}
   if(this.item==='parameters'){
    root.append(el('p',{className:'muted',textContent:'Zahl oder Ausdruck aus früheren Parametern, z. B. torHoehe/3. Werte im Dokument können Ausdrücke als {"expr": …} tragen.'}));
