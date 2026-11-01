@@ -22,9 +22,10 @@ export class MotionPanel{
   const source=this.source();if(!source){this.status('Für die Bewegung eine Lösung ansehen, eine Baugruppe übernehmen oder einen Mechanismus wählen.');return;}
   this.stop();const w=new Worker('./mechanics-kinematics-worker.js');this.worker=w;
   $('motion-report').textContent=`Bewegung wird berechnet: ${source.label} …`;$<HTMLButtonElement>('motion-run').disabled=true;
-  w.onmessage=({data})=>{if(this.worker!==w)return;this.stop();if(data.type==='error'){$('motion-report').textContent='Bewegung nicht lösbar: '+data.message;return;}this.show(data.solution,source.label);};
+  // The worker posts the solution first and the generated parts afterwards.
+  w.onmessage=({data})=>{if(this.worker!==w)return;if(data.type==='parts'){this.stop();this.view.setParts(data.parts);return;}if(data.type==='error'){this.stop();$('motion-report').textContent='Bewegung nicht lösbar: '+data.message;return;}$<HTMLButtonElement>('motion-run').disabled=false;this.show(data.solution,source.label);};
   w.onerror=e=>{e.preventDefault();if(this.worker!==w)return;this.stop();$('motion-report').textContent='Bewegungsberechnung fehlgeschlagen.';};
-  w.postMessage({graph:source.graph,mechanism:source.mechanism,range:source.range});
+  w.postMessage({graph:source.graph,mechanism:source.mechanism,range:source.range,parts:'printed'});
  }
  private stop(){this.worker?.terminate();this.worker=undefined;$<HTMLButtonElement>('motion-run').disabled=false;}
  private show(s:MotionSolution,label:string){

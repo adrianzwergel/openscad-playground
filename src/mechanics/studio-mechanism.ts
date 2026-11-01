@@ -24,7 +24,9 @@ const deg=180/Math.PI;
 export class MechanismEditor{
  readonly view=new KinematicsView();
  readonly handles=new THREE.Group();
- activeId?:string;private item:Item='mechanism';private fitNext=false;private worker?:Worker;private preview?:MotionSolution;private previewError='';
+ activeId?:string;private item:Item='mechanism';private fitNext=false;
+ // Generated parts depend only on elements, contacts and parameters; joint edits reuse them.
+ private partCache?:{key:string;parts:Record<string,Float32Array>};private partsPending=false;private worker?:Worker;private preview?:MotionSolution;private previewError='';
  constructor(private host:EditorHost){}
  get active(){return !!this.activeId&&!!this.entry();}
  private entry(){return this.host.doc().mechanisms?.find(m=>m.id===this.activeId);}
@@ -37,11 +39,15 @@ export class MechanismEditor{
  refresh(){
   if(!this.active){if(this.activeId)this.exit();return;}
   const m=this.mechanism()!;this.worker?.terminate();const w=new Worker('./mechanics-kinematics-worker.js');this.worker=w;
-  w.onmessage=({data})=>{if(this.worker!==w)return;w.terminate();this.worker=undefined;
+  const key=JSON.stringify([m.elements,m.contacts,m.parameters]),cached=this.partCache?.key===key?this.partCache.parts:undefined;
+  w.onmessage=({data})=>{if(this.worker!==w)return;
+   if(data.type==='parts'){w.terminate();this.worker=undefined;this.partsPending=false;this.partCache={key,parts:data.parts};this.view.setParts(data.parts);this.renderStatus();return;}
+   if(data.type==='error'||cached){w.terminate();this.worker=undefined;}
    if(data.type==='error'){this.previewError=data.message;this.preview=undefined;this.view.clear();this.host.status('Vorschau nicht lösbar: '+data.message);}
-   else{this.previewError='';this.preview=data.solution;this.view.show(data.solution);}
+   else{this.previewError='';this.preview=data.solution;this.view.show(data.solution);if(cached)this.view.setParts(cached);}
    this.drawHandles();this.renderStatus();if(this.fitNext&&this.preview){this.fitNext=false;this.host.fit();}};
-  w.postMessage({mechanism:m,range:{from:m.range.from,to:m.range.from,samples:1}});
+  this.partsPending=!cached&&m.elements.some(e=>e.source.kind==='printed'&&e.surfaces.length);
+  w.postMessage({mechanism:m,range:{from:m.range.from,to:m.range.from,samples:1},parts:cached?undefined:'printed'});
   this.drawHandles();
  }
  private renderStatus(){const p=document.getElementById('mechanism-preview');if(!p)return;
@@ -49,7 +55,7 @@ export class MechanismEditor{
   if(!this.preview){p.textContent='Vorschau wird gelöst …';p.dataset.state='loading';return;}
   // A pose that does not close means the geometry contradicts itself (e.g. a link too short for the edited guide).
   const open=this.preview.checks.filter(c=>c.state==='fail'&&(c.id==='closure'||c.id==='mobility'||c.id.startsWith('redundant/')));
-  p.dataset.state=open.length?'open':'ok';p.textContent=open.length?`Geht nicht auf · ${open.map(c=>c.message).join(' ')}`:`Vorschau gelöst · ${this.preview.mobility.message}`;}
+  p.dataset.state=open.length?'open':'ok';p.textContent=(open.length?`Geht nicht auf · ${open.map(c=>c.message).join(' ')}`:`Vorschau gelöst · ${this.preview.mobility.message}`)+(this.partsPending?' · Teile werden erzeugt …':'');}
  private bodyFrame(id:string):Frame{return this.preview?.poses[0].bodies[id]??this.mechanism()?.bodies.find(b=>b.id===id)?.frame??identity();}
  private clearHandles(){for(const c of [...this.handles.children]){this.handles.remove(c);(c as THREE.Mesh).geometry.dispose();((c as THREE.Mesh).material as THREE.Material).dispose();}}
  private drawHandles(){

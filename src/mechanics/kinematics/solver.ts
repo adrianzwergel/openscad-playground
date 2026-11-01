@@ -17,7 +17,8 @@ import {pitchFn} from './surfaces.ts';
 import {curve} from './curves.ts';
 
 export type Variable={id:string;get:(m:Expanded)=>number;set:(m:Expanded,v:number)=>void;lo:number;hi:number};
-export type SolveOptions={variables?:Variable[];iterations?:number;signal?:AbortSignal;yield?:boolean};
+/** `fixed` holds joint coordinates at given values in every pose (one slider per axis). */
+export type SolveOptions={variables?:Variable[];iterations?:number;signal?:AbortSignal;yield?:boolean;fixed?:Record<string,number[]>};
 export type Pose={input:number;coordinates:Record<string,number[]>;bodies:Record<string,Frame>};
 export type Transfer={constant?:number;samples:{input:number;output:number}[]};
 export type Solution={mechanism:Expanded;poses:Pose[];transfer:Transfer;checks:Check[];mobility:Mobility;error:number;poseErrors:number[];iterations:number;cancelled:boolean};
@@ -69,7 +70,8 @@ export async function solve(input:Mechanism,o:SolveOptions={}):Promise<Solution>
  const samples=m.range.samples,inputs=Array.from({length:samples},(_,k)=>samples===1?m.range.from:m.range.from+(m.range.to-m.range.from)*k/(samples-1));
  const variables=o.variables??[],design=variables.map(v=>Math.min(v.hi,Math.max(v.lo,v.get(m))));
  // Pose unknown layout: coordinates of active joints, minus the swept input coordinate.
- const slots:{joint:JointRelation;index:number}[]=[];for(const j of active)for(let i=0;i<coordinateCount(j.joint);i++)if(!(inputSignal&&inputSignal.joint===j.id&&inputSignal.index===i))slots.push({joint:j,index:i});
+ const held=(id:string,i:number)=>o.fixed?.[id]?.[i]!==undefined&&Number.isFinite(o.fixed[id][i]);
+ const slots:{joint:JointRelation;index:number}[]=[];for(const j of active)for(let i=0;i<coordinateCount(j.joint);i++)if(!(inputSignal&&inputSignal.joint===j.id&&inputSignal.index===i)&&!held(j.id,i))slots.push({joint:j,index:i});
  const initialCoordinates=()=>{const q:Record<string,number[]>={};for(const j of active){const A=compose(m.bodies.find(b=>b.id===j.a.body)!.frame,j.a.local),B=compose(m.bodies.find(b=>b.id===j.b.body)!.frame,j.b.local);q[j.id]=projectCoordinates(j.joint,compose(inverse(A),B),j.shift);}return q;};
  const applyDesign=(x:number[])=>{variables.forEach((v,i)=>v.set(m,x[i]));};
  const clampCoordinate=(j:JointRelation,i:number,v:number)=>{if(j.joint.kind==='path'&&i===0){const fn=curve(j.joint.curve);if(!fn.closed)return Math.max(-(j.shift??0),Math.min(fn.length-(j.shift??0),v));}return v;};
@@ -86,7 +88,7 @@ export async function solve(input:Mechanism,o:SolveOptions={}):Promise<Solution>
   return out;
  };
  const pack=(q:Record<string,number[]>)=>slots.map(s=>q[s.joint.id][s.index]);
- const unpack=(q:Record<string,number[]>,x:number[],inputValue:number)=>{const out:Record<string,number[]>={};for(const j of active)out[j.id]=[...q[j.id]];slots.forEach((s,i)=>{out[s.joint.id][s.index]=clampCoordinate(s.joint,s.index,x[i]);});if(inputSignal)out[inputSignal.joint][inputSignal.index]=inputValue;return out;};
+ const unpack=(q:Record<string,number[]>,x:number[],inputValue:number)=>{const out:Record<string,number[]>={};for(const j of active)out[j.id]=[...q[j.id]];slots.forEach((s,i)=>{out[s.joint.id][s.index]=clampCoordinate(s.joint,s.index,x[i]);});for(const j of active)for(let i=0;i<coordinateCount(j.joint);i++)if(held(j.id,i))out[j.id][i]=o.fixed![j.id][i];if(inputSignal)out[inputSignal.joint][inputSignal.index]=inputValue;return out;};
  const maxIterations=o.iterations??200;let used=0,cancelled=false;
  // Levenberg–Marquardt on a residual function of x.
  const lm=async(x0:number[],f:(x:number[])=>number[],bounds:(i:number)=>[number,number],budget:number)=>{
