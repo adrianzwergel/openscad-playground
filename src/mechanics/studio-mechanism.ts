@@ -48,6 +48,9 @@ export class MechanismEditor{
  /** Axis picking: the tool and the joint draft it fills. */
  private tool?:{mode:'cylinder'|'edge'|'points'|'motor';first?:[number,number,number];joint?:string;drive?:string};
  /** Gear search of one drive and its found trains (in carrier coordinates); collision sweeps per drive. */
+ /** A found train shown in a copy of the mechanism, not adopted (`base`: the mechanism it was made from; any edit
+  * replaces that object and ends the preview). */
+ private gearPreview?:{drive:string;index:number;base:Mechanism;mechanism:Mechanism;drives:Drive[]};
  private search?:{drive:string;worker:Worker;info:TaskInfo;results:{mechanism:Mechanism;ratio:number;summary:{elements:number;length:number};label:string}[];state:'running'|'done'|'error';text:string};
  private sweeps:Record<string,{state:'running'|'ok'|'hit'|'error';text:string;hits?:Collision[]}>={};
  private newDrive={axis:'',spec:'nema17'};
@@ -64,7 +67,7 @@ export class MechanismEditor{
  mechanism(){return this.entry()?.mechanism;}
  private assetsTried=new Set<string>();
  enter(id:string){if(this.activeId!==id){this.axisValues={};this.tool=undefined;this.brush='';}this.activeId=id;this.item=this.mechanism()?.bodies.some(b=>b.display?.kind==='mesh')?'model':'mechanism';this.fitNext=true;this.refresh();}
- exit(){this.search?.worker.terminate();this.search=undefined;this.sweeps={};this.structureJob?.worker.terminate();this.structureJob=undefined;this.structures.clear();this.planCache=undefined;this.view.clearOverlay();this.view.hideModel=false;this.activeId=undefined;this.axisValues={};this.tool=undefined;this.brush='';this.worker?.terminate();this.worker=undefined;this.view.clear();this.clearHandles();this.preview=undefined;}
+ exit(){this.search?.worker.terminate();this.search=undefined;this.gearPreview=undefined;this.sweeps={};this.structureJob?.worker.terminate();this.structureJob=undefined;this.structures.clear();this.planCache=undefined;this.view.clearOverlay();this.view.hideModel=false;this.activeId=undefined;this.axisValues={};this.tool=undefined;this.brush='';this.worker?.terminate();this.worker=undefined;this.view.clear();this.clearHandles();this.preview=undefined;}
  /** For a run over the range: the input's own trains turn with it, everything else is held. */
  motionSource(){const e=this.entry();if(!e)return undefined;const m=e.mechanism,input=m.input.kind==='coordinate'?m.input.joint:undefined;return {label:e.label,mechanism:m,fixed:this.held(m,this.values(m),input)};}
 
@@ -72,7 +75,9 @@ export class MechanismEditor{
  refresh(){
   if(!this.active){if(this.activeId)this.exit();return;}
   // Imported models come from the browser database; each is tried once, then shown without it.
-  const m=this.mechanism()!,missing=[...new Set(m.bodies.flatMap(b=>b.display?.kind==='mesh'?[b.display.asset]:[]))].filter(id=>!this.assets.has(id)&&!this.assetsTried.has(id));
+  // A previewed train is shown in its copy of the mechanism (dropped once the mechanism itself has changed).
+  if(this.gearPreview&&this.gearPreview.base!==this.mechanism())this.gearPreview=undefined;
+  const shown=this.gearPreview,m=shown?.mechanism??this.mechanism()!,missing=[...new Set(m.bodies.flatMap(b=>b.display?.kind==='mesh'?[b.display.asset]:[]))].filter(id=>!this.assets.has(id)&&!this.assetsTried.has(id));
   if(missing.length){missing.forEach(id=>this.assetsTried.add(id));void Promise.all(missing.map(id=>loadAsset(id).then(a=>{if(a)this.assets.set(id,a);}).catch(()=>{}))).then(()=>{const lost=missing.filter(id=>!this.assets.has(id));if(lost.length)this.host.status('3D-Modell fehlt im Browser-Speicher: '+lost.join(', '));this.refresh();this.renderProperties();});return;}
   this.view.assets=id=>this.assets.get(id);
   this.worker?.terminate();const w=new Worker('./mechanics-kinematics-worker.js');this.worker=w;
@@ -84,7 +89,7 @@ export class MechanismEditor{
    else{this.previewError='';this.preview=data.solution;this.view.show(data.solution);if(cached)this.view.setParts(cached);}
    this.drawHandles();this.renderStatus();if(this.fitNext&&this.preview){this.fitNext=false;this.host.fit();}};
   this.partsPending=!cached&&m.elements.some(e=>e.source.kind==='printed'&&e.surfaces.length);
-  w.postMessage({mechanism:m,range:{from:this.inputValue(m),to:this.inputValue(m),samples:1},fixed:this.fixed(m),parts:cached?undefined:'printed'});
+  w.postMessage({mechanism:m,range:{from:this.inputValue(m),to:this.inputValue(m),samples:1},fixed:this.fixed(m,shown?.drives),parts:cached?undefined:'printed'});
   this.drawHandles();
  }
  private renderStatus(){const p=document.getElementById('mechanism-preview');if(!p)return;
@@ -152,12 +157,12 @@ export class MechanismEditor{
  /** Current value of every axis (the input from the range start or its slider). */
  private values(m:Mechanism,over:Record<string,number>={}){const out:Record<string,number>={};for(const j of this.axes(m))out[j.id]=m.input.kind==='coordinate'&&m.input.joint===j.id?this.inputValue(m):this.axisValues[j.id]??this.axisDefault(m,j);return {...out,...over};}
  /** Held coordinates: every axis but the input (swept by the range) and every adopted train; `free` leaves one axis and its trains to the solver. */
- private held(m:Mechanism,values:Record<string,number>,free?:string){const input=m.input.kind==='coordinate'?m.input.joint:undefined,out:Record<string,number[]>={};for(const j of this.axes(m))if(j.id!==input&&j.id!==free)out[j.id]=[values[j.id]];return {...out,...heldTrains(this.drives().filter(d=>d.axis!==free),values)};}
+ private held(m:Mechanism,values:Record<string,number>,free?:string,drives=this.drives()){const input=m.input.kind==='coordinate'?m.input.joint:undefined,out:Record<string,number[]>={};for(const j of this.axes(m))if(j.id!==input&&j.id!==free)out[j.id]=[values[j.id]];return {...out,...heldTrains(drives.filter(d=>d.axis!==free),values)};}
  /** The mechanism solved at given axis values (main thread). */
  private async poseAt(m:Mechanism,values:Record<string,number>){const v=m.input.kind==='coordinate'?values[m.input.joint]??m.range.from:m.range.from;return solve({...structuredClone(m),range:{from:v,to:v,samples:1}},{yield:false,fixed:this.held(m,values),iterations:80});}
  private axisDefault(m:Mechanism,j:JointRelation){const deg=j.joint.kind==='revolute'||j.joint.kind==='screw',lo=j.limits?.min??(deg?-180:-200),hi=j.limits?.max??(deg?180:200);return m.input.kind==='coordinate'&&m.input.joint===j.id?m.range.from:Math.max(lo,Math.min(hi,0));}
  /** Every axis is driven by its own slider, so every axis is held (the input through the range). */
- private fixed(m:Mechanism){return this.held(m,this.values(m));}
+ private fixed(m:Mechanism,drives=this.drives()){return this.held(m,this.values(m),undefined,drives);}
  /** Sliders: one per axis; moving one re-solves the pose in place. */
  renderAxes(root=document.getElementById('axes')){
   if(!root)return;root.replaceChildren();const m=this.mechanism();root.hidden=!m;if(!m)return;
@@ -280,7 +285,7 @@ export class MechanismEditor{
  // ---------- drives ----------
  /** Changes one drive (and the mechanism) through the Studio's change(); stale search results go. */
  private editDrive(id:string,message:string,fn:(d:Drive,m:Mechanism)=>void){
-  if(this.search?.drive===id){this.search.worker.terminate();this.search=undefined;}delete this.sweeps[id];
+  if(this.search?.drive===id){this.search.worker.terminate();this.search=undefined;}delete this.sweeps[id];this.gearPreview=undefined;
   this.host.change(()=>{const e=this.entry()!,d=e.drives?.find(x=>x.id===id);if(!d)throw Error('Antrieb fehlt.');fn(d,e.mechanism);},message);}
  /** A new drive beside its axis: on the carrying link (the wagon on a path), shaft parallel to the axis. */
  private createDrive(m:Mechanism){
@@ -292,6 +297,7 @@ export class MechanismEditor{
  /** Starts the route search of a drive in the frame of its carrying link at the current pose. */
  private async findGear(id:string){
   const m=this.mechanism(),drives=this.drives(),d=drives.find(x=>x.id===id);if(!m||!d)return;this.search?.worker.terminate();this.search=undefined;
+  if(this.gearPreview){this.gearPreview=undefined;this.refresh();}
   try{
    const values=this.values(m),ref=await this.poseAt(m,values),base=defaultCatalog(),cat=this.host.doc().catalog??base,stock=new Map(base.parts.map(p=>[p.id,partKey(p.family,p.params)])),task=driveTask(m,drives,d,a=>this.assets.get(a),ref.poses[0].bodies,values,{catalog:{excludedRules:cat.excludedRules,lockedParts:cat.parts.filter(p=>!partAllowed(cat,p)).map(p=>stock.get(p.id)??partKey(p.family,p.params))}});
    const w=new Worker('./mechanics-drive-worker.js'),search={drive:id,worker:w,info:task.info,results:[] as NonNullable<MechanismEditor['search']>['results'],state:'running' as 'running'|'done'|'error',text:`Suche läuft · ${task.request.environment!.obstacles.length} Sperrzonen aus dem Modell …`};this.search=search;
@@ -308,8 +314,22 @@ export class MechanismEditor{
  private renderSearch(){
   const s=this.search,progress=document.getElementById('drive-progress'),list=document.getElementById('drive-results');if(!s||!progress||!list||progress.dataset.drive!==s.drive)return;
   progress.textContent=s.text;progress.dataset.state=s.state;list.replaceChildren();
+  const shown=this.gearPreview?.drive===s.drive?this.gearPreview.index:undefined;
   s.results.forEach((r,i)=>{const take=el('button',{textContent:'Übernehmen'});take.dataset.adopt=String(i);take.onclick=()=>void this.adopt(i);
-   list.append(el('div',{className:'drive-result'},el('span',{textContent:`${r.label}`}),el('small',{textContent:`${this.ratioText(s.info.kind,r.ratio)} · ${r.summary.elements} Teile`}),take));});}
+   const look=el('button',{textContent:shown===i?'Vorschau beenden':'Vorschau'});look.dataset.previewGear=String(i);look.setAttribute('aria-pressed',String(shown===i));look.onclick=()=>void(shown===i?this.endPreview():this.previewGear(i));
+   const row=el('div',{className:'drive-result'},el('span',{textContent:`${r.label}`}),el('small',{textContent:`${this.ratioText(s.info.kind,r.ratio)} · ${r.summary.elements} Teile`}),el('div',{className:'button-row'},look,take));if(shown===i)row.dataset.previewed='true';list.append(row);});}
+ /** Shows a found train in a copy of the mechanism; nothing is adopted, the results stay. */
+ private async previewGear(i:number){
+  const s=this.search,e=this.entry();if(!s||!e)return;const found=s.results[i];if(!found)return;
+  const base=e.mechanism,m=structuredClone(base),drives=structuredClone(e.drives??[]),d=drives.find(x=>x.id===s.drive);if(!d)return;
+  try{this.host.status('Vorschau wird gerechnet …');
+   const values=this.values(m),fixed:Record<string,number[]>={};for(const j of this.axes(m))if(j.id!==d.axis)fixed[j.id]=[values[j.id]];Object.assign(fixed,heldTrains(drives.filter(x=>x.axis!==d.axis),values));
+   await adoptGear(m,d,found.mechanism,s.info,found.label,found.ratio,fixed);
+   if(this.search!==s||this.entry()?.mechanism!==base)return;
+   this.gearPreview={drive:s.drive,index:i,base,mechanism:m,drives};this.refresh();this.renderSearch();
+   this.host.status(`Vorschau ${d.id}: ${found.label} – noch nicht übernommen. Regler bewegen die Vorschau mit.`);
+  }catch(err){this.host.status('Vorschau nicht möglich: '+(err instanceof Error?err.message:err));}}
+ private endPreview(){this.gearPreview=undefined;this.refresh();this.renderSearch();this.host.status('Vorschau beendet.');}
  /** Merges a found train into the mechanism, then checks it over the axis range. */
  private async adopt(i:number){
   const s=this.search,e=this.entry();if(!s||!e)return;const found=s.results[i];if(!found)return;
@@ -317,7 +337,7 @@ export class MechanismEditor{
   try{this.host.status('Getriebe wird übernommen …');
    const values=this.values(m),fixed:Record<string,number[]>={};for(const j of this.axes(m))if(j.id!==d.axis)fixed[j.id]=[values[j.id]];Object.assign(fixed,heldTrains(drives.filter(x=>x.axis!==d.axis),values));
    const gear=await adoptGear(m,d,found.mechanism,s.info,found.label,found.ratio,fixed);
-   s.worker.terminate();this.search=undefined;
+   s.worker.terminate();this.search=undefined;this.gearPreview=undefined;
    this.host.change(()=>{const x=this.entry()!;x.mechanism=m;x.drives=drives;},`Getriebe für ${d.id} übernommen: ${found.label}${gear.notes.length?' · '+gear.notes.join(' '):''}`);
    void this.checkSweep(d.id);
   }catch(err){this.host.status('Übernahme fehlgeschlagen: '+(err instanceof Error?err.message:err));}
@@ -359,6 +379,8 @@ export class MechanismEditor{
   const progress=el('p',{className:'muted',id:'drive-progress',textContent:s?.text??(d.gear?'':'Die Suche läuft im Glied, auf dem der Motor sitzt; die Teile des Modells sind Sperrzonen.')});progress.dataset.drive=id;if(s)progress.dataset.state=s.state;
   const results=el('div',{id:'drive-results',className:'drive-results'});
   out.push(el('h2',{textContent:'Getriebe'}),find,progress,results);
+  // Found trains stay listed (until one is adopted), also when coming back to this page.
+  if(s)queueMicrotask(()=>this.renderSearch());
   if(d.gear){
    const check=el('p',{id:'drive-check',className:'muted'});check.dataset.drive=id;
    const again=el('button',{textContent:'Über den Bereich prüfen'});again.onclick=()=>void this.checkSweep(id);
