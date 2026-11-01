@@ -13,8 +13,7 @@ export function defaultCatalog():SearchCatalog{
   for(const e of choice.elements)add(e.family,e.params);
   if(rule.id==='gt2-belt')add('gt2-belt',{length:choice.params.length,width:6});
  }
- // LEGO parts are listed with their kind but locked until released: nothing is used that was not chosen.
- for(const p of legoParts)parts.push({id:'lego-'+p.id,name:'LEGO '+p.id+' · '+p.name.replace(/^Technic /,''),family:'lego-technic',params:{model:p.model},allowed:false});
+ for(const p of legoParts)parts.push({id:'lego-'+p.id,name:'LEGO '+p.id+' · '+p.name.replace(/^Technic /,''),family:'lego-technic',params:{model:p.model}});
  return {parts,excludedRules:[],whitelist:false};
 }
 // Stable entries replace the corresponding stock specification in every pairing.

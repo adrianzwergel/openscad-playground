@@ -37,7 +37,7 @@ export function renderStock(c:SearchCatalog,names:Record<string,string>,stroke:n
  for(const kind of kinds){const rule={id:kind.rules[0]??'lego-other'};
   const parts=c.parts.filter(p=>!seen.has(p.id)&&kind.has(p)).filter(p=>!query||`${kind.title} ${p.name} ${p.family} ${JSON.stringify(p.params)}`.toLowerCase().includes(query));if(!parts.length)continue;
   const group=details(rule.id,kind.title);group.dataset.rule=rule.id;group.open=true;
-  if(parts.some(p=>p.family==='lego-technic')){const hint=document.createElement('p');hint.className='muted';hint.textContent='LEGO-Teile stehen bei ihrer Bauart und sind gesperrt, bis du sie freigibst (Bearbeiten). ◇ Sondermodelle ohne Suchregel.';group.append(hint);}
+  if(parts.some(p=>p.family==='lego-technic')){const hint=document.createElement('p');hint.className='muted';hint.textContent='LEGO-Teile stehen bei ihrer Bauart wie alle anderen. ◇ Sondermodelle ohne Suchregel.';group.append(hint);}
   if(kind.rules.length)checkbox(group,'Gruppe für Suche freigeben',kind.rules.some(id=>!c.excludedRules.includes(id)),value=>edit(c=>{c.excludedRules=value?c.excludedRules.filter(id=>!kind.rules.includes(id)):[...new Set([...c.excludedRules,...kind.rules])];})).dataset.catalogRule=rule.id;
   for(const p of parts){
    if(seen.has(p.id))continue;seen.add(p.id);

@@ -131,7 +131,7 @@ export type DriveTask={request:RouteRequest;options:RouteOptions;info:TaskInfo};
 const PINION={module:2,teeth:20,radius:20};
 /** The route request of a drive in the frame of its carrying link at the given pose. */
 /** `catalog`: what the Studio's catalog leaves to the search: transmission rules switched off and parts locked (part keys,
- * family and parameters as in graph/catalog). Without it every rule and part may be used except LEGO. */
+ * family and parameters as in graph/catalog). Without it the printed kinds are used (Node tests and scripts). */
 export type DriveCatalog={excludedRules:string[];lockedParts:string[]};
 export function driveTask(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frames:Record<string,Frame>,values:Record<string,number>,o:{budget?:number;seed?:number;catalog?:DriveCatalog}={}):DriveTask{
  const j=axisJoint(m,d.axis),side=j.a.body===d.body?'a':j.b.body===d.body?'b':undefined;
@@ -157,9 +157,10 @@ export function driveTask(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frame
  const near=(r:{frame:Frame;size:V})=>reach(r.frame.position)-norm(r.size)/2<=260;
  const obstacles:Region[]=[...own.filter(near).map(x=>({id:x.id,frame:x.frame,size:x.size,...(x.body===driven&&kind!=='path'?{role:'output' as const}:x.body===d.body?{role:'carrier' as const}:{})})),...motors.filter(near)];
  // The catalog decides: its rules (LEGO pairs with their kind) minus those switched off; locked parts are filtered out.
+ // With the catalog (LEGO pairs among the rest) the search has many more pairs: it gets 15000 steps instead of 6000.
  const rules=['external-spur','gt2-belt','bevel-mesh','worm-mesh',...(kind==='translation'?['screw-nut','rack-drive']:[]),...(o.catalog?['lego-spur','lego-bevel-90','lego-worm']:[])].filter(id=>!o.catalog?.excludedRules.includes(id));
  const request:RouteRequest={input:{kind:'frame',body:'s0',local:identity(),target:d.frame,constraint:'frame'},output,environment:{obstacles,margin:1,terminals:'given'},...(kind==='translation'?{motion:'translation' as const,stroke:Math.min(400,hi-lo)}:{})};
- const options:RouteOptions&{lockedParts?:string[]}={target,tolerance:d.tolerance,maxStages:d.maxStages??3,budget:o.budget??6000,seed:o.seed??1,rules,axialGap:1,...(o.catalog?.lockedParts.length?{lockedParts:o.catalog.lockedParts}:{})};
+ const options:RouteOptions&{lockedParts?:string[]}={target,tolerance:d.tolerance,maxStages:d.maxStages??3,budget:o.budget??(o.catalog?15000:6000),seed:o.seed??1,rules,axialGap:1,...(o.catalog?.lockedParts.length?{lockedParts:o.catalog.lockedParts}:{})};
  return {request,options,info:{drive:d.id,kind,carrier:d.body,driven,outPerAxis,reference,lo,hi,frames,...(pinion?{pinion}:{})}};
 }
 
@@ -220,8 +221,17 @@ export async function adoptGear(m:Mechanism,d:Drive,found:Mechanism,info:TaskInf
   const zs=[lastPart[0].mounts[0].pose.position[2]+lastPart[0].envelope.min-1-5,lastPart[lastPart.length-1].mounts[0].pose.position[2]+lastPart[lastPart.length-1].envelope.max+1+5];
   // Height above the path plane (z of the path frame = plane normal of a planar path).
   const pathFrame=(z:number)=>compose(inverse(j.b.local),compose(frameC(lastId),shift(z))).position[2];
-  // The pinion is the outermost part (away from the motor), so the rail's outer side stays free for its holders.
-  const motorAlong=compose(inverse(frameC(lastId)),d.frame).position[2],z=Math.abs(zs[0]-motorAlong)>=Math.abs(zs[1]-motorAlong)?zs[0]:zs[1],ritzel=spurElement(`${d.id}/ritzel`,`${d.id}/${lastId}`,shift(z),pin.module,pin.teeth,10);
+  // The pinion goes to the end of the last shaft where the rail keeps most room from what the wagon carries (the other
+  // wheels and the motor body, across the path plane): the rail's holders must reach it from outside. Ties: the end
+  // away from the motor.
+  const pz=(p:V)=>compose(inverse(j.b.local),{position:p,rotation:[0,0,0,1]}).position[2],spec=driveSpec(d.spec),items:[number,number][]=[];
+  // A wheel's extent across the path plane: half its width along its axis, its radius across it.
+  const normal=rotate(j.b.local.rotation,[0,0,1]);
+  for(const e of added){const k=e.mounts[0].body.slice(d.id.length+1);if(k===lastId||!/^s\d+$/.test(k))continue;const f=compose(compose(frameC(k),e.mounts[0].pose),shift((e.envelope.min+e.envelope.max)/2)),c=pz(f.position),cos=Math.abs(dot(rotate(f.rotation,[0,0,1]),normal)),r=cos*(e.envelope.max-e.envelope.min)/2+Math.sqrt(Math.max(0,1-cos*cos))*e.envelope.radius;items.push([c-r,c+r]);}
+  {const zsMotor=[0,1].flatMap(a=>[0,1].flatMap(b=>[0,1].map(c=>pz(compose(d.frame,{position:[(a-.5)*spec.size[0],(b-.5)*spec.size[1],-c*spec.size[2]],rotation:[0,0,0,1]}).position))));items.push([Math.min(...zsMotor),Math.max(...zsMotor)]);}
+  const room=(z:number)=>{const zr=pathFrame(z);return Math.min(...items.map(([a,b])=>Math.max(0,a-(zr+6),(zr-6)-b)));};
+  const motorAlong=compose(inverse(frameC(lastId)),d.frame).position[2],far=Math.abs(zs[0]-motorAlong)>=Math.abs(zs[1]-motorAlong)?0:1,r0=room(zs[0]),r1=room(zs[1]);
+  const z=Math.abs(r0-r1)>1?(r0>r1?zs[0]:zs[1]):zs[far],ritzel=spurElement(`${d.id}/ritzel`,`${d.id}/${lastId}`,shift(z),pin.module,pin.teeth,10);
   // Rail on the path's a-side in its frame; z along the path plane normal at the pinion's height.
   const zr=pathFrame(z);
   if(j.joint.kind!=='path')throw Error('Pfad erwartet.');
