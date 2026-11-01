@@ -3,6 +3,7 @@
 // whole range of motion, strong and stiff enough under the design loads. Writes STLs and a rendering per demo when OUT is set.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
 import {adopted} from './adopted.mjs';
+import {nodePool} from './pool.mjs';
 import {planBearings,applyBearings} from '../../src/mechanics/kinematics/bearings.ts';
 import {linkStructures} from '../../src/mechanics/kinematics/link-structure.ts';
 import {soup,stlBinary} from '../../src/structure/mesh.ts';
@@ -13,7 +14,10 @@ const colors=[[120,200,180],[130,170,230],[230,170,90],[200,150,225],[160,210,11
 for(const name of selected){
  const {mechanism:m,drives,asset}=await adopted(name),assets=id=>id===asset.id?asset:undefined,plan=planBearings(m,drives,assets);applyBearings(m,plan);
  const t0=performance.now();let last='';
- const links=await linkStructures(m,drives,plan,assets,{},(l,st)=>{const k=l+st;if(k!==last){last=k;process.stdout.write(`\r  ${name}: ${l} – ${st}                    `);}});
+ // Meshing and clearance in workers (NOWORKERS=1: all in this thread).
+ const workers=process.env.NOWORKERS?undefined:await nodePool(m,drives,plan,asset);
+ const links=await linkStructures(m,drives,plan,assets,workers?{pool:workers.run}:{},(l,st)=>{const k=l+st;if(k!==last){last=k;process.stdout.write(`\r  ${name}: ${l} – ${st}                    `);}});
+ await workers?.close();
  console.log(`\n== ${name} (${((performance.now()-t0)/1000).toFixed(0)} s)`);
  const items=[];
  links.forEach((x,i)=>{const r=x.result?.report;console.log(`  ${x.link}: ${x.error??`${r.struts} Streben, ${r.nodes} Knoten, ${r.mass.toFixed(0)} g, Auslastung ${(r.utilisation*100).toFixed(0)} %, ${r.seconds.toFixed(1)} s`}`);

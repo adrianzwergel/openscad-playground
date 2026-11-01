@@ -15,11 +15,11 @@ Plan für die beiden nächsten Etappen nach den Antrieben (KINEMATIK-KERN.md 15)
 
 ## Stand (umgesetzt)
 
-| Demo | Glieder | Lager (Teil A) | Strukturen (Teil B) | Zeit (Node) |
+| Demo | Glieder | Lager (Teil A) | Strukturen (Teil B) | Zeit (Studio / Node, mit Workern) |
 |---|---|---|---|---|
-| Roboterarm | Sockel, Drehteller, Oberarm, Unterarm | 14× 625, 6× 608, 3 Wellen Ø5, 3 Gelenkwellen Ø8 | alle gültig, fest und steif genug; 160–590 g je Glied | ≈ 60 s |
-| CNC-Portal | Rahmen, Portal, Wagen, Z | 6× 608 (Fest-/Loslager), 12× LM8UU auf 6 Rundstangen, 3 Flanschmuttern | alle gültig, fest und steif genug; Portal 1,8 kg | ≈ 75 s |
-| Schlitten | Bahn, Wagen | 10× 625 (Getriebe, 4 Laufrollen) | alle gültig, fest und steif genug; Bahn 3,2 kg auf breiten Füßen | ≈ 150 s |
+| Roboterarm | Sockel, Drehteller, Oberarm, Unterarm | 14× 625, 6× 608, 3 Wellen Ø5, 3 Gelenkwellen Ø8 | alle gültig, fest und steif genug; 160–720 g je Glied | ≈ 40 s / 45 s |
+| CNC-Portal | Rahmen, Portal, Wagen, Z | 6× 608 (Fest-/Loslager), 12× LM8UU auf 6 Rundstangen, 3 Flanschmuttern | alle gültig, fest und steif genug; Portal 1,2–1,8 kg | ≈ 35 s / 45 s |
+| Schlitten | Bahn, Wagen | 10× 625 (Getriebe, 4 Laufrollen) | alle gültig, fest und steif genug; Bahn 3–4 kg auf breiten Füßen | ≈ 55 s / 65 s |
 | Gehäuse (ohne Mechanik) | Unterteil, Deckel, Hutschienenclip | – | Arduino Uno R3 auf TH35, 33 + 12 + 6 g | ≈ 5 s |
 
 Gültig heißt: alle Haltepunkte angebunden, ein geschlossenes Netz, frei von Sperrzonen,
@@ -49,7 +49,8 @@ Abweichungen vom Plan unten (nach Versuchen):
   liefen alle in einen Stamm). Enge Auflager und Haltepunkte binden mit mehreren Ports an.
 - **Rückkopplung:** Streben, die an ihrem Freiraum überlastet sind oder viel
   Biegeenergie aufnehmen, markieren Engstellen; der nächste Entwurf geht um sie herum,
-  ein zu weicher bekommt mehr Verstrebung; bis zu sechs Entwürfe, der beste bleibt.
+  ein zu weicher bekommt mehr Verstrebung, und wenn nichts Neues dazukommt, variiert er die
+  Kosten leicht (anderer Baum); bis zu neun Entwürfe, der beste bleibt.
 - **Statik:** Räumliches Rahmenmodell mit steifen Knoten (`frame.ts`, Skyline-Cholesky in
   Cuthill-McKee-Ordnung; Stabilisierung relativ zur eigenen Diagonale – eine absolute
   Feder hatte dünne Stützen künstlich gehalten). Lagerplatten als Plattenstreifen
@@ -85,10 +86,13 @@ Abweichungen vom Plan unten (nach Versuchen):
   Glieder der Demos nutzen das Tragwerk.
 
 Noch offen:
-- **Laufzeit unter 30 s:** Zahlenschlüssel und schnellere Abstands- und Netzwege haben
-  die Zeiten gesenkt, aber Netzerzeugung und das Abstandsfeld gegen die bewegten
-  Nachbarn laufen auf einem Kern. Für unter 30 s müssen beide auf Worker verteilt
-  werden (die Umgebung eines Glieds muss dafür in jedem Worker aufbaubar sein).
+- **Laufzeit unter 30 s** (eigenes Ziel, nicht im Plan): mit Workern 35–55 s im Studio.
+  Netz und Abstandsfeld laufen verteilt (`field-jobs.ts`: jeder Worker baut die Umgebung
+  der Glieder selbst auf; Punkte, die die Grundnetz-Suche fragen wird, werden vorab
+  verteilt gerechnet; große Teile bekommen ein gröberes Netz, höchstens 1000 Zellen über
+  die Diagonale). Was bleibt, ist die Grundnetz-Suche selbst (nacheinander) und das
+  Abtasten der bewegten Nachbarn über lange Wege (Schlitten: 1,2 m); schneller ginge es
+  mit einem vorab gerasterten oder analytischen Abstandsfeld der überstrichenen Räume.
 
 Tests: `scripts/structure/check-sdf.mjs`, `check-features.mjs`, `check-frame.mjs`, `check-generate.mjs`,
 `check-bearings.mjs`, `check-loads.mjs`, `check-links.mjs [robot|cnc|sled]` (mit `OUT=…`

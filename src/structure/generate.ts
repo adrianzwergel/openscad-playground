@@ -7,8 +7,9 @@ import {sub,add,scale,norm,cross,unit,dot,rotate,cellKey} from './vec.ts';
 import type {Feature} from './features.ts';
 import {featureGeometry,featureSize} from './features.ts';
 import {Scene,PrimIndex} from './sdf.ts';
+import type {SceneData} from './sdf.ts';
 import type {Prim} from './sdf.ts';
-import {surfaceNets,inspect,largestPart} from './mesh.ts';
+import {surfaceNets,surfaceNetsBatch,inspect,largestPart} from './mesh.ts';
 import type {Mesh} from './mesh.ts';
 import type {TrussNode,Strut,Material} from './truss.ts';
 import {PLA,relax,radiusOf} from './truss.ts';
@@ -23,6 +24,10 @@ export type StructureSpec={
  id:string;anchors:Anchor[];
  /** Distance to everything the structure must avoid (moving parts, shafts, other links); +Infinity where free. */
  clearance:(p:V)=>number;
+ /** Computes `clearance` at points known in advance (e.g. in workers) and keeps the values for later queries. */
+ prefetch?:(points:Float64Array)=>Promise<void>;
+ /** Computes the clipped field (`clipField`) at many points, e.g. in workers that know the same clearance. */
+ pool?:(job:FieldJob,points:Float64Array)=>Promise<Float64Array>;
  /** Extra load cases (force per anchor id); default cases are ±x, ±y, ±z and torsion. */
  cases?:Record<string,V>[];
  settings?:Partial<StructureSettings>;
@@ -44,11 +49,26 @@ const RIGID=1000;
 const R_MAX=16;
 /** Ties between grouped anchors without a plate: a round bar of r = 4 mm. */
 const PLATE=Math.PI*4*4;
+/** What a worker needs to build a structure's field: the scene, the anchors' bosses and the mesh resolution. */
+export type FieldJob={scene:SceneData;bosses:Prim[];resolution:number};
+/** Lower bound of a 1-Lipschitz field from exact values on a 4 mm lattice (cached). */
+export function latticeBound(exact:(p:V)=>number){const lattice=new Map<number,number>(),G=4;
+ return (p:V)=>{const i=Math.round(p[0]/G),j=Math.round(p[1]/G),k=Math.round(p[2]/G),key=cellKey(i,j,k),c:V=[i*G,j*G,k*G];let v=lattice.get(key);if(v===undefined){v=exact(c);lattice.set(key,v);}return v-norm(sub(p,c));};}
+/** The structure's field clipped by the keep-out; the anchors' bosses (with their holes) are joined after the clip,
+ * unclipped (they sit where the plan put them; a fade around them left a jump inside one grid cell). The cut sits
+ * 0.6 mm inside the free side: surface-net vertices interpolate across a sharp cut by up to half a cell. Thin skins:
+ * where the cut runs close to the strut's other side, material is kept only if its depth under the strut's surface
+ * plus its distance from the cut reaches the minimum wall (a skin goes, a cut edge gets a small chamfer). */
+export function clipField(scene:Scene,bosses:PrimIndex,clearance:(p:V)=>number,lower:(p:V)=>number,resolution:number){
+ const SKIN=1.2,CUT=.6;
+ return (p:V)=>{const d=scene.distance(p);if(d>2*resolution)return d;if(lower(p)>=CUT+Math.max(-d,d<0?SKIN+d:-d))return d;
+  const c=clearance(p),cut=Math.max(d,CUT-c,(SKIN+d-(c-CUT))/2),boss=Math.max(bosses.distance(p),-scene.holes.distance(p));return Math.min(cut,boss);};
+}
 export async function generateStructure(spec:StructureSpec,progress?:(stage:string,f:number)=>void):Promise<StructureResult>{
  const t0=performance.now(),s={...defaultSettings,...spec.settings,material:{...defaultSettings.material,...spec.settings?.material}},m=s.material,rMin=m.rMin;
  if(!spec.anchors.some(a=>a.role==='support'))throw Error(`${spec.id}: kein Haltepunkt als Auflager.`);
  // The keep-out field is 1-Lipschitz: values on a 4 mm lattice bound it from below everywhere; exact values only near obstacles.
- const exact=spec.clearance,lattice=new Map<number,number>(),G=4,lowerBound=(p:V)=>{const i=Math.round(p[0]/G),j=Math.round(p[1]/G),k=Math.round(p[2]/G),key=cellKey(i,j,k),c:V=[i*G,j*G,k*G];let v=lattice.get(key);if(v===undefined){v=exact(c);lattice.set(key,v);}return v-norm(sub(p,c));};
+ const exact=spec.clearance,lowerBound=latticeBound(exact);
  const atLeast=(p:V,t:number)=>lowerBound(p)>=t||exact(p)>=t;
  const clearanceCapped=(p:V,cap:number)=>{const l=lowerBound(p);return l>=cap?l:exact(p);};
  if(!spec.anchors.some(a=>a.role==='load'))throw Error(`${spec.id}: kein belasteter Haltepunkt.`);
@@ -89,7 +109,14 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
   if(lowerBound(mid)>=need&&holes.distance(mid)>=need&&keep.distance(mid)>=need&&bosses.distance(mid)>=r*.5+L/2)return true;
   const n=Math.max(2,Math.ceil(L/2));for(let k=1;k<n;k++){const t=k/n,p=add(a,scale(d,t)),ends=Math.min(t*L,(1-t)*L);if(ends<r+2)continue;if(!freeAt(p,r))return false;if(ends>r+4&&bosses.distance(p)<r*.5)return false;}return true;};
  const anchorOf=(i:number)=>nodes[i].anchor,isPort=(i:number)=>nodes[i].anchor!==undefined&&!anchorNodes[nodes[i].anchor!].slice(0,1).includes(i);
- const cand=new Set<string>(),addStrut=(i:number,j:number)=>{const k=i<j?i+','+j:j+','+i;if(cand.has(k))return;cand.add(k);if(segmentFree(nodes[i].p,nodes[j].p,rMin))struts.push({i,j,area:1});};
+ // Candidate struts are collected first: with workers their test points are computed ahead in one batch.
+ const cand=new Set<string>(),pairs:[number,number][]=[],addStrut=(i:number,j:number)=>{const k=i<j?i+','+j:j+','+i;if(cand.has(k))return;cand.add(k);pairs.push([i,j]);};
+ // Points a test along a segment or a strut's room will ask for (with their lattice corners), for prefetching.
+ // `cornersOnly`: just the lattice corners (enough for the quick bounds; most tests never need exact values).
+ const G=4,ahead=async(points:V[],cornersOnly=false)=>{if(!spec.prefetch||!points.length)return;const seen=new Map<number,V>();
+  for(const p of points)for(const q of cornersOnly?[p.map(x=>Math.round(x/G)*G) as V]:[p,p.map(x=>Math.round(x/G)*G) as V]){const key=cellKey(Math.round(q[0]*2),Math.round(q[1]*2),Math.round(q[2]*2));if(!seen.has(key))seen.set(key,q);}
+  await spec.prefetch(Float64Array.from([...seen.values()].flat()));};
+ const segmentPoints=(a:V,b:V,r:number)=>{const d=sub(b,a),L=norm(d),n=Math.max(2,Math.ceil(L/2)),out:V[]=[add(a,scale(d,.5))];for(let k=1;k<n;k++){const t=k/n;if(Math.min(t*L,(1-t)*L)<r+2)continue;out.push(add(a,scale(d,t)));}return out;};
  // Exit nodes a short step out of every port: stepping stones where the grid is too coarse for tight spots.
  const exits:number[]=[];
  for(const i of nodes.map((_,k)=>k).filter(isPort)){const a=spec.anchors[nodes[i].anchor!].frame,z=rotate(a.rotation,[0,0,1]),rel=sub(nodes[i].p,a.position),radial=sub(rel,scale(z,dot(rel,z))),dir=norm(radial)>1e-6?unit(radial):unit(rel);
@@ -103,6 +130,8 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  for(const i of exits)for(const j of [...portIds,...exits])if(j!==i&&norm(sub(nodes[i].p,nodes[j].p))<=Math.max(2.3*h,rMin+14))addStrut(i,j);
  for(const i of portIds){for(const j of around(nodes[i].p))if(norm(sub(nodes[i].p,nodes[j].p))<=2.3*h)addStrut(i,j);
   for(const j of portIds)if(j>i&&anchorOf(j)!==anchorOf(i)&&norm(sub(nodes[i].p,nodes[j].p))<=Math.max(2.6*h,40))addStrut(i,j);}
+ await ahead(pairs.flatMap(([i,j])=>segmentPoints(nodes[i].p,nodes[j].p,rMin)),true);
+ for(const [i,j] of pairs)if(segmentFree(nodes[i].p,nodes[j].p,rMin))struts.push({i,j,area:1});
  // ---- load cases ----
  const support=spec.anchors.map((a,i)=>a.role==='support'?a.frame.position:undefined).filter((p):p is V=>!!p),centre=scale(support.reduce((c,p)=>add(c,p),[0,0,0] as V),1/support.length);
  const loadNodes=spec.anchors.map((a,k)=>({a,node:anchorNodes[k][0]})).filter(x=>x.a.role==='load');
@@ -149,7 +178,9 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  // ---- topology, sizing, form finding: struts that would need more room than they have are struck
  // from the ground structure and the layout is optimised again (manufacturing constraint feedback).
  const room=(a:V,b:V)=>{const d=sub(b,a),L=norm(d),n=Math.max(2,Math.ceil(L/2));let r=Infinity;for(let k=0;k<=n;k++){if(k===0||k===n){const p=add(k?b:a,scale(d,(k?-1:1)*Math.min(rMin+1,L/2)/L));r=Math.min(r,clearanceCapped(p,R_MAX+4)+s.margin);continue;}const t=k/n,ends=Math.min(t*L,(1-t)*L);if(ends<rMin+1)continue;const p=add(a,scale(d,t));r=Math.min(r,clearanceCapped(p,R_MAX+4)+s.margin,holes.distance(p),keep.distance(p));}return r;};
- const capOf=(x:TrussNode[],st:Strut)=>st.rigid?40:Math.min(R_MAX,Math.max(rMin,room(x[st.i].p,x[st.j].p)-s.margin-s.blend/2));
+ // The clearance may come from a 0.5 mm lattice (up to 0.43 mm off): a strut keeps that much more, so it is clear
+ // even where the mesh's clip would not cut it (neighbours check against the struts themselves).
+ const LATTICE=.5,capOf=(x:TrussNode[],st:Strut)=>st.rigid?40:Math.min(R_MAX,Math.max(rMin,room(x[st.i].p,x[st.j].p)-s.margin-s.blend/2-LATTICE));
  // Stiffness counts where loads act (a plate that only joins seats carries none itself).
  const loaded=(n:TrussNode)=>!!n.load&&(spec.anchors[n.anchor!].load??s.load)>0;
  const sagOf=(x:TrussNode[],us:Float64Array[][])=>Math.max(0,...us.flatMap(u=>x.map((n,i)=>loaded(n)?Math.hypot(u[i][0],u[i][1],u[i][2]):0)));
@@ -164,14 +195,15 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  const segDist=(p:V,a:V,b:V)=>{const d=sub(b,a),t=Math.max(0,Math.min(1,dot(sub(p,a),d)/Math.max(1e-9,dot(d,d))));return norm(sub(p,add(a,scale(d,t))));};
  // Room of the ground structure's struts: the same in every layout round.
  const roomOf=new Map<number,number>();
- const design=(bracing:number,crowded:Crowded[])=>{
+ // `vary`: a round number that shifts each ground strut's cost a little (deterministically), for another tree.
+ const design=(bracing:number,crowded:Crowded[],vary=0)=>{
   progress?.('Baum',.1);
   const N=net.nodes,len=(st:Strut)=>norm(sub(N[st.j].p,N[st.i].p)),adj=new Map<number,{j:number;k:number}[]>();
   net.struts.forEach((st,k)=>{if(st.rigid)return;(adj.get(st.i)??adj.set(st.i,[]).get(st.i)!).push({j:st.j,k});(adj.get(st.j)??adj.set(st.j,[]).get(st.j)!).push({j:st.i,k});});
   const anchorOf=(i:number)=>N[i].anchor,tree=new Set<number>(),usedStrut=new Set<number>(),usedAnchor=new Set<number>();
   // Paths prefer open space: a strut's cost grows where it has little room (trunks need it).
   const cost=(k:number)=>{let c=roomOf.get(k);if(c===undefined){c=capOf(N,net.struts[k]);roomOf.set(k,c);}const st=net.struts[k],mid=scale(add(N[st.i].p,N[st.j].p),.5);
-   const tight=crowded.some(x=>c!<x.need&&segDist(mid,x.a,x.b)<=Math.max(h,15));return len(st)*(1+(6/Math.max(c,.5))**2)*(tight?25:1);};
+   const tight=crowded.some(x=>c!<x.need&&segDist(mid,x.a,x.b)<=Math.max(h,15));return len(st)*(1+(6/Math.max(c,.5))**2)*(tight?25:1)*(vary?1+.15*Math.sin(k*12.9898+vary*78.233):1);};
   // Supports are where the tree starts (all their nodes); a support anchor counts as used once something hangs on it.
   // With several supports (feet) the tree starts at the one nearest to the loads; the others join like loads.
   const supports=spec.anchors.map((a,k)=>({a,k})).filter(x=>x.a.role==='support'),loadMid=scale(spec.anchors.filter(a=>a.role==='load').reduce((c,a)=>add(c,a.frame.position),[0,0,0] as V),1/Math.max(1,spec.anchors.filter(a=>a.role==='load').length));
@@ -244,7 +276,7 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
   {const live=new Set<number>();for(const x of cur.struts){live.add(x.i);live.add(x.j);}const next=subset(cur.nodes,cur.struts,live);L=L.map(c=>next.index.map(i=>c[i]));cur={...next,index:next.index.map(i=>cur.index[i])};}
   // Tapering: a strut whose room varies along it (thin where it enters a tight anchor, open further out) is cut into
   // pieces sized on their own, so it can be thick where the bending moment is largest and the room allows it.
-  {const capSeg=(a:V,b:V)=>Math.min(R_MAX,Math.max(rMin,room(a,b)-s.margin-s.blend/2)),pieces=16;
+  {const capSeg=(a:V,b:V)=>Math.min(R_MAX,Math.max(rMin,room(a,b)-s.margin-s.blend/2-LATTICE)),pieces=16;
    for(const st of [...cur.struts]){if(st.rigid)continue;const a=cur.nodes[st.i].p,b=cur.nodes[st.j].p,l=norm(sub(b,a));if(l<2*pieces)continue;const n=Math.ceil(l/pieces),pts=Array.from({length:n+1},(_,k)=>add(a,scale(sub(b,a),k/n)));
     const segs=pts.slice(1).map((q,k)=>capSeg(pts[k],q));if(Math.min(...segs)>=.9*Math.max(...segs))continue;
     cur.struts.splice(cur.struts.indexOf(st),1);let last=st.i;
@@ -270,17 +302,21 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  };
  // Layout feedback: struts overloaded at their room cap mark crowded spots for the next layout; a layout that holds
  // but bends too much gets more cross bracing. The best of a few rounds is kept.
+ // The room of every ground-structure strut is asked for by the layouts: computed ahead in one batch.
+ await ahead(net.struts.filter(st=>!st.rigid).flatMap(st=>{const a=net.nodes[st.i].p,b=net.nodes[st.j].p,d=sub(b,a),L=norm(d),n=Math.max(2,Math.ceil(L/2)),out:V[]=[];
+  for(let k=0;k<=n;k++){if(k===0||k===n){out.push(add(k?b:a,scale(d,(k?-1:1)*Math.min(rMin+1,L/2)/L)));continue;}const t=k/n;if(Math.min(t*L,(1-t)*L)<rMin+1)continue;out.push(add(a,scale(d,t)));}return out;}));
  let result=design(s.bracing,[]);
  {const crowded:Crowded[]=[];let bracing=s.bracing,last=result;
   // Feedback comes from the latest layout (what it ran into), the best layout is kept.
-  for(let round=0;round<5&&result.score>1.001;round++){const before=crowded.length;
+  for(let round=0;round<8&&result.score>1.001;round++){const before=crowded.length;
    last.cur.struts.forEach((st,i)=>{if(st.rigid||last.framed.util[i]<=1.001)return;const r=radiusOf(st),cap=last.caps.get(st)!;if(r<cap-.05)return;crowded.push({a:last.cur.nodes[st.i].p,b:last.cur.nodes[st.j].p,need:r*Math.pow(last.framed.util[i],1/3)});});
    // Too soft: struts at their room cap that take a large share of the bending energy are crowded spots as well.
    if(last.deflection>s.deflection*1.05){const total=last.framed.forces.reduce((t,f)=>t+f[last.worstCase].energy,0);
     last.cur.struts.forEach((st,i)=>{if(st.rigid)return;const r=radiusOf(st),cap=last.caps.get(st)!;if(r<cap-.05||last.framed.forces[i][last.worstCase].energy<.05*total)return;crowded.push({a:last.cur.nodes[st.i].p,b:last.cur.nodes[st.j].p,need:r*Math.pow(last.deflection/s.deflection,1/4)*1.2});});}
-   const soft=last.deflection>s.deflection*1.05;if(soft&&bracing<2)bracing=Math.min(2,bracing+1);else if(crowded.length===before)break;
+   // Nothing new learnt: the next layout varies the costs instead of giving up.
+   const soft=last.deflection>s.deflection*1.05;let vary=0;if(soft&&bracing<2)bracing=Math.min(2,bracing+1);else if(crowded.length===before)vary=round+1;
    progress?.(`Neuer Entwurf ${round+2}`,.1);
-   const next=design(bracing,crowded);last=next;if(next.score<result.score)result=next;}}
+   const next=design(bracing,crowded,vary);last=next;if(next.score<result.score)result=next;}}
  net=result.cur;loads=result.L;const framed=result.framed,deflection=result.deflection,caps=result.caps;
  const reach2=(x:{nodes:TrussNode[];struts:Strut[]})=>{const c=connectedFromSupports(x.nodes,x.struts);return x.nodes.every((n,i)=>!n.load||c.has(i));};
  const util=framed.util,forceOf=(k:number)=>Math.max(...framed.forces[k].map(f=>Math.abs(f.N)));
@@ -310,24 +346,22 @@ export async function generateStructure(spec:StructureSpec,progress?:(stage:stri
  // Clip by the keep-out field: no material where another part is (anchor bosses are placed by design).
  // The keep-out field is 1-Lipschitz: a coarse 4 mm lattice bounds it from below, exact values only where clipping can act.
  const lower=lowerBound;
- // Near the anchors' bosses the clip fades out continuously (they sit where the plan put them).
- // The cut sits 0.6 mm inside the free side: surface-net vertices interpolate across a sharp cut by up to half a cell.
- // Thin skins: where the cut runs close to the strut's other side, material is kept only if its depth under the
- // strut's surface plus its distance from the cut reaches the minimum wall (a skin goes, a cut edge gets a small
- // chamfer).
- const SKIN=1.2,CUT=.6,field=(p:V)=>{const d=scene.distance(p);if(d>2*s.resolution)return d;const bd=bosses.distance(p);if(bd<.3)return d;if(lower(p)>=CUT+Math.max(-d,d<0?SKIN+d:-d))return d;
-  const fade=Math.min(1,(bd-.3)/.4),away=(1-fade)*30,c=spec.clearance(p);return Math.max(d,CUT-c-away,(SKIN+d-(c-CUT))/2-away);};
- const b=scene.bounds();
- const raw=surfaceNets(field,b.min,b.max,s.resolution,4,p=>scene.distance(p)),{mesh,dropped}=largestPart(raw);
+ // Large parts get a coarser grid (at most 1000 cells along the diagonal): a 1.2 m track at 0.8 mm meant 11 million
+ // grid points and a file of hundreds of megabytes, for struts of at least 6 mm.
+ const b=scene.bounds(),res=Math.max(s.resolution,norm(sub(b.max,b.min))/1000);
+ const field=clipField(scene,bosses,spec.clearance,lower,res);
+ // With a pool the field's values are computed by workers (each builds the same field from plain data).
+ const raw=spec.pool?await surfaceNetsBatch(points=>spec.pool!({scene:scene.describe(),bosses:bosses.prims,resolution:res},points),b.min,b.max,res,4,p=>scene.distance(p)):surfaceNets(field,b.min,b.max,res,4,p=>scene.distance(p));
+ const {mesh,dropped}=largestPart(raw);
  progress?.('Prüfung',.95);
  const info=inspect(mesh),print=printOrientation(mesh);
  // Clearance of the finished surface (every 7th vertex is plenty at 0.8 mm); the lattice bound skips what cannot be worse.
- // Wall thickness: from surface points (every 13th) along the inward normal and four rays tilted 45° from it, the
+ // Wall thickness: from surface points (every 29th, thousands per part) along the inward normal and four rays tilted 45° from it, the
  // deepest the solid gets (a wall of thickness t reaches t/2 in its middle; at an edge one of the rays goes in deep);
  // thinner than 1.2 mm (three lines of a 0.4 mm nozzle) is too thin to print well. The features' own walls (seat,
  // shoulder) are set by their design and not probed.
  const WALL=1.2;let thin=0,probes=0,thinnest=Infinity,thinAt:V=[0,0,0];
- for(let i=0;i<mesh.vertices.length/3;i+=13){const p:V=[mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]],e=.2,g:V=[0,1,2].map(k=>{const a=[...p] as V,b=[...p] as V;a[k]+=e;b[k]-=e;return field(a)-field(b);}) as V,gn=norm(g);if(gn<1e-9)continue;
+ for(let i=0;i<mesh.vertices.length/3;i+=29){const p:V=[mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]],e=.2,g:V=[0,1,2].map(k=>{const a=[...p] as V,b=[...p] as V;a[k]+=e;b[k]-=e;return field(a)-field(b);}) as V,gn=norm(g);if(gn<1e-9)continue;
   if(bosses.distance(p)<.5)continue;const n=scale(g,-1/gn),h:V=Math.abs(n[0])<.9?[1,0,0]:[0,1,0],u=unit(cross(n,h)),w=cross(n,u),rays=[n,...[u,scale(u,-1),w,scale(w,-1)].map(d=>unit(add(n,d)))];probes++;
   let depth=0;for(const r of rays){for(let x=.15;x<=WALL*1.5;x+=.15){depth=Math.max(depth,-field(add(p,scale(r,x))));if(depth>=WALL/2)break;}if(depth>=WALL/2)break;}
   const t=2*depth;if(t<WALL*.9){thin++;if(t<thinnest){thinnest=t;thinAt=p;}}}

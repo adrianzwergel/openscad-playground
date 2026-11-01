@@ -16,7 +16,7 @@ import type {BearingPlan,Seat} from './bearings.ts';
 import {modelPoints} from './bearings.ts';
 import {driveLoads} from './loads.ts';
 import type {DriveLoadSettings} from './loads.ts';
-import type {Anchor,StructureResult,StructureSettings} from '../../structure/generate.ts';
+import type {Anchor,StructureResult,StructureSettings,FieldJob} from '../../structure/generate.ts';
 import {generateStructure} from '../../structure/generate.ts';
 import {featureGeometry,featureSize} from '../../structure/features.ts';
 const featureSizeOf=(x:{feature:import('../../structure/features.ts').Feature})=>featureSize(x.feature).radius;
@@ -26,7 +26,16 @@ import type {Prim} from '../../structure/sdf.ts';
 
 /** `inspect` sees each link's anchors and clearance field before generation (diagnostics). */
 /** `drives`: loads from the drives on top of the flat load per anchor (see loads.ts). */
-export type LinkSettings={structure:Partial<StructureSettings>;load:number;payload:number;gap:number;region:number;drives:Partial<DriveLoadSettings>;only?:string[];inspect?:(link:string,anchors:Anchor[],clearance:(p:V)=>number,parts:(p:V)=>{link:string;d:number}[])=>void};
+/** A structure as later links see it (struts as round cones, joint balls). */
+export type BuiltStructure={link:string;struts:{a:V;b:V;ra:number;rb:number}[];joints:{center:V;r:number}[]};
+/** Computes a link's clipped structure field at many points in workers; `built`: the structures made so far (the
+ * workers add them to their own copy of the environment). */
+export type LinkPool={field:(link:string,built:BuiltStructure[],job:FieldJob,points:Float64Array)=>Promise<Float64Array>;
+ /** The link's clearance at the points. */
+ clearance:(link:string,built:BuiltStructure[],points:Float64Array)=>Promise<Float64Array>};
+/** `pool`: workers for the meshing. `environment`: instead of generating, hand out the environment (for a worker). */
+export type LinkSettings={structure:Partial<StructureSettings>;load:number;payload:number;gap:number;region:number;drives:Partial<DriveLoadSettings>;only?:string[];pool?:LinkPool;
+ environment?:(env:{clearanceFor:(link:string)=>(p:V)=>number;add:(b:BuiltStructure)=>void})=>void;inspect?:(link:string,anchors:Anchor[],clearance:(p:V)=>number,parts:(p:V)=>{link:string;d:number}[])=>void};
 export const defaultLinkSettings:LinkSettings={structure:{},load:20,payload:20,gap:1,region:35,drives:{}};
 export type LinkStructure={link:string;anchors:Anchor[];result?:StructureResult;error?:string;clearance?:number;checks:{id:string;state:'pass'|'fail'|'warn';message:string}[]};
 
@@ -154,10 +163,18 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   // Generation avoids the neighbours over their joint; links further away meet only at extreme axis values (checked at the end).
   const self=indexOf(l,false);for(const p of along.get(l)!)self.add(p);const others=tree.links.filter(x=>x!==l&&adjacent(l,x)).map(x=>({x,index:indexOf(x,true,l),steps:path(m,tree,l,x)})),floor=floorOf(l),cache=new Map<number,number>();
   void own;
-  return (p:V)=>{const key=cellKey(Math.round(p[0]*2),Math.round(p[1]*2),Math.round(p[2]*2)),hit=cache.get(key);if(hit!==undefined)return hit;
+  const keyOf=(p:V)=>cellKey(Math.round(p[0]*2),Math.round(p[1]*2),Math.round(p[2]*2));
+  // `prime`: values computed elsewhere (by workers, for points known in advance) go into the cache.
+  // Values on a 0.5 mm lattice, each taken at its lattice point: the same whichever point (or worker) asks first.
+  return Object.assign((p0:V)=>{const key=keyOf(p0),hit=cache.get(key);if(hit!==undefined)return hit;const p:V=[Math.round(p0[0]*2)/2,Math.round(p0[1]*2)/2,Math.round(p0[2]*2)/2];
    let d=self.distance(p);if(floor!==undefined)d=Math.min(d,p[2]-floor+5);
    for(const o of others){if(d<=0)break;d=Math.min(d,sweptDistance(p,o.steps,0,o.index,0));}
-   d-=s.gap;cache.set(key,d);return d;};};
+   d-=s.gap;cache.set(key,d);return d;},{prime:(points:Float64Array,values:Float64Array)=>{for(let i=0;i<values.length;i++){const key=keyOf([points[3*i],points[3*i+1],points[3*i+2]]);if(!cache.has(key))cache.set(key,values[i]);}}});};
+ // Later links avoid a made structure: struts and nodes as primitives of its link. The mesh is a little fuller than its
+ // struts (blends, node spheres): later links keep an extra millimetre.
+ const built:BuiltStructure[]=[];
+ const register=(b:BuiltStructure)=>{for(const [x,real] of [...b.struts.map(st=>[{kind:'capsule',a:st.a,b:st.b,r:st.ra+1,rb:st.rb+1},{kind:'capsule',a:st.a,b:st.b,r:st.ra,rb:st.rb}]),...b.joints.map(j=>[{kind:'sphere',center:j.center,r:j.r+1},{kind:'sphere',center:j.center,r:j.r}])] as [Prim,Prim][]){put(b.link,x);padded.add(x);realOf.get(b.link)!.push(real);}};
+ if(s.environment){s.environment({clearanceFor:l=>clearanceFor(l),add:register});return out;}
  for(const l of order){
   const list=anchors.get(l)!,entry:LinkStructure={link:l,anchors:list,checks:[]};out.push(entry);
   if(!list.some(a=>a.role==='load')||!list.some(a=>a.role==='support')){entry.error='Glied hat keine Haltepunkte zum Verbinden.';continue;}
@@ -169,11 +186,10 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   for(const c of driveCases){const own=Object.fromEntries([...c.forces].filter(([id])=>list.some(a=>a.id===id)));if(Object.keys(own).length)cases.push(own);
    if(c.rail&&carrierOf(c.rail.link)===l)for(const a of list.filter(x=>x.id.startsWith(`${c.rail!.element}/halter`)))cases.push({[a.id]:rotate(a.frame.rotation,[c.rail.tangential,c.rail.radial,0])});}
   try{
-   const result=await generateStructure({id:l,anchors:list,clearance:clearanceFor(l),cases,settings:{...s.structure,region:s.region}},(stage,f)=>progress?.(l,stage,f));
+   const pool=s.pool,soFar=[...built],clearance=clearanceFor(l);
+   const result=await generateStructure({id:l,anchors:list,clearance,cases,settings:{...s.structure,region:s.region},...(pool?{pool:(job:FieldJob,points:Float64Array)=>pool.field(l,soFar,job,points),prefetch:async(points:Float64Array)=>clearance.prime(points,await pool.clearance(l,soFar,points))}:{})},(stage,f)=>progress?.(l,stage,f));
    entry.result=result;entry.checks.push(...result.report.checks);
-   // Later links avoid this structure: struts and nodes as primitives of this link.
-   // The mesh is a little fuller than its struts (blends, node spheres): later links keep an extra millimetre.
-   for(const [x,real] of [...result.struts.map(st=>[{kind:'capsule',a:st.a,b:st.b,r:st.ra+1,rb:st.rb+1},{kind:'capsule',a:st.a,b:st.b,r:st.ra,rb:st.rb}]),...result.joints.map(j=>[{kind:'sphere',center:j.center,r:j.r+1},{kind:'sphere',center:j.center,r:j.r}])] as [Prim,Prim][]){put(l,x);padded.add(x);realOf.get(l)!.push(real);}
+   const b:BuiltStructure={link:l,struts:result.struts.map(st=>({a:st.a,b:st.b,ra:st.ra,rb:st.rb})),joints:result.joints};built.push(b);register(b);
   }catch(e){entry.error=e instanceof Error?e.message:String(e);entry.checks.push({id:'generate',state:'fail',message:entry.error});}
  }
  // ---- final check with everything in place: each surface against all other links over their motion ----

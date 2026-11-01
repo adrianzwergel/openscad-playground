@@ -57,13 +57,17 @@ export class PrimIndex{
  get size(){return this.prims.length;}
 }
 
+export type SceneData={blend:number;cell:number;solids:Prim[];hard:Prim[];holes:Prim[];pieces:Prim[];group:number[]};
 /** Solids blended smoothly, holes cut sharply. */
 export class Scene{
- readonly solids:PrimIndex;readonly holes:PrimIndex;readonly hard:PrimIndex;readonly pieces:PrimIndex;readonly blend:number;private group:number[]=[];private groups=0;
- constructor(blend:number,cell=10){this.blend=blend;this.hard=new PrimIndex(cell,cell);this.solids=new PrimIndex(cell,cell+blend);this.holes=new PrimIndex(cell,cell);this.pieces=new PrimIndex(cell,cell+blend);}
+ readonly solids:PrimIndex;readonly holes:PrimIndex;readonly hard:PrimIndex;readonly pieces:PrimIndex;readonly blend:number;private group:number[]=[];private groups=0;private readonly cellSize:number;
+ constructor(blend:number,cell=10){this.blend=blend;this.cellSize=cell;this.hard=new PrimIndex(cell,cell);this.solids=new PrimIndex(cell,cell+blend);this.holes=new PrimIndex(cell,cell);this.pieces=new PrimIndex(cell,cell+blend);}
  /** Round cones end to end (a tapered strut): joined sharply among themselves (a blend would bulge at every joint),
   * blended with everything else. Only the pieces near a point are evaluated. */
  chain(points:V[],radii:number[]){const g=this.groups++;for(let i=0;i+1<points.length;i++){this.pieces.add({kind:'capsule',a:points[i],b:points[i+1],r:radii[i],rb:radii[i+1]});this.group.push(g);}return this;}
+ /** Plain data for the same scene in another worker (`Scene.from`). */
+ describe():SceneData{return {blend:this.blend,cell:this.cellSize,solids:this.solids.prims,hard:this.hard.prims,holes:this.holes.prims,pieces:this.pieces.prims,group:this.group};}
+ static from(d:SceneData){const s=new Scene(d.blend,d.cell);d.solids.forEach(p=>s.solid(p));d.hard.forEach(p=>s.hardSolid(p));d.holes.forEach(p=>s.hole(p));d.pieces.forEach((p,i)=>{s.pieces.add(p);s.group.push(d.group[i]);});s.groups=Math.max(0,...d.group)+1;return s;}
  solid(s:Prim){this.solids.add(s);return this;}
  /** Joined without blending (features that must keep their exact outline). */
  hardSolid(s:Prim){this.hard.add(s);return this;}

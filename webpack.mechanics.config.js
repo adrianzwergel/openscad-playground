@@ -19,6 +19,8 @@ export default [
     output:{...base[1].output, filename:'mechanics-kinematics-worker.js'}},
   {...base[1], entry:'./src/mechanics/structure-worker.ts',
     output:{...base[1].output, filename:'mechanics-structure-worker.js'}},
+  {...base[1], entry:'./src/mechanics/field-worker.ts',
+    output:{...base[1].output, filename:'mechanics-field-worker.js'}},
   {...base[1], entry:'./src/mechanics/drive-worker.ts',
     output:{...base[1].output, filename:'mechanics-drive-worker.js'}},
   {...base[1], entry:'./src/mechanics/search-worker.ts',

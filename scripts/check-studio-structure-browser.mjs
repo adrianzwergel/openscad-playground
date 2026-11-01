@@ -21,8 +21,12 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // Step 7: structures.
  await open('Struktur je Glied');await p.waitForSelector('[data-generate-structures]');const t0=Date.now();await p.click('[data-generate-structures]');
  await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#structure-progress')?.dataset.state),{timeout:900000});
+ // DOC=file keeps the Studio document of this run (to study a failing link with diag.mjs).
+ if(process.env.DOC){await p.evaluate(()=>document.getElementById('save').click());await fs.writeFile(process.env.DOC,await p.evaluate(()=>localStorage.getItem('mechanics-studio')));
+  // The stored 3D models too (IndexedDB), as JSON with plain arrays.
+  await fs.writeFile(process.env.DOC+'.assets.json',await p.evaluate(()=>new Promise((res,rej)=>{const r=indexedDB.open('mechanics-studio-assets',1);r.onsuccess=()=>{const q=r.result.transaction('assets').objectStore('assets').getAll();q.onsuccess=()=>res(JSON.stringify(q.result,(k,v)=>v instanceof Float32Array?Array.from(v):v));q.onerror=()=>rej(q.error);};r.onerror=()=>rej(r.error);})));}
  const report=await p.$eval('#structure-progress',e=>e.textContent),rows=await p.$$eval('.structure-row',l=>l.map(x=>({link:x.dataset.link,state:x.dataset.state,text:x.textContent})));
- assert.match(report,/Fertig/,report);assert.ok(rows.length>=2&&rows.every(r=>r.state==='ok'),JSON.stringify(rows));
+ assert.match(report,/Fertig/,report+' '+JSON.stringify(rows.map(r=>r.text)));assert.ok(rows.length>=2&&rows.every(r=>r.state==='ok'),JSON.stringify(rows));
  // Strong and stiff enough under the design loads: no hint on utilisation or deflection.
  assert.ok(rows.every(r=>!/Größte (Auslastung|Verformung)/.test(r.text)),JSON.stringify(rows.map(r=>r.text)));
  assert.deepEqual(await p.$$eval('.steps li',l=>l.map(x=>x.dataset.state)),Array(7).fill('done'),'alle Schritte erledigt');

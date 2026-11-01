@@ -6,41 +6,70 @@ import {sub,cross,dot} from './vec.ts';
 
 export type Mesh={vertices:Float32Array;indices:Uint32Array};
 
-/** Isosurface d = 0 of `f` inside [min, max] with cell size `h`. */
-/** `activity`: a 1-Lipschitz field whose inside contains the surface of `f` (e.g. `f` before clipping). */
-export function surfaceNets(f:(p:V)=>number,min:V,max:V,h:number,block=8,activity:(p:V)=>number=f):Mesh{
+/** `cells`: active cells as i, j, k triples. */
+type Grid={o:V;n:number[];h:number;key:(i:number,j:number,k:number)=>number;cells:Int32Array;count:number};
+/** Integer keys to integer values in typed arrays (open addressing): millions of grid points without Map overhead. */
+class IntTable{
+ private keys:Float64Array;private vals:Int32Array;private mask:number;size=0;
+ constructor(expected:number){let c=1024;while(c<expected*2)c*=2;this.keys=new Float64Array(c).fill(-1);this.vals=new Int32Array(c);this.mask=c-1;}
+ private slot(k:number){let h=(Math.imul(k|0,0x9E3779B1)^Math.floor(k/4294967296))&this.mask;while(this.keys[h]!==-1&&this.keys[h]!==k)h=(h+1)&this.mask;return h;}
+ get(k:number){const h=this.slot(k);return this.keys[h]===-1?-1:this.vals[h];}
+ /** Stores `v` unless the key is there; returns the stored value. */
+ add(k:number,v:number){const h=this.slot(k);if(this.keys[h]!==-1)return this.vals[h];this.keys[h]=k;this.vals[h]=v;this.size++;return v;}
+}
+/** Cells of the blocks whose centre is within reach of the surface (`activity` is 1-Lipschitz). */
+function activeCells(f:((p:V)=>number)|undefined,min:V,max:V,h:number,block:number,activity:(p:V)=>number):Grid{
  const o:V=[min[0]-2*h,min[1]-2*h,min[2]-2*h],n=[0,1,2].map(i=>Math.ceil((max[i]-min[i])/h)+4),nb=n.map(x=>Math.ceil(x/block));
- const key=(i:number,j:number,k:number)=>i+n[0]*(j+n[1]*k);
- const values=new Map<number,number>(),point=(i:number,j:number,k:number):V=>[o[0]+i*h,o[1]+j*h,o[2]+k*h];
- const value=(i:number,j:number,k:number)=>{const q=key(i,j,k);let v=values.get(q);if(v===undefined){v=(i<=0||j<=0||k<=0||i>=n[0]||j>=n[1]||k>=n[2])?1:f(point(i,j,k));values.set(q,v);}return v;};
- // Active blocks: centre within reach of the surface (the field is 1-Lipschitz).
- const reach=block*h*Math.sqrt(3)/2+2*h,cells:number[][]=[];
+ const key=(i:number,j:number,k:number)=>i+n[0]*(j+n[1]*k),point=(i:number,j:number,k:number):V=>[o[0]+i*h,o[1]+j*h,o[2]+k*h];
+ const reach=block*h*Math.sqrt(3)/2+2*h;let cells=new Int32Array(3*4096),count=0;
  for(let bi=0;bi<nb[0];bi++)for(let bj=0;bj<nb[1];bj++)for(let bk=0;bk<nb[2];bk++){
-  const c=point((bi+.5)*block,(bj+.5)*block,(bk+.5)*block),a=activity(c);if(a>reach||activity!==f&&a<-reach&&f(c)<-reach)continue;
-  for(let i=bi*block;i<Math.min(n[0],(bi+1)*block);i++)for(let j=bj*block;j<Math.min(n[1],(bj+1)*block);j++)for(let k=bk*block;k<Math.min(n[2],(bk+1)*block);k++)cells.push([i,j,k]);
+  const c=point((bi+.5)*block,(bj+.5)*block,(bk+.5)*block),a=activity(c);if(a>reach||f&&activity!==f&&a<-reach&&f(c)<-reach)continue;
+  for(let i=bi*block;i<Math.min(n[0],(bi+1)*block);i++)for(let j=bj*block;j<Math.min(n[1],(bj+1)*block);j++)for(let k=bk*block;k<Math.min(n[2],(bk+1)*block);k++){
+   if(3*count+3>cells.length){const grown=new Int32Array(cells.length*2);grown.set(cells);cells=grown;}cells[3*count]=i;cells[3*count+1]=j;cells[3*count+2]=k;count++;}
  }
+ return {o,n,h,key,cells,count};
+}
+const corners=[[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]],edges=[[0,1],[2,3],[4,5],[6,7],[0,2],[1,3],[4,6],[5,7],[0,4],[1,5],[2,6],[3,7]];
+/** The mesh from the field's values at the grid points (outside the grid: positive). */
+function netsFrom(g:Grid,value:(i:number,j:number,k:number)=>number):Mesh{
+ const {o,h,key,cells,count}=g,v=new Float64Array(8);
  // One vertex per cell with a sign change: the mean of its edge crossings.
- const vertexOf=new Map<number,number>(),verts:number[]=[];
- const corners=[[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]],edges=[[0,1],[2,3],[4,5],[6,7],[0,2],[1,3],[4,6],[5,7],[0,4],[1,5],[2,6],[3,7]];
- for(const [i,j,k] of cells){
-  const v=corners.map(([a,b,c])=>value(i+a,j+b,k+c));let inside=0;for(const x of v)if(x<0)inside++;if(inside===0||inside===8)continue;
+ const vertexOf=new IntTable(count/4+1024),verts:number[]=[];
+ for(let q=0;q<count;q++){const i=cells[3*q],j=cells[3*q+1],k=cells[3*q+2];
+  let inside=0;for(let c=0;c<8;c++){const x=value(i+corners[c][0],j+corners[c][1],k+corners[c][2]);v[c]=x;if(x<0)inside++;}if(inside===0||inside===8)continue;
   let sx=0,sy=0,sz=0,count=0;
   for(const [a,b] of edges){const va=v[a],vb=v[b];if((va<0)===(vb<0))continue;const t=va/(va-vb),ca=corners[a],cb=corners[b];sx+=ca[0]+t*(cb[0]-ca[0]);sy+=ca[1]+t*(cb[1]-ca[1]);sz+=ca[2]+t*(cb[2]-ca[2]);count++;}
-  vertexOf.set(key(i,j,k),verts.length/3);verts.push(o[0]+(i+sx/count)*h,o[1]+(j+sy/count)*h,o[2]+(k+sz/count)*h);
+  vertexOf.add(key(i,j,k),verts.length/3);verts.push(o[0]+(i+sx/count)*h,o[1]+(j+sy/count)*h,o[2]+(k+sz/count)*h);
  }
  // A quad for every grid edge with a sign change, between the four cells around it.
  const tris:number[]=[];
- for(const [i,j,k] of cells){
-  if(!vertexOf.has(key(i,j,k)))continue;const v0=value(i,j,k);
+ for(let q=0;q<count;q++){const i=cells[3*q],j=cells[3*q+1],k=cells[3*q+2];
+  if(vertexOf.get(key(i,j,k))<0)continue;const v0=value(i,j,k);
   for(let axis=0;axis<3;axis++){
    const d=[0,0,0];d[axis]=1;const v1=value(i+d[0],j+d[1],k+d[2]);if((v0<0)===(v1<0))continue;
-   const u=(axis+1)%3,w=(axis+2)%3,c=(du:number,dw:number)=>{const x=[i,j,k];x[u]-=du;x[w]-=dw;return vertexOf.get(key(x[0],x[1],x[2]));};
+   const u=(axis+1)%3,w=(axis+2)%3,c=(du:number,dw:number)=>{const x=[i,j,k];x[u]-=du;x[w]-=dw;const v=vertexOf.get(key(x[0],x[1],x[2]));return v<0?undefined:v;};
    const a=c(0,0),b=c(1,0),cc=c(1,1),dd=c(0,1);if(a===undefined||b===undefined||cc===undefined||dd===undefined)continue;
    // Orientation: normals point from inside (negative) to outside.
    if(v0<0)tris.push(a,b,cc,a,cc,dd);else tris.push(a,cc,b,a,dd,cc);
   }
  }
  return {vertices:Float32Array.from(verts),indices:Uint32Array.from(tris)};
+}
+const outside=(g:Grid,i:number,j:number,k:number)=>i<=0||j<=0||k<=0||i>=g.n[0]||j>=g.n[1]||k>=g.n[2];
+/** Isosurface d = 0 of `f` inside [min, max] with cell size `h`. */
+/** `activity`: a 1-Lipschitz field whose inside contains the surface of `f` (e.g. `f` before clipping). */
+export function surfaceNets(f:(p:V)=>number,min:V,max:V,h:number,block=8,activity:(p:V)=>number=f):Mesh{
+ const g=activeCells(f,min,max,h,block,activity),values=new Map<number,number>();
+ return netsFrom(g,(i,j,k)=>{const q=g.key(i,j,k);let v=values.get(q);if(v===undefined){v=outside(g,i,j,k)?1:f([g.o[0]+i*h,g.o[1]+j*h,g.o[2]+k*h]);values.set(q,v);}return v;});
+}
+/** The same, with the field's values computed in one batch (e.g. spread over workers): `evaluate` gets the points as
+ * x, y, z triples and returns their values. */
+export async function surfaceNetsBatch(evaluate:(points:Float64Array)=>Promise<Float64Array>,min:V,max:V,h:number,block:number,activity:(p:V)=>number):Promise<Mesh>{
+ const g=activeCells(undefined,min,max,h,block,activity),index=new IntTable(g.count*2);let coords=new Float64Array(3*g.count*2),n=0;
+ for(let q=0;q<g.count;q++){const i=g.cells[3*q],j=g.cells[3*q+1],k=g.cells[3*q+2];for(const [a,b,c] of corners){const x=i+a,y=j+b,z=k+c;if(outside(g,x,y,z))continue;if(index.add(g.key(x,y,z),n)!==n)continue;
+  if(3*n+3>coords.length){const grown=new Float64Array(coords.length*2);grown.set(coords);coords=grown;}coords[3*n]=g.o[0]+x*h;coords[3*n+1]=g.o[1]+y*h;coords[3*n+2]=g.o[2]+z*h;n++;}}
+ const values=await evaluate(coords.slice(0,3*n));
+ return netsFrom(g,(i,j,k)=>{if(outside(g,i,j,k))return 1;const at=index.get(g.key(i,j,k));return at<0?1:values[at];});
 }
 /** Keeps the largest connected part; returns it with the volume share of what was dropped. */
 export function largestPart(m:Mesh){
