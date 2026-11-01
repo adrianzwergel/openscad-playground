@@ -1,9 +1,10 @@
 // Starting documents for the Studio's mechanism editor. Raw kinematics-1
 // documents: parameters may be expressions and are resolved on parsing.
-import type {Mechanism,JointRelation,Body} from './model.ts';
+import type {Mechanism,JointRelation,Body,Element} from './model.ts';
 import type {Frame,V} from './math.ts';
 import {identity,compose,inverse,axisAngle} from './math.ts';
-import {curve} from './curves.ts';
+import {curve,toPolar} from './curves.ts';
+import {conjugate} from './conjugate.ts';
 
 const at=(x:number,y:number,z:number,rotation:[number,number,number,number]=[0,0,0,1]):Frame=>({position:[x,y,z],rotation});
 
@@ -44,4 +45,30 @@ export function garageDoor():Mechanism{
   input:{kind:'coordinate',joint:'spindellager',coordinate:0},output:{kind:'coordinate',joint:'fuehrungA',coordinate:0},
   range:{from:0,to:-(fn.length-200-sA)/P.spindelSteigung*360,samples:30}};
 }
-export const templates={empty:{label:'Leerer Mechanismus',build:emptyMechanism},garage:{label:'Garagentor (Vorlage)',build:garageDoor}};
+
+/** A carriage runs on a straight–arc–straight guide; its pinion rolls on a rail along the guide. */
+export function pinionOnRail():Mechanism{
+ const m=2,zp=20,ra=m*zp/2,guide={kind:'path' as const,points:[[0,0,0],[0,200,0],[200,200,0]] as V[],closed:false,cornerRadius:120,axis:[0,0,1] as V};
+ const fn=curve(guide),s0=40,start=fn.frame(s0),centre=compose(start,{position:[0,ra,0],rotation:[0,0,0,1]});
+ return {format:'kinematics-1',parameters:[],patterns:[],
+  bodies:[{id:'ground',frame:identity(),ground:true},{id:'wagen',frame:start,display:{kind:'box',size:[40,10,30],offset:[0,-8,0]}},{id:'ritzel',frame:centre}],
+  joints:[{id:'schiene',joint:{kind:'path',curve:guide,roll:'locked'},a:{body:'ground',local:identity()},b:{body:'wagen',local:identity()}},
+   {id:'achse',joint:{kind:'revolute'},a:{body:'wagen',local:{position:[0,ra,0],rotation:[0,0,0,1]}},b:{body:'ritzel',local:identity()}}],
+  elements:[{id:'ritzel',source:{kind:'printed'},surfaces:[{id:'teeth',pitch:{kind:'circle',r:ra},profile:{kind:'involute',module:m,pressureAngle:20,backlash:.15},z:[-5,5],side:'external'}],interfaces:[{id:'bore',kind:'bore',diameter:5,z:[-5,5]}],envelope:{radius:ra+m,min:-5,max:5},mounts:[{interface:'bore',body:'ritzel',pose:identity()}],phase:0},
+   {id:'zahnstange',source:{kind:'printed'},surfaces:[{id:'teeth',pitch:guide,profile:{kind:'involute',module:m,pressureAngle:20,backlash:.15},z:[-6,6],side:'external'}],interfaces:[{id:'flange',kind:'flange',frame:identity()}],envelope:{radius:0,min:-6,max:6},mounts:[{interface:'flange',body:'ground',pose:identity()}],phase:0}],
+  contacts:[{id:'eingriff',kind:'roll',mode:'follower',a:{element:'ritzel',surface:'teeth'},b:{element:'zahnstange',surface:'teeth'},params:{offsetA:0,offsetB:0,side:1}}],
+  input:{kind:'coordinate',joint:'achse',coordinate:0},output:{kind:'coordinate',joint:'schiene',coordinate:0},range:{from:0,to:-1000,samples:41}};
+}
+/** Two rounded-triangle wheels at 1:1; B is generated from A, the ratio varies three times per turn. */
+export function noncircularPair():Mechanism{
+ const tri=curve({kind:'polyline',points:[[40,0],[-20,34.641016],[-20,-34.641016]],closed:true,cornerRadius:14}),pitchA=toPolar(tri,720),fnA=curve(pitchA),c=conjugate(fnA,{p:1,q:1},720);
+ const teethA=Math.round(fnA.length/(Math.PI*1.5)/3)*3,module=fnA.length/(Math.PI*teethA),flipped:Frame={position:[c.centerDistance,0,0],rotation:axisAngle([0,0,1],180) as Frame['rotation']};
+ const wheel=(id:string,body:string,pitch:Element['surfaces'][number]['pitch'],profile:Element['surfaces'][number]['profile']):Element=>({id,source:{kind:'printed'},surfaces:[{id:'teeth',pitch,profile,z:[-4,4],side:'external'}],interfaces:[{id:'bore',kind:'bore',diameter:5,z:[-4,4]}],envelope:{radius:60,min:-4,max:4},mounts:[{interface:'bore',body,pose:identity()}],phase:0});
+ return {format:'kinematics-1',parameters:[],patterns:[],
+  bodies:[{id:'ground',frame:identity(),ground:true},{id:'A',frame:identity(),shaft:{diameter:5,start:-15,end:15}},{id:'B',frame:flipped,shaft:{diameter:5,start:-15,end:15}}],
+  joints:[{id:'lagerA',joint:{kind:'revolute'},a:{body:'ground',local:identity()},b:{body:'A',local:identity()}},{id:'lagerB',joint:{kind:'revolute'},a:{body:'ground',local:flipped},b:{body:'B',local:identity()}}],
+  elements:[wheel('radA','A',pitchA,{kind:'involute',module,pressureAngle:20,backlash:.15}),wheel('radB','B',c.mate,{kind:'generated',from:{element:'radA',surface:'teeth'}})],
+  contacts:[{id:'abrollen',kind:'roll',mode:'fixed-axes',a:{element:'radA',surface:'teeth'},b:{element:'radB',surface:'teeth'},params:{offsetA:0,offsetB:0,distance:c.centerDistance}}],
+  input:{kind:'coordinate',joint:'lagerA',coordinate:0},output:{kind:'coordinate',joint:'lagerB',coordinate:0},range:{from:0,to:360,samples:73}};
+}
+export const templates={empty:{label:'Leerer Mechanismus',build:emptyMechanism},garage:{label:'Garagentor (Vorlage)',build:garageDoor},rail:{label:'Ritzel auf gebogener Zahnstange (Vorlage)',build:pinionOnRail},noncircular:{label:'Unrundes Zahnradpaar (Vorlage)',build:noncircularPair}};

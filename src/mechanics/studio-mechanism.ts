@@ -9,10 +9,13 @@ import {jointDofs} from './kinematics/model';
 import type {Frame,V} from './kinematics/math';
 import {compose,inverse,identity,rotate,add} from './kinematics/math';
 import {templates} from './kinematics/templates';
+import {partMesh} from './kinematics/generate/part';
+import {stl} from './kinematics/generate/mesh';
+import type {Element,Contact} from './kinematics/model';
 import {KinematicsView} from './kinematics-view';
 import type {MotionSolution} from './kinematics-view';
 
-type Item='mechanism'|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`;
+type Item='mechanism'|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
 export type EditorHost={doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
@@ -72,6 +75,8 @@ export class MechanismEditor{
    sub('  Parameter','parameters');sub('  Ein-/Ausgang, Bereich','io');
    for(const b of m.mechanism.bodies)if(!b.ground)sub(`  ▭ ${b.id}`,`body:${b.id}`);
    for(const j of m.mechanism.joints)sub(`  ⟳ ${j.id} (${j.joint.kind})`,`joint:${j.id}`);
+   for(const e of m.mechanism.elements)sub(`  ◉ ${e.id}${e.source.kind==='library'?' (Kaufteil)':''}`,`element:${e.id}`);
+   for(const c of m.mechanism.contacts)sub(`  ⚙ ${c.id} (${c.mode==='follower'?'Läufer':c.kind})`,`contact:${c.id}`);
    m.mechanism.patterns.forEach((p,i)=>sub(`  ⟷ Muster ${i+1} (${p.kind==='mirror'?'Spiegelung':'Reihe'})`,`pattern:${i}`));
   }
   const add=el('div',{className:'mechanism-add'});
@@ -98,9 +103,11 @@ export class MechanismEditor{
    root.append(text('Name',entry.label,v=>{if(v)this.host.change(()=>{entry.label=v;},'Mechanismus umbenannt');}),
     el('p',{className:'muted',textContent:`${m.bodies.length} Körper · ${m.joints.length} Gelenke · ${m.contacts.length} Kontakte · ${m.patterns.length} Muster. Links Teile wählen; Pfadpunkte im 3D-Fenster ziehen.`}));
    const addBody=el('button',{textContent:'+ Körper'});addBody.onclick=()=>{const id=`koerper${m.bodies.length}`;edit('Körper hinzugefügt',x=>{x.bodies.push({id,frame:identity(),display:{kind:'box',size:[40,40,40]}});x.joints.push({id:`gelenk-${id}`,joint:{kind:'fixed'},a:{body:'ground',local:identity()},b:{body:id,local:identity()}});});this.item=`body:${id}`;};
+   const addGear=el('button',{textContent:'+ Zahnrad'});addGear.onclick=()=>{const body=m.bodies.find(b=>!b.ground)?.id;if(!body){this.host.status('Zuerst einen Körper anlegen.');return;}const id=`rad${m.elements.length+1}`;edit('Zahnrad hinzugefügt',x=>{x.elements.push(spur(id,body,2,20,10));});this.item=`element:${id}`;};
+   const addContact=el('button',{textContent:'+ Kontakt'});addContact.onclick=()=>{const es=m.elements.filter(e=>e.surfaces.length);if(es.length<2){this.host.status('Ein Kontakt braucht zwei Elemente mit Wirkfläche.');return;}const id=`kontakt${m.contacts.length+1}`;edit('Kontakt hinzugefügt',x=>{x.contacts.push({id,kind:'roll',mode:'fixed-axes',a:{element:es[0].id,surface:es[0].surfaces[0].id},b:{element:es[1].id,surface:es[1].surfaces[0].id},params:{offsetA:0,offsetB:0}});});this.item=`contact:${id}`;};
    const addPattern=el('button',{textContent:'+ Muster'});addPattern.onclick=()=>{edit('Muster hinzugefügt',x=>{x.patterns.push({kind:'mirror',plane:identity(),source:[]});});this.item=`pattern:${m.patterns.length}`;};
    const del=el('button',{textContent:'Mechanismus löschen',className:'danger'});del.onclick=()=>{const id=this.activeId;this.exit();this.host.change(()=>{const d=this.host.doc();d.mechanisms=(d.mechanisms??[]).filter(x=>x.id!==id);},'Mechanismus gelöscht');this.host.leave();};
-   root.append(el('div',{className:'button-row'},addBody,addPattern),back,del);return;
+   root.append(el('div',{className:'button-row'},addBody,addGear,addContact,addPattern),back,del);return;
   }
   if(this.item==='parameters'){
    root.append(el('p',{className:'muted',textContent:'Zahl oder Ausdruck aus früheren Parametern, z. B. torHoehe/3. Werte im Dokument können Ausdrücke als {"expr": …} tragen.'}));
@@ -146,6 +153,37 @@ export class MechanismEditor{
    const addJoint=el('button',{textContent:'+ Gelenk'});addJoint.onclick=()=>{const nid=`gelenk${m.joints.length+1}`;edit('Gelenk hinzugefügt',x=>{x.joints.push({id:nid,joint:{kind:'revolute'},a:{body:'ground',local:identity()},b:{body:x.bodies.find(b=>!b.ground)?.id??'ground',local:identity()}});});this.item=`joint:${nid}`;};
    root.append(addJoint);return;
   }
+  if(this.item.startsWith('element:')){
+   const id=this.item.slice(8),e=m.elements.find(x=>x.id===id);if(!e){this.item='mechanism';return this.renderProperties(root);}
+   const write=(fn:(e:Element)=>void)=>edit('Element geändert',x=>fn(x.elements.find(y=>y.id===id)!));
+   const s=e.surfaces[0],p=s?.profile;
+   root.append(el('h3',{textContent:`◉ ${id}`}),el('p',{className:'muted',textContent:e.source.kind==='library'?`Kaufteil ${e.source.library} ${e.source.part} – wird nicht gedruckt.`:'Druckteil'}));
+   if(s){
+    root.append(el('p',{className:'muted',textContent:`Wälzkurve: ${({circle:'Kreis',line:'Gerade',polyline:'Polygon',polar:'unrund (polar)',path:'Pfad'} as Record<string,string>)[s.pitch.kind]} · Profil: ${({involute:'Evolvente',library:'Bibliothek',generated:'erzeugt aus '+(p?.kind==='generated'?p.from.element:''),belt:'Riemen',helical:'Schraube',friction:'Reibung'} as Record<string,string>)[p!.kind]}`}));
+    if(s.pitch.kind==='circle'&&p?.kind==='involute'){const z=Math.round(2*s.pitch.r/p.module);
+     root.append(number('Zähnezahl',z,n=>write(x=>{const sf=x.surfaces[0];if(sf.pitch.kind==='circle'&&sf.profile.kind==='involute'){sf.pitch.r=sf.profile.module*Math.max(3,Math.round(n))/2;x.envelope.radius=sf.pitch.r+sf.profile.module;}}),'1'),
+      number('Modul [mm]',p.module,n=>write(x=>{const sf=x.surfaces[0];if(sf.pitch.kind==='circle'&&sf.profile.kind==='involute'&&n>0){const zz=Math.round(2*sf.pitch.r/sf.profile.module);sf.profile.module=n;sf.pitch.r=n*zz/2;x.envelope.radius=sf.pitch.r+n;}}),'0.1'));}
+    root.append(number('Breite [mm]',s.z[1]-s.z[0],n=>write(x=>{if(n>0){const mid=(x.surfaces[0].z[0]+x.surfaces[0].z[1])/2;x.surfaces[0].z=[mid-n/2,mid+n/2];x.envelope.min=mid-n/2;x.envelope.max=mid+n/2;}})));
+   }
+   root.append(select('Sitzt auf Körper',e.mounts[0].body,bodies,v=>write(x=>{x.mounts[0].body=v;})),...frameFields('Lage auf dem Körper',e.mounts[0].pose,f=>write(x=>{x.mounts[0].pose=f;})));
+   if(e.source.kind==='printed'){const make=el('button',{textContent:'STL erzeugen'});make.dataset.generateStl=id;const note=el('p',{className:'muted'});
+    make.onclick=()=>{note.textContent='Wird erzeugt …';make.disabled=true;setTimeout(()=>{try{const part=partMesh(this.mechanism()!,id),url=URL.createObjectURL(new Blob([stl(part.mesh,part.name)],{type:'model/stl'})),a=document.createElement('a');a.href=url;a.download=`${entry.label}-${id}.stl`.replace(/\s+/g,'-');a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);note.textContent=`${part.method} · ${part.mesh.triangles.length} Dreiecke · heruntergeladen.`;note.dataset.state='ok';}catch(err){note.textContent='Nicht erzeugbar: '+(err instanceof Error?err.message:err);note.dataset.state='error';}make.disabled=false;},20);};
+    root.append(heading('Fertigung'),make,note);}
+   root.append(remove('Element entfernen',x=>{x.elements=x.elements.filter(y=>y.id!==id);x.contacts=x.contacts.filter(c=>c.a.element!==id&&c.b.element!==id);}));return;
+  }
+  if(this.item.startsWith('contact:')){
+   const id=this.item.slice(8),c=m.contacts.find(x=>x.id===id);if(!c){this.item='mechanism';return this.renderProperties(root);}
+   const write=(fn:(c:Contact)=>void)=>edit('Kontakt geändert',x=>fn(x.contacts.find(y=>y.id===id)!));
+   const surfaces=m.elements.flatMap(e=>e.surfaces.map(s=>[`${e.id}/${s.id}`,`${e.id} · ${s.id}`] as [string,string]));
+   root.append(el('h3',{textContent:`⚙ ${id}`}),select('Art',c.kind,[['roll','Abrollen (Zahnrad, Rolle)'],['belt','Riemen'],['helical','Schnecke']],v=>write(x=>{x.kind=v as Contact['kind'];})),
+    select('Modus',c.mode,[['fixed-axes','feste Achsen'],['follower','Läufer auf Kurve (Ritzel auf Zahnstange)']],v=>write(x=>{x.mode=v as Contact['mode'];})),
+    select('Seite A (Rad)',`${c.a.element}/${c.a.surface}`,surfaces,v=>write(x=>{const [element,surface]=v.split('/');x.a={element,surface};})),
+    select('Seite B',`${c.b.element}/${c.b.surface}`,surfaces,v=>write(x=>{const [element,surface]=v.split('/');x.b={element,surface};})));
+   if(c.mode==='follower')root.append(select('Ritzel liegt',String(c.params.side??1),[['1','auf der linken Seite der Kurve'],['-1','auf der rechten Seite der Kurve']],v=>write(x=>{x.params.side=Number(v) as 1|-1;})));
+   root.append(number('Achsabstand [mm] (leer = aus Radien)',c.params.distance??0,n=>write(x=>{if(n>0)x.params.distance=n;else delete x.params.distance;})),
+    el('p',{className:'muted',textContent:'Ob die Flächen kämmen, folgt aus dem Bezugsprofil (gleicher Modul und Eingriffswinkel) oder daraus, dass eine aus der anderen erzeugt ist.'}),
+    remove('Kontakt entfernen',x=>{x.contacts=x.contacts.filter(y=>y.id!==id);}));return;
+  }
   if(this.item.startsWith('pattern:')){
    const i=Number(this.item.slice(8)),p=m.patterns[i];if(!p){this.item='mechanism';return this.renderProperties(root);}
    const write=(fn:(p:Pattern)=>void)=>edit('Muster geändert',x=>fn(x.patterns[i]));
@@ -164,6 +202,9 @@ export class MechanismEditor{
    root.append(heading('Quelle'),box,remove('Muster entfernen',x=>{x.patterns.splice(i,1);}));
   }
  }
+}
+function spur(id:string,body:string,module:number,teeth:number,width:number):Element{
+ const r=module*teeth/2;return {id,source:{kind:'printed'},surfaces:[{id:'teeth',pitch:{kind:'circle',r},profile:{kind:'involute',module,pressureAngle:20,backlash:.15},z:[-width/2,width/2],side:'external'}],interfaces:[{id:'bore',kind:'bore',diameter:5,z:[-width/2,width/2]}],envelope:{radius:r+module,min:-width/2,max:width/2},mounts:[{interface:'bore',body,pose:identity()}],phase:0};
 }
 function defaultJoint(kind:Joint['kind']):Joint{
  switch(kind){

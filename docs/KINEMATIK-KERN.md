@@ -743,6 +743,21 @@ Alle Phasen sind umgesetzt; die Abnahmetests liegen in `scripts/kinematics/`.
 | 5 | `4e5f63e` | `check-mates` |
 | 6, 7 | `ae7430c` | alle bisherigen Node- und Browser-Tests, `check-search-seeds`, `check-noncircular` |
 
+**Studio (nach Phase 7):**
+
+- *Bewegung* (`30c476d`): Leiste unter der 3D-Ansicht. Löst die angesehene Lösung,
+  die übernommene Baugruppe oder den gewählten Mechanismus über seinen Bereich
+  (Worker `mechanics-kinematics-worker.js`), bewegt die Kinematikansicht mit Regler
+  und Abspielen, zeigt Ausgang über Eingang und die Kennzahlen.
+- *Mechanismus-Editor* (`90dd334`): Studio-Projekte tragen `mechanisms`
+  (kinematics-1, roh mit Ausdrücken). Explorer und Eigenschaften für Parameter,
+  Körper, Gelenke mit ziehbaren Pfadpunkten, Muster, Ein-/Ausgang und Bereich;
+  Vorlagen leer und Garagentor. Eine Vorschau, die nicht aufgeht, sagt das.
+- *Teile erzeugen* (dieser Stand): Elemente und Kontakte im Editor, Vorlagen
+  „Ritzel auf gebogener Zahnstange“ und „Unrundes Zahnradpaar“, „STL erzeugen“ über
+  `generate/part.ts` für Stirnräder, gebogene Zahnstangen, unrunde Räder und
+  erzeugte Gegenstücke (auch zu LEGO-Rädern). Kaufteile werden nicht erzeugt.
+
 **Abweichungen von diesem Entwurf, die beim Bauen entschieden wurden:**
 
 - *Phase 6, Umfang:* Studio und Werkbank behalten das Elementgraph-Dokument als
