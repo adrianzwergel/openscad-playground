@@ -65,10 +65,13 @@ Abweichungen vom Plan unten (nach Versuchen):
 - **Druck (B4):** Jedes Teil bekommt die Aufbaurichtung mit dem wenigsten Überhang
   (> 45°) abzüglich der halben Auflagefläche (`print.ts`), die STL liegt so auf dem
   Bett. Wandstärke: von Oberflächenpunkten entlang fünf Strahlen ins Material; unter
-  1,2 mm wird gemeldet (Stellen, an denen eine Strebe eine Sperrzone streift).
+  1,2 mm wird gemeldet. Beim Beschneiden an Sperrzonen bleibt Material nur, wo Tiefe und
+  Abstand zur Schnittfläche zusammen 1,2 mm erreichen (keine dünnen Häute); die
+  Einführzonen der Lager werden ausgeschnitten (Platten und Verrundungen ragten hinein).
 - **Gehäuse (B6, `shell.ts`):** Platine aus einem Katalog (Arduino Uno R3), Boden und
-  Wände als Platten, Abstandshalter auf dem Lochbild, Buchsen nach oben offen und vom
-  Deckel verschlossen, Schlitze über den Stiftleisten, Deckelschrauben in Domen außen.
+  Wände als Platten, Einpressmuttern M3 in Domen auf dem Lochbild, Buchsen nach oben offen
+  und vom Deckel verschlossen, Schlitze über den Stiftleisten; der Deckel rastet mit zwei
+  Schnapphaken außen an den Stirnwänden in Fenster ein (1,3 % Dehnung).
   Der Hutschienenclip ist ein eigenes Teil (fester Haken, freigeschnittene Rastzunge mit
   Einführschräge und Lasche, 0,63 % Dehnung beim Aufrasten), von innen verschraubt über
   dem offenen Kanal der Schiene – so drucken alle drei Teile flach ohne Stützen. Im
@@ -86,9 +89,6 @@ Noch offen:
   die Zeiten gesenkt, aber Netzerzeugung und das Abstandsfeld gegen die bewegten
   Nachbarn laufen auf einem Kern. Für unter 30 s müssen beide auf Worker verteilt
   werden (die Umgebung eines Glieds muss dafür in jedem Worker aufbaubar sein).
-- Dünne Häute, wo eine Strebe eine Sperrzone streift, werden gemeldet, nicht entfernt.
-- Das Gehäuse ist verschraubt; die Features Schnapphaken (mit Fenster und Dehnung) und
-  M3-Einpressmutter stehen im Kern bereit, nutzen es aber noch nicht.
 
 Tests: `scripts/structure/check-sdf.mjs`, `check-features.mjs`, `check-frame.mjs`, `check-generate.mjs`,
 `check-bearings.mjs`, `check-loads.mjs`, `check-links.mjs [robot|cnc|sled]` (mit `OUT=…`

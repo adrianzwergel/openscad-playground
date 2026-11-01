@@ -229,7 +229,7 @@ export class MechanismEditor{
    const z=new JSZip();for(const p of data.parts)z.file(`${board}-${p.id}.stl`,p.stl);
    z.file('hinweise.txt',[`${data.board}: Gehäuse für eine 35-mm-Hutschiene (EN 60715).`,...data.parts.map((p:{id:string;mass:number;closed:boolean;print:{overhang:number}})=>`${p.id}: ${p.mass.toFixed(0)} g PLA, ${p.closed?'geschlossenes Netz':'Netz offen!'}, liegt in Druckrichtung (${(p.print.overhang*100).toFixed(0)} % Überhang)`),
     `Rastzunge: ${data.latch.length} mm lang, ${data.latch.thickness} mm dick, beim Aufrasten ${data.latch.travel.toFixed(1)} mm ausgelenkt, ${(data.latch.strain*100).toFixed(2)} % Dehnung.`,
-    'Montage: Platine mit 4 Schrauben M3×6 auf die Abstandshalter, Hutschienenclip mit 4 Schrauben M3×6 von innen durch den Boden, Deckel mit 4 Schrauben M3×10 in die Eckdome. Clip mit dem festen Haken zuerst einhängen, dann aufdrücken; zum Lösen an der Lasche ziehen.'].join('\n'));
+    'Montage: 4 Einpressmuttern M3 (Ø4 × 5,7 mm) mit dem Lötkolben in die Dome setzen, Platine mit 4 Schrauben M3×6 darauf; Hutschienenclip mit 4 Schrauben M3×6 von innen durch den Boden; Deckel aufdrücken, bis beide Schnapphaken an den Stirnseiten einrasten (zum Öffnen die Haken nach außen ziehen). Clip mit dem festen Haken zuerst einhängen, dann aufdrücken; zum Lösen an der Lasche ziehen.'].join('\n'));
    this.download(await z.generateAsync({type:'blob'}),`gehaeuse-${board}.zip`);this.host.status(`Gehäuse für ${data.board} erzeugt: ${data.parts.map((p:{id:string;mass:number})=>`${p.id} ${p.mass.toFixed(0)} g`).join(', ')}.`);};
   w.postMessage({kind:'shell',board});
  }

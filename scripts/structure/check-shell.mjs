@@ -1,10 +1,12 @@
 // Teil B6, shell mode: housing for an Arduino Uno on a 35 mm top-hat rail, without any mechanism. All parts closed;
-// the board and its parts have room; standoffs carry it at its hole pattern with pilot holes; connector openings go
+// the board and its parts have room; heat-set insert bosses carry it at its hole pattern; the lid snaps in with two
+// hooks (strain, room to bend, lip in its window); connector openings go
 // through the wall and the lid plugs them above; header slots are open; lid and base do not overlap; the rail fits
 // between the clip's hooks, both reach under its flanges, and snapping on strains the tongue little enough for PLA.
 // OUT=dir writes the parts as STL (each in its print direction) and a picture.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
 import {generateShell,railField} from '../../src/structure/shell.ts';
+import {rotate} from '../../src/structure/vec.ts';
 import {soup,stlBinary} from '../../src/structure/mesh.ts';
 import {printOrientation,orientForPrint} from '../../src/structure/print.ts';
 import {render} from './render.mjs';
@@ -18,8 +20,13 @@ const solid=(f,p,what)=>assert.ok(f(p)<0,`${what} Material bei ${p.map(n=>n.toFi
 // Board and parts: the volume above the standoffs up to the tallest part is free in both parts.
 for(let x=.5;x<L;x+=3)for(let y=.5;y<W;y+=3){if(board.holes.some(([hx,hy])=>Math.hypot(x-hx,y-hy)<3.5))continue;
  for(const z of [l.boardBottom+.1,l.boardTop,l.boardTop+board.height/2,l.boardTop+board.height]){empty(base,[x,y,z],'Platine (Unterteil)');empty(lid,[x,y,z],'Platine (Deckel)');}}
-// Standoffs under every hole, with a pilot hole for the screw.
-for(const [x,y] of board.holes){solid(base,[x+2.4,y,l.boardBottom-.5],'Abstandshalter');empty(base,[x,y,l.boardBottom-1],'Schraubloch');}
+// Heat-set insert bosses under every hole: hole Ø4 × 5.7 open at the board, wall and floor around it.
+for(const {at:[x,y],feature:f} of l.inserts){solid(base,[x+f.outer/2-.6,y,l.boardBottom-.5],'Einpressdom');for(const z of [.5,3,f.depth-.3])empty(base,[x+f.hole/2-.15,y,l.boardBottom-z],'Aufnahme der Einpressmutter');
+ solid(base,[x+f.hole/2+.4,y,l.boardBottom-3],'Wand um die Einpressmutter');solid(base,[x,y,l.boardBottom-f.depth-1],'Boden unter der Einpressmutter');}
+// Snap hooks: little strain, room behind them to bend in, the lip in its window of the wall (no overlap, checked below).
+for(const h of l.hooks){assert.ok(h.strain<=.02,`Schnapphaken dehnt ${(h.strain*100).toFixed(2)} %`);const lip=rotate(h.frame.rotation,[1,0,0])[0],[hx,hy,hz]=h.frame.position,t=h.feature.thickness;
+ for(const z of [hz-2,hz-6,hz-h.feature.length+2])for(const dy of [-h.feature.width/2+.5,0,h.feature.width/2-.5]){const back=[hx-lip*(t+h.feature.lip+.3),hy+dy,z];empty(lid,back,'Platz hinter dem Haken');empty(base,back,'Platz hinter dem Haken');}
+ solid(lid,[hx+lip*.4,hy,hz-h.feature.length+1.4],'Rastnase');empty(base,[hx+lip*.4,hy,hz-h.feature.length+1.4],'Fenster für die Rastnase');solid(base,[hx+lip*.4,hy+h.feature.width/2+1.5,hz-h.feature.length+1.4],'Wand neben dem Fenster');}
 // Openings through the wall at connector height, plugged by the lid above the connector.
 for(const o of board.openings){const wall=o.side==='-x'?[-s.clearance-s.wall/2,o.along]:o.side==='+x'?[L+s.clearance+s.wall/2,o.along]:o.side==='-y'?[o.along,-s.clearance-s.wall/2]:[o.along,W+s.clearance+s.wall/2];
  for(const z of [l.boardTop+.5,l.boardTop+o.height/2,l.boardTop+o.height-.3])empty(base,[wall[0],wall[1],z],o.label);
@@ -27,7 +34,7 @@ for(const o of board.openings){const wall=o.side==='-x'?[-s.clearance-s.wall/2,o
 // Header slots through the lid.
 for(const h of board.headers)for(let x=h.from[0];x<=h.to[0];x+=5)empty(lid,[x,h.from[1],l.wallTop+s.lid/2],'Steckerleiste');
 // Lid and base do not overlap anywhere around the joint.
-for(let x=l.inner.min[0]-6;x<=l.inner.max[0]+6;x+=.5)for(let y=l.inner.min[1]-6;y<=l.inner.max[1]+6;y+=.5)for(let z=l.wallTop-s.lip-.5;z<=l.wallTop+.5;z+=.5)
+for(let x=l.inner.min[0]-6;x<=l.inner.max[0]+6;x+=.5)for(let y=l.inner.min[1]-6;y<=l.inner.max[1]+6;y+=.5)for(let z=l.wallTop-Math.max(s.lip,...l.hooks.map(h=>h.feature.length))-.5;z<=l.wallTop+.5;z+=.5)
  assert.ok(!(base([x,y,z])<-.05&&lid([x,y,z])<-.05),`Deckel und Unterteil überschneiden sich bei ${[x,y,z]}`);
 // Rail clip (a part of its own under the floor): the rail fits between its hooks with 0.2 mm, both hooks reach under
 // the flanges, the tongue is cut free, the screws go through floor and clip over the rail's open channel, clip and
