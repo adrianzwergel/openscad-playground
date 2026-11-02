@@ -15,6 +15,7 @@ import {StudioHistory,importStudio,serializeStudio,parseStudio,adoptSolution} fr
 import type {StudioDocument} from './studio-model';
 import {MotionPanel} from './studio-motion';
 import {MechanismEditor} from './studio-mechanism';
+import type {GripOptions} from './studio-mechanism';
 const fresh:StudioDocument={version:1,assemblies:[{id:'main',graph:spaceExample()}],routes:[{id:'route-1',assembly:'main',source:'input',target:'output'}]};
 let doc=fresh,loadError='';try{const saved=localStorage.getItem('mechanics-studio');if(saved)doc=importStudio(saved);}catch(e){loadError=`Gespeichertes Projekt konnte nicht geladen werden: ${e}. Speicher wurde nicht verändert.`;}
 const history=new StudioHistory();let dragBefore:StudioDocument|undefined;
@@ -30,8 +31,15 @@ const motion=new MotionPanel(()=>{if(mech.active)return mech.motionSource();cons
  on=>{detail.group.visible=!on;actualOutput.visible=!on;if(on)preview.visible=false;mech.view.group.visible=!on&&mech.active;},text=>{status.textContent=text;});
 
 // Mechanism mode: a kinematics-1 document replaces the gear assembly in view, explorer and properties.
-const mech=new MechanismEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>document.getElementById('fit')!.click()});
+const mech=new MechanismEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>document.getElementById('fit')!.click(),grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.motor)transform.detach();},dragging:()=>transform.dragging});
 const mechRoot=new THREE.Group();scene.add(mechRoot);mechRoot.add(mech.view.group,mech.handles,motion.view.group);
+// The gizmo on a mechanism handle: mode, steps (Alt held: none) and axes as the handle asks.
+let steps:{step:number;angle:number}={step:0,angle:0},free=false;
+function snaps(){transform.setTranslationSnap(!free&&steps.step?steps.step:null);transform.setRotationSnap(!free&&steps.angle?steps.angle*Math.PI/180:null);}
+function grip(o:THREE.Object3D,options:GripOptions){setMode(options.mode);transform.setSpace(options.space);steps={step:options.step,angle:options.angle};snaps();if(transform.object!==o)transform.attach(o);}
+window.addEventListener('keydown',e=>{if(e.key==='Alt'&&!free){free=true;snaps();e.preventDefault();}});window.addEventListener('keyup',e=>{if(e.key==='Alt'){free=false;snaps();}});window.addEventListener('blur',()=>{free=false;snaps();});
+// Test and script entry: screen position (page pixels) of a point in mechanism coordinates.
+(window as unknown as {studioScreen:(p:[number,number,number])=>[number,number]}).studioScreen=p=>{mechRoot.updateMatrixWorld(true);const v=mechRoot.localToWorld(new THREE.Vector3(...p)).project(camera),r=renderer.domElement.getBoundingClientRect();return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];};
 // Test and script entry: pick a model part by name at a point in model coordinates.
 window.addEventListener('studio-pick',e=>{const d=(e as CustomEvent).detail;if(!mech.pickByName(d.part,d.local))status.textContent='Teil nicht gefunden: '+d.part;});
 const detail=new StudioDetailPreview((state,message)=>{if(state==='empty')clear(actualOutput);const el=document.getElementById('detail-status')!;el.dataset.state=state;el.textContent=message;(document.getElementById('detail-retry') as HTMLButtonElement).disabled=state==='empty'||state==='loading';});scene.add(detail.group);
@@ -51,18 +59,18 @@ function draw(){const selected=list.value;transform.detach();detail.clear();clea
  document.getElementById('view-hint')!.textContent=mech.active?'Teil anklicken · linke Maus dreht · rechte Maus verschiebt · Mausrad zoomt':'Anschluss anklicken · Raum an Ecke wählen · Rechtsklick auf Verbindung';
  // Models and mechanisms are z-up; the y-up workspace shows them turned upright.
  mechRoot.rotation.x=mech.active?-Math.PI/2:0;mechRoot.updateMatrixWorld(true);if(mech.active){detail.clear();mech.refresh();renderTree();mech.renderProperties();syncHistory();return;}renderTree();select(objects.find(o=>o.name===selected)??objects[0]);if(assembly().adopted)showPreview(graph());renderCatalog();ratio.value=String(route().ratio??1);document.getElementById('ratio-label')!.textContent=g.output.motion==='translation'?'Vorschub [mm / Eingangsumdrehung]':'Soll-Untersetzung';syncHistory();document.getElementById('route-label')!.textContent=`${route().id}: Eingang → Ausgang`;document.getElementById('assembly-state')!.textContent=assembly().adopted?'Geprüfte Baugruppe übernommen':'Entwurf · noch nicht übernommen';}
-function select(o:THREE.Object3D){list.value=o.name;transform.setMode('translate');if(o.visible)transform.attach(o);else transform.detach();renderTree();renderProperties(o);setMode('translate');}
+function select(o:THREE.Object3D){list.value=o.name;transform.setMode('translate');transform.setSpace('world');steps={step:0,angle:0};snaps();if(o.visible)transform.attach(o);else transform.detach();renderTree();renderProperties(o);setMode('translate');}
 function syncHistory(){(document.getElementById('undo') as HTMLButtonElement).disabled=!history.canUndo;(document.getElementById('redo') as HTMLButtonElement).disabled=!history.canRedo;}
 function change(edit:()=>void,message:string){const before=structuredClone(doc);try{invalidate();edit();doc=parseStudio(doc);history.record(before,doc);draw();status.textContent=message;}catch(e){doc=before;draw();status.textContent=String(e);}}
 transform.addEventListener('mouseDown',()=>{dragBefore=structuredClone(doc);invalidate();});
 transform.addEventListener('objectChange',()=>{const o=transform.object;if(!o||!dragBefore)return;if(mech.active){mech.onDrag(o);return;}assembly().adopted=false;const g=graph();const frame={position:o.position.toArray() as [number,number,number],rotation:o.quaternion.toArray() as [number,number,number,number]};if(o.name==='input'||o.name==='output')g[o.name].target=frame;else{const r=[g.environment?.bounds,...(g.environment?.obstacles??[])].find(r=>r?.id===o.userData.regionId);if(r){r.frame=frame;const base=dragBefore.assemblies.find(a=>a.id===assembly().id)!.graph;const old=[base.environment?.bounds,...(base.environment?.obstacles??[])].find(r=>r?.id===o.userData.regionId)!;if(transform.mode==='scale')r.size=old.size.map((v,i)=>Math.min(10000,Math.max(1,v*Math.abs(o.scale.getComponent(i))))) as typeof r.size;}}line.geometry.setFromPoints([objects[0].position,objects[1].position]);line.computeLineDistances();});
-function finishDrag(cancel=false){if(!dragBefore)return;const before=dragBefore;dragBefore=undefined;try{if(cancel)doc=before;else{doc=parseStudio(doc);history.record(before,doc);}}catch(e){doc=before;status.textContent=String(e);}draw();}
+function finishDrag(cancel=false){if(!dragBefore)return;const before=dragBefore;dragBefore=undefined;let failed=false;try{if(cancel)doc=before;else{doc=parseStudio(doc);history.record(before,doc);}}catch(e){doc=before;failed=true;status.textContent=String(e);}draw();if(mech.active)mech.dragEnd(cancel||failed);}
 transform.addEventListener('mouseUp',()=>finishDrag());
 function travelHistory(redo=false){finishDrag();invalidate();doc=redo?history.redo(doc):history.undo(doc);draw();status.textContent=redo?'Wiederhergestellt':'Rückgängig';}
 document.getElementById('undo')!.onclick=()=>travelHistory();document.getElementById('redo')!.onclick=()=>travelHistory(true);
 window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;if(e.key==='Escape'){finishDrag(true);return;}if((e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();travelHistory(e.shiftKey||e.key.toLowerCase()==='y');}});
 list.onchange=()=>select(objects.find(o=>o.name===list.value)!);
-for(const [id,mode] of [['move','translate'],['rotate','rotate'],['size','scale']] as const)document.getElementById(id)!.onclick=()=>{if(mode==='scale'&&['input','output'].includes(list.value))return;setMode(mode);};
+for(const [id,mode] of [['move','translate'],['rotate','rotate'],['size','scale']] as const)document.getElementById(id)!.onclick=()=>{if(transform.object?.userData.motor){if(mode!=='scale')mech.gripMode(mode);return;}if(mode==='scale'&&['input','output'].includes(list.value))return;setMode(mode);};
 document.getElementById('zone')!.onclick=()=>change(()=>{const g=graph();g.version=4;g.environment??={margin:1,obstacles:[]};g.environment.obstacles.push({id:'zone-'+crypto.randomUUID(),frame:{position:[50,0,0],rotation:[0,0,0,1]},size:[20,20,20]});assembly().adopted=false;},'Sperrzone hinzugefügt');
 document.getElementById('save')!.onclick=()=>{try{finishDrag();localStorage.setItem('mechanics-studio',serializeStudio(doc));status.textContent='Studio lokal gespeichert.';}catch(e){status.textContent=String(e);}};
 document.getElementById('export')!.onclick=()=>{try{finishDrag();const url=URL.createObjectURL(new Blob([serializeStudio(doc)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='mechanics-studio.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent='Studio-Projekt exportiert.';}catch(e){status.textContent=String(e);}};
@@ -83,7 +91,7 @@ function pick(e:MouseEvent){
  for(const o of objects.filter(o=>o.userData.regionId&&o.visible))for(const corner of o.children){const point=corner.getWorldPosition(new THREE.Vector3()).project(camera);if(point.z<-1||point.z>1)continue;const distance=Math.hypot(e.clientX-r.left-(point.x+1)*r.width/2,e.clientY-r.top-(1-point.y)*r.height/2);if(distance<best){best=distance;nearest=o;}}
  const port=hits(e).intersectObjects(objects.filter(o=>!o.userData.regionId),false)[0];return port?.object??nearest;
 }
-renderer.domElement.addEventListener('pointerdown',e=>{hideMenu();if(e.button!==0||transform.dragging||transform.axis)return;if(mech.active){const h=mech.click(hits(e));if(h){transform.setMode('translate');transform.attach(h);mech.selectHandle(h);}else transform.detach();return;}const hit=pick(e);if(hit)select(hit);else transform.detach();});
+renderer.domElement.addEventListener('pointerdown',e=>{hideMenu();if(e.button!==0||transform.dragging||transform.axis)return;if(mech.active){const h=mech.click(hits(e));if(h){grip(h,mech.handleOptions(h));mech.selectHandle(h);}else transform.detach();return;}const hit=pick(e);if(hit)select(hit);else transform.detach();});
 renderer.domElement.addEventListener('pointermove',e=>{if(!transform.dragging)renderer.domElement.style.cursor=(mech.active?mech.hover(hits(e)):pick(e))?'pointer':'default';});
 const menu=document.getElementById('context-menu')!;function hideMenu(){menu.hidden=true;}
 renderer.domElement.addEventListener('contextmenu',e=>{e.preventDefault();if(hits(e).intersectObject(line).length){menu.hidden=false;menu.style.left=Math.min(e.clientX,window.innerWidth-340)+'px';menu.style.top=Math.min(e.clientY,window.innerHeight-60)+'px';}});

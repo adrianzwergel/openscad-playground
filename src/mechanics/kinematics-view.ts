@@ -103,6 +103,8 @@ export class KinematicsView{
  setParts(parts:Record<string,Float32Array>){for(const [id,positions] of Object.entries(parts)){const h=this.holders.get(id);if(h)this.replace(id,new THREE.Mesh(soup(positions),material(h.color)));}}
  /** Places every item from given body frames (live sliders) without rebuilding the view. */
  setFrames(bodies:Record<string,Frame>){this.lastFrames=bodies;for(const item of this.items){const body=bodies[item.body];if(!body)continue;item.object.matrix.copy(toMatrix(compose(body,item.local)));item.object.matrixWorldNeedsUpdate=true;}}
+ /** Places the items of one body (a motor being dragged) without touching the others. */
+ moveBody(id:string,frame:Frame){for(const item of this.items)if(item.body===id){item.object.matrix.copy(toMatrix(compose(frame,item.local)));item.object.matrixWorldNeedsUpdate=true;}}
  /** Imported part under a ray, with the hit in the part's model coordinates (pose 0). */
  pick(ray:THREE.Raycaster){const hit=ray.intersectObjects(this.parts,false)[0];if(!hit)return undefined;const local=hit.point.clone().applyMatrix4(new THREE.Matrix4().copy(hit.object.matrixWorld).invert());return {...hit.object.userData.pick as {body:string;asset:string;part:string},local:local.toArray() as [number,number,number],world:hit.point.toArray() as [number,number,number]};}
  /** Shows pose k (fractional values interpolate to the nearest pose). */

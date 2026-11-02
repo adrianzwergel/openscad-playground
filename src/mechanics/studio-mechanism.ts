@@ -23,13 +23,16 @@ import {planBearings,bearingCatalog} from './kinematics/bearings';
 import type {BearingPlan,BearingSettings} from './kinematics/bearings';
 import JSZip from 'jszip';
 import type {Drive,TaskInfo,Collision} from './kinematics/drive';
-import {driveCatalog,driveSpec,placeMotor,removeGear,removeDrive,heldTrains,modelAxes,owned,driveTask,adoptGear,sweepCollisions,faceNormal,standOn,parallelTo,linearAxis,toward} from './kinematics/drive';
+import {motorClash,driveCatalog,driveSpec,placeMotor,removeGear,removeDrive,heldTrains,modelAxes,owned,driveTask,adoptGear,sweepCollisions,faceNormal,standOn,parallelTo,linearAxis,toward} from './kinematics/drive';
 import {quaternionFromBasis,cross as crossV,unit} from './kinematics/math';
 import {KinematicsView,linkColor} from './kinematics-view';
 import type {MotionSolution} from './kinematics-view';
 
 type Item='mechanism'|'model'|'axis-new'|'drive-new'|'bearings'|'structure'|`drive:${string}`|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
-export type EditorHost={doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void};
+/** How the 3D view's move/turn gizmo sits on a handle: steps in mm and degrees (0: free), axes along the handle. */
+export type GripOptions={mode:'translate'|'rotate';step:number;angle:number;space:'local'|'world'};
+/** `grip`: attaches the gizmo to a handle (undefined: takes it off a motor handle); `dragging`: the gizmo is held. */
+export type EditorHost={doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
 const deg=180/Math.PI;
@@ -54,6 +57,10 @@ export class MechanismEditor{
  private search?:{drive:string;worker:Worker;info:TaskInfo;results:{mechanism:Mechanism;ratio:number;summary:{elements:number;length:number};label:string}[];state:'running'|'done'|'error';text:string};
  private sweeps:Record<string,{state:'running'|'ok'|'hit'|'error';text:string;hits?:Collision[]}>={};
  private newDrive={axis:'',spec:'nema17'};
+ /** The motor grip on the drive page: shown or not, move or turn, steps (0: free), search once released. */
+ private grip={on:true,mode:'translate' as 'translate'|'rotate',step:5,angle:15,search:true};
+ /** The drive whose motor is being dragged (until the drag ends). */
+ private dragged?:string;
  /** Step 6/7: the bearing plan (cached per document state) and generated structures per link. */
  private planCache?:{key:string;plan:BearingPlan};
  private structures=new Map<string,{positions?:Float32Array;stl?:Uint8Array;report?:Record<string,number|boolean>&{print?:{label:string;overhang:number;area:number}};checks:{id:string;state:string;message:string}[];error?:string}>();
@@ -105,7 +112,24 @@ export class MechanismEditor{
   for(const j of m.joints){if(j.joint.kind!=='path')continue;const base=compose(this.bodyFrame(j.a.body),j.a.local),selected=this.item===`joint:${j.id}`;
    j.joint.curve.points.forEach((p,i)=>{const world=compose(base,{position:p,rotation:[0,0,0,1]}).position,size=Math.max(6,Math.min(30,j.joint.kind==='path'?j.joint.curve.cornerRadius/8:8));
     const h=new THREE.Mesh(new THREE.SphereGeometry(size,12,8),new THREE.MeshBasicMaterial({color:selected?0xffcc66:0xc98f2e}));h.position.fromArray(world);h.name=`path:${j.id}:${i}`;h.userData.pathPoint={joint:j.id,index:i};this.handles.add(h);});}
+  // The motor of the open drive page: a box around it at its flange, dragged and turned by the gizmo.
+  const id=this.item.startsWith('drive:')?this.item.slice(6):'',d=this.grip.on?this.drives().find(x=>x.id===id):undefined;
+  if(!d){this.host.grip(undefined);return;}
+  const size=driveSpec(d.spec).size,g=new THREE.BoxGeometry(size[0]+2,size[1]+2,size[2]+2);g.translate(0,0,-size[2]/2);
+  const h=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0x4fc3f7,transparent:true,opacity:.22,depthWrite:false})),f=compose(this.bodyFrame(d.body),d.frame);
+  h.position.fromArray(f.position);h.quaternion.fromArray(f.rotation);h.name=`motor:${d.id}`;h.userData.motor={drive:d.id};this.handles.add(h);
+  if(!this.host.dragging())this.host.grip(h,this.gripOptions());this.showClash(d.id);
  }
+ /** Move or turn the motor (also from the 3D view's toolbar). */
+ gripMode(mode:'translate'|'rotate'){this.grip.mode=mode;this.grip.on=true;this.renderProperties();}
+ private gripOptions():GripOptions{return {mode:this.grip.mode,step:this.grip.step,angle:this.grip.angle,space:'local'};}
+ /** Options for a handle the user clicked (path points: free, in model axes). */
+ handleOptions(o:THREE.Object3D):GripOptions{return o.userData.motor?this.gripOptions():{mode:'translate',step:0,angle:0,space:'world'};}
+ /** Colours the motor handle by what the motor runs into at the shown pose and says so on the drive page. */
+ private showClash(id:string){
+  const m=this.gearPreview?.mechanism??this.mechanism(),drives=this.gearPreview?.drives??this.drives(),d=drives.find(x=>x.id===id),frames=this.preview?.poses[0].bodies,h=this.handles.getObjectByName(`motor:${id}`) as THREE.Mesh|undefined;if(!m||!d||!frames)return;
+  const hits=motorClash(m,drives,d,a=>this.assets.get(a),frames);if(h)(h.material as THREE.MeshBasicMaterial).color.setHex(hits.length?0xff5a5a:0x4fc3f7);
+  const p=document.getElementById('drive-grip');if(p&&p.dataset.drive===id){p.dataset.state=hits.length?'hit':'ok';p.textContent=hits.length?`Motor steckt in ${hits.join(', ')}.`:'Motor frei.';p.dataset.flange=JSON.stringify(compose(frames[d.body]??identity(),d.frame).position);}}
  /** Pointer over something editable: a path handle or a model part. */
  hover(ray:THREE.Raycaster){return !!ray.intersectObjects(this.handles.children,false)[0]||!!this.view.pick(ray);}
  /** Click in the 3D view. Returns a handle to drag; part clicks are handled here. */
@@ -186,9 +210,24 @@ export class MechanismEditor{
   catch(e){const r=document.getElementById('axes-report');if(r)r.textContent='Nicht lösbar: '+(e instanceof Error?e.message:e);}});}
  selectHandle(o:THREE.Object3D){const point=o.userData.pathPoint;if(point){this.item=`joint:${point.joint}`;this.renderProperties();this.drawHandles();}}
  /** Writes a dragged path point back into the document (in the guide's a-side frame). */
- onDrag(o:THREE.Object3D){const point=o.userData.pathPoint,m=this.mechanism();if(!point||!m)return;const j=m.joints.find(x=>x.id===point.joint);if(!j||j.joint.kind!=='path')return;
+ onDrag(o:THREE.Object3D){if(o.userData.motor){this.dragMotor(o,o.userData.motor.drive);return;}const point=o.userData.pathPoint,m=this.mechanism();if(!point||!m)return;const j=m.joints.find(x=>x.id===point.joint);if(!j||j.joint.kind!=='path')return;
   const local=compose(inverse(compose(this.bodyFrame(j.a.body),j.a.local)),{position:o.position.toArray() as V,rotation:[0,0,0,1]});j.joint.curve.points[point.index]=local.position.map(n=>Math.round(n*100)/100) as V;}
 
+ /** A dragged motor: its flange follows the gizmo (on its carrying link), its train goes, stale results too. */
+ private clashToken=0;
+ private dragMotor(o:THREE.Object3D,id:string){
+  const e=this.entry(),d=e?.drives?.find(x=>x.id===id);if(!e||!d)return;
+  if(this.search?.drive===id){this.search.worker.terminate();this.search=undefined;}delete this.sweeps[id];this.gearPreview=undefined;
+  const q=o.quaternion.clone().normalize(),world:Frame={position:o.position.toArray() as V,rotation:q.toArray() as Frame['rotation']},f=compose(inverse(this.bodyFrame(d.body)),world);
+  d.frame={position:f.position.map(n=>Math.round(n*100)/100) as V,rotation:f.rotation};const had=!!d.gear;removeGear(e.mechanism,d);placeMotor(e.mechanism,d);
+  if(this.dragged!==id&&had)this.host.status(`Getriebe von ${id} entfernt – der Motor wird verschoben.`);this.dragged=id;
+  this.view.moveBody(d.id,compose(this.bodyFrame(d.body),d.frame));
+  const token=++this.clashToken;requestAnimationFrame(()=>{if(token===this.clashToken)this.showClash(id);});}
+ /** After a drag (the document already taken over): a moved motor gets its train searched for the new place. */
+ dragEnd(cancel=false){const id=this.dragged;this.dragged=undefined;if(!id||cancel)return;const d=this.drives().find(x=>x.id===id),m=this.mechanism();if(!d||!m)return;
+  const frames=this.preview?.poses[0].bodies,hits=frames?motorClash(m,this.drives(),d,a=>this.assets.get(a),frames):[],at=d.frame.position.map(n=>n.toFixed(1)).join(', ');
+  if(hits.length){this.host.status(`Motor ${id} nach (${at}) gesetzt – steckt in ${hits.join(', ')}; erst frei ziehen, dann Getriebe suchen.`);return;}
+  if(this.grip.search){this.host.status(`Motor ${id} nach (${at}) gesetzt – Getriebe wird gesucht …`);void this.findGear(id);}else this.host.status(`Motor ${id} nach (${at}) gesetzt.`);}
  private axisTools(joint?:string){
   const tool=(mode:'cylinder'|'edge'|'points',label:string,hint:string)=>{const b=el('button',{textContent:label,title:hint});b.dataset.axisTool=mode;b.setAttribute('aria-pressed',String(this.tool?.mode===mode));b.onclick=()=>{this.tool=this.tool?.mode===mode?undefined:{mode,joint};this.host.status(this.tool?hint:'Werkzeug beendet.');this.renderProperties();};return b;};
   const out:HTMLElement[]=[el('div',{className:'button-row'},tool('cylinder','Zylinder anklicken','Zylindermantel anklicken (Bohrung, Welle, Gelenkgehäuse): Drehachse = Zylinderachse.'),tool('edge','Kante anklicken','Nahe an eine gerade Kante klicken: Achse entlang der Kante.'),tool('points','Zwei Punkte','Zwei Punkte am Modell anklicken: Achse von Punkt 1 nach Punkt 2.'))];
@@ -373,7 +412,17 @@ export class MechanismEditor{
   // Placement.
   const click=el('button',{textContent:'Auf Fläche klicken'});click.dataset.driveTool=id;click.setAttribute('aria-pressed',String(this.tool?.mode==='motor'));click.onclick=()=>{this.tool=this.tool?.mode==='motor'?undefined:{mode:'motor',drive:id};this.host.status(this.tool?'Fläche am Modell anklicken: der Motor steht darauf, die Welle zeigt von der Fläche weg.':'Werkzeug beendet.');this.renderProperties();};
   const parallel=el('button',{textContent:'Welle parallel zur Achse'});parallel.onclick=()=>this.editDrive(id,'Motorwelle parallel zur Achse',(x,mm)=>{x.frame=parallelTo(mm,x);removeGear(mm,x);placeMotor(mm,x);});
-  out.push(el('h2',{textContent:'Lage des Motors'}),el('div',{className:'button-row'},click,parallel),...ui.frameFields('Flansch auf dem Glied (z = Welle)',d.frame,f=>this.editDrive(id,'Motor verschoben',(x,mm)=>{x.frame=f;removeGear(mm,x);placeMotor(mm,x);})));
+  // Grip in the 3D view: drag or turn the motor, in steps unless Alt is held.
+  const toggle=(label:string,on:boolean,key:string,act:()=>void)=>{const b=el('button',{textContent:label});b.dataset.grip=key;b.setAttribute('aria-pressed',String(on));b.onclick=()=>{act();this.renderProperties();};return b;};
+  const searchAfter=el('input',{type:'checkbox',checked:this.grip.search});searchAfter.dataset.grip='search';searchAfter.onchange=()=>{this.grip.search=searchAfter.checked;};
+  const grip=el('p',{id:'drive-grip',className:'muted'});grip.dataset.drive=id;
+  out.push(el('h2',{textContent:'Lage des Motors'}),
+   el('div',{className:'button-row'},toggle('Im 3D ziehen',this.grip.on,'on',()=>{this.grip.on=!this.grip.on;}),toggle('Verschieben',this.grip.on&&this.grip.mode==='translate','translate',()=>{this.grip.mode='translate';this.grip.on=true;}),toggle('Drehen',this.grip.on&&this.grip.mode==='rotate','rotate',()=>{this.grip.mode='rotate';this.grip.on=true;})),
+   ui.select('Raster',String(this.grip.step),[['0','frei'],['1','1 mm'],['5','5 mm'],['10','10 mm']],v=>{this.grip.step=Number(v);this.drawHandles();}),
+   ui.select('Winkelraster',String(this.grip.angle),[['0','frei'],['5','5°'],['15','15°'],['45','45°'],['90','90°']],v=>{this.grip.angle=Number(v);this.drawHandles();}),
+   el('label',{className:'check'},searchAfter,'Nach dem Ziehen Getriebe suchen'),
+   el('p',{className:'muted',textContent:'Griff im 3D-Fenster: Pfeile und Ebenen verschieben, Ringe drehen (Achsen am Motor, z = Welle). Alt gedrückt halten: ohne Raster.'}),grip,
+   el('div',{className:'button-row'},click,parallel),...ui.frameFields('Flansch auf dem Glied (z = Welle)',d.frame,f=>this.editDrive(id,'Motor verschoben',(x,mm)=>{x.frame=f;removeGear(mm,x);placeMotor(mm,x);})));
   // Gear.
   const s=this.search?.drive===id?this.search:undefined,find=el('button',{textContent:s?.state==='running'?'Suche läuft …':'Getriebe finden',className:'primary'});find.dataset.findGear=id;find.disabled=s?.state==='running';find.onclick=()=>void this.findGear(id);
   const progress=el('p',{className:'muted',id:'drive-progress',textContent:s?.text??(d.gear?'':'Die Suche läuft im Glied, auf dem der Motor sitzt; die Teile des Modells sind Sperrzonen.')});progress.dataset.drive=id;if(s)progress.dataset.state=s.state;
@@ -471,7 +520,7 @@ export class MechanismEditor{
 
  // ---------- properties ----------
  renderProperties(root:HTMLElement=document.getElementById('properties')!):void{
-  root.replaceChildren();const entry=this.entry();if(!entry)return;const m=entry.mechanism;
+  root.replaceChildren();const entry=this.entry();if(!entry)return;const m=entry.mechanism;queueMicrotask(()=>this.drawHandles());
   const edit=(message:string,fn:(m:Mechanism)=>void)=>this.host.change(()=>fn(this.mechanism()!),message);
   const number=(label:string,value:number,write:(n:number)=>void,step='0.1')=>{const input=el('input',{type:'number',step,value:String(value)});input.onchange=()=>{const n=Number(input.value);if(input.value===''||!Number.isFinite(n)){input.value=String(value);return;}write(n);};return el('label',{},label,input);};
   const text=(label:string,value:string,write:(v:string)=>void)=>{const input=el('input',{type:'text',value});input.onchange=()=>write(input.value.trim());return el('label',{},label,input);};

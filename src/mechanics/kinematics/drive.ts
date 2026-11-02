@@ -279,4 +279,13 @@ export async function sweepCollisions(m:Mechanism,drives:Drive[],d:Drive,assets:
  }
  return [...found.values()];
 }
+/** Links the motor of `d` runs into at the given body frames (its carrying link aside): coarse part boxes first,
+ * then the triangles of the parts they touch. Cheap enough to run while the motor is dragged. */
+export function motorClash(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frames:Record<string,Frame>){
+ const mb=motorBox(m,d,frames,identity());if(!mb)return [];const motor=hull(mb.frame,[0,0,0],scale(mb.size,.5)),hit:string[]=[];
+ for(const b of m.bodies){if(b.id===d.body||owned(drives,b.id)||b.display?.kind!=='mesh'||!frames[b.id])continue;const asset=assets(b.display.asset);if(!asset)continue;
+  const local=compose(frames[b.id],inverse(b.frame)),touches=(x:Box)=>separation(motor,hull(compose(local,{position:x.min.map((n,i)=>(n+x.max[i])/2) as V,rotation:[0,0,0,1]}),[0,0,0],x.max.map((n,i)=>Math.max(.25,(n-x.min[i])/2)) as V))<-.5;
+  if(b.display.parts.some(id=>{const p=asset.parts.find(x=>x.id===id);return !!p&&partBoxes(p.positions).some(touches)&&triangleBoxes(p.positions).some(touches);}))hit.push(b.id);}
+ return hit;
+}
 export {axisAngle};
