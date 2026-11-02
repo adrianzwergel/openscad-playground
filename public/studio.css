@@ -67,3 +67,4 @@ body[data-mode=mechanism] #workspace{grid-template-rows:45px minmax(160px,1fr) a
 ul.bom{margin:4px 0;padding-left:18px;color:#c8d6df;font-size:12px}
 .steps{flex-wrap:wrap}
 .steps li{flex:1 1 13%;min-width:52px;font-size:10.5px;padding:4px 1px}
+#drive-grid[data-state=warn]{color:#ffcc66}#drive-grip[data-state=hit]{color:#ff8f8f}

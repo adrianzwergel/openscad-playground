@@ -41,5 +41,13 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  for(let i=0;i<3;i++)await p.evaluate((i,v)=>{const input=document.querySelector(`input[aria-label="Flansch auf dem Glied (z = Welle): Position [mm] ${'XYZ'[i]}"]`);input.value=String(v);input.dispatchEvent(new Event('change'));},i,into[i]);
  await ready();const hit=await p.waitForFunction(()=>document.querySelector('#drive-grip')?.dataset.state==='hit'&&document.querySelector('#drive-grip').textContent,{timeout:60000}).then(h=>h.jsonValue());
  assert.match(hit,new RegExp(side.body),`Kollision mit ${side.body} gemeldet: ${hit}`);
- assert.deepEqual(errors,[]);console.log(`Studio Motorgriff: ${shift.toFixed(1)} mm gezogen, Suche startet, Rückgängig ok, Kollision erkannt (${hit})`);
+ // No train in the catalog reaches the target with one stage: the page says so with the nearest reductions, the motor
+ // moves freely and no search starts.
+ const field=async(label,value,tag='input')=>{await p.evaluate((label,value,tag)=>{const l=[...document.querySelectorAll('#properties label')].find(x=>x.textContent.startsWith(label)),e=l.querySelector(tag);e.value=value;e.dispatchEvent(new Event('change'));},label,value,tag);await ready();};
+ await field('Untersetzung','4');await field('Stufen höchstens','1','select');
+ const warn=await p.waitForFunction(()=>document.querySelector('#drive-grid')?.dataset.state==='warn'&&document.querySelector('#drive-grid').textContent,{timeout:20000}).then(h=>h.jsonValue());
+ assert.match(warn,/erreicht kein Getriebe aus dem Katalog 4 .* am nächsten: \d/,warn);
+ await p.click('#move');await drag((await gripState()).flange);await p.waitForFunction(()=>/erreicht kein Getriebe/.test(document.querySelector('#status')?.textContent??''),{timeout:20000});
+ assert.notEqual(await p.$eval('#drive-progress',e=>e.dataset.state??''),'running','keine aussichtslose Suche');
+ assert.deepEqual(errors,[]);console.log(`Studio Motorgriff: ${shift.toFixed(1)} mm gezogen, Suche startet, Rückgängig ok, Kollision erkannt (${hit}), ohne Familie Hinweis: ${warn}`);
 }finally{await browser.close();}

@@ -125,7 +125,7 @@ export class MechanismEditor{
   const size=driveSpec(d.spec).size,g=new THREE.BoxGeometry(size[0]+2,size[1]+2,size[2]+2);g.translate(0,0,-size[2]/2);
   const h=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0x4fc3f7,transparent:true,opacity:.22,depthWrite:false})),f=compose(this.bodyFrame(d.body),d.frame);
   h.position.fromArray(f.position);h.quaternion.fromArray(f.rotation);h.name=`motor:${d.id}`;h.userData.motor={drive:d.id};this.handles.add(h);
-  if(!this.host.dragging())this.host.grip(h,this.gripOptions());this.handles.add(this.guides);this.drawGuides(d);this.showClash(d.id);
+  if(!this.host.dragging())this.host.grip(h,this.gripOptions(d));this.handles.add(this.guides);this.drawGuides(d);this.showClash(d.id);
  }
  /** What the catalog leaves to a drive's search: switched-off kinds, locked parts and a filter for pairs. */
  private searchCatalog(){const base=defaultCatalog(),cat=this.host.doc().catalog??base,stock=new Map(base.parts.map(p=>[p.id,partKey(p.family,p.params)])),lockedParts=cat.parts.filter(p=>!partAllowed(cat,p)).map(p=>stock.get(p.id)??partKey(p.family,p.params)),locked=new Set(lockedParts);
@@ -147,13 +147,15 @@ export class MechanismEditor{
  /** The last snap while the motor still stands there (undo or typed numbers move it away). */
  private snappedAt(d:Drive){const s=this.snapped;return s&&s.frame.position.every((n,i)=>Math.abs(n-d.frame.position[i])<.02)?s:undefined;}
  /** Family choice and grid state for the drive page. */
- private gridText(d:Drive){const grid=this.grid(d);if(!this.grip.catalog)return 'Katalog-Raster aus: der Motor folgt dem Griff frei.';if(!grid)return 'Katalog-Raster nur an Drehachsen – hier frei verschieben.';if(!grid.families.length)return 'Kein Getriebe aus dem Katalog erreicht die Untersetzung: Ziel, Toleranz, Stufen oder Katalog ändern.';
+ private gridText(d:Drive){const grid=this.grid(d);if(!this.grip.catalog)return 'Katalog-Raster aus: der Motor folgt dem Griff frei.';if(!grid)return 'Katalog-Raster nur an Drehachsen – hier frei verschieben.';if(!grid.families.length)return `Mit höchstens ${d.maxStages??3} Stufe${(d.maxStages??3)>1?'n':''} erreicht kein Getriebe aus dem Katalog ${d.target} (± ${d.tolerance} %)${grid.alternatives.length?` – am nächsten: ${grid.alternatives.map(a=>`${a.ratio.toFixed(2)} (${a.label})`).join(', ')}`:''}. Ziel, Toleranz, Stufen oder Katalog ändern.`;
   const s=this.snappedAt(d);return s?`Raster: ${s.family.stages} Stufe${s.family.stages>1?'n':''} · ${s.family.label} · ${s.family.kind==='across'?'Versatz':'Abstand'} ${s.distance.toFixed(1)} mm`:`${grid.families.length} Familien aus dem Katalog. Beim Ziehen rastet der Motor ein (Alt: frei).`;}
  /** Move or turn the motor (also from the 3D view's toolbar). */
  gripMode(mode:'translate'|'rotate'){this.grip.mode=mode;this.grip.on=true;this.renderProperties();}
- private gripOptions():GripOptions{return {mode:this.grip.mode,step:this.grip.step,angle:this.grip.angle,space:'local'};}
+ /** On the catalog grid the motor jumps straight to the reachable place nearest to the pointer: no mm steps before. */
+ private onGrid(d:Drive){return this.grip.catalog&&!!this.grid(d)?.families.length;}
+ private gripOptions(d?:Drive):GripOptions{return {mode:this.grip.mode,step:d&&this.onGrid(d)?0:this.grip.step,angle:this.grip.angle,space:'local'};}
  /** Options for a handle the user clicked (path points: free, in model axes). */
- handleOptions(o:THREE.Object3D):GripOptions{return o.userData.motor?this.gripOptions():{mode:'translate',step:0,angle:0,space:'world'};}
+ handleOptions(o:THREE.Object3D):GripOptions{return o.userData.motor?this.gripOptions(this.drives().find(x=>x.id===o.userData.motor.drive)):{mode:'translate',step:0,angle:0,space:'world'};}
  /** Colours the motor handle by what the motor runs into at the shown pose and says so on the drive page. */
  private showClash(id:string){
   const m=this.gearPreview?.mechanism??this.mechanism(),drives=this.gearPreview?.drives??this.drives(),d=drives.find(x=>x.id===id),frames=this.preview?.poses[0].bodies,h=this.handles.getObjectByName(`motor:${id}`) as THREE.Mesh|undefined;if(!m||!d||!frames)return;
@@ -258,7 +260,8 @@ export class MechanismEditor{
  /** After a drag (the document already taken over): a moved motor gets its train searched for the new place. */
  dragEnd(cancel=false){const id=this.dragged;this.dragged=undefined;if(!id||cancel)return;const d=this.drives().find(x=>x.id===id),m=this.mechanism();if(!d||!m)return;
   const frames=this.preview?.poses[0].bodies,hits=frames?motorClash(m,this.drives(),d,a=>this.assets.get(a),frames):[],at=d.frame.position.map(n=>n.toFixed(1)).join(', ');
-  const on=this.snapped?` (Raster: ${this.snapped.family.label})`:'';
+  const on=this.snapped?` (Raster: ${this.snapped.family.label})`:'',grid=this.grip.catalog?this.grid(d):undefined;
+  if(grid&&!grid.families.length){this.host.status(`Motor ${id} nach (${at}) gesetzt – ${this.gridText(d)}`);return;}
   if(hits.length){this.host.status(`Motor ${id} nach (${at}) gesetzt${on} – steckt in ${hits.join(', ')}; erst frei ziehen, dann Getriebe suchen.`);return;}
   if(this.grip.search){this.host.status(`Motor ${id} nach (${at}) gesetzt${on} – Getriebe wird gesucht …`);void this.findGear(id);}else this.host.status(`Motor ${id} nach (${at}) gesetzt${on}.`);}
  /** Puts the motor onto the grid where it stands (the chosen family or the nearest place). */
@@ -268,7 +271,7 @@ export class MechanismEditor{
  private gridControls(d:Drive){
   const grid=this.grid(d),on=el('button',{textContent:'Katalog-Raster'});on.dataset.grip='catalog';on.setAttribute('aria-pressed',String(this.grip.catalog));on.onclick=()=>{this.grip.catalog=!this.grip.catalog;this.snapped=undefined;this.renderProperties();};
   const now=el('button',{textContent:'Jetzt einrasten'});now.dataset.grip='snap';now.disabled=!this.grip.catalog||!grid?.families.length;now.onclick=()=>this.snapNow(d.id);
-  const text=el('p',{id:'drive-grid',className:'muted',textContent:this.gridText(d)});
+  const text=el('p',{id:'drive-grid',className:'muted',textContent:this.gridText(d)});if(this.grip.catalog&&grid&&!grid.families.length)text.dataset.state='warn';
   if(!this.grip.catalog||!grid?.families.length)return [el('div',{className:'button-row'},on,now),text];
   const range=(f:MotorGrid['families'][number])=>f.hi-f.lo<.05?`${f.lo.toFixed(1)} mm`:`${f.lo.toFixed(0)}–${f.hi.toFixed(0)} mm`;
   const family=el('select');family.dataset.grip='family';family.add(new Option(`Nächster Platz (alle ${grid.families.length})`,''));
@@ -465,7 +468,7 @@ export class MechanismEditor{
   const grip=el('p',{id:'drive-grip',className:'muted'});grip.dataset.drive=id;
   out.push(el('h2',{textContent:'Lage des Motors'}),
    el('div',{className:'button-row'},toggle('Im 3D ziehen',this.grip.on,'on',()=>{this.grip.on=!this.grip.on;}),toggle('Verschieben',this.grip.on&&this.grip.mode==='translate','translate',()=>{this.grip.mode='translate';this.grip.on=true;}),toggle('Drehen',this.grip.on&&this.grip.mode==='rotate','rotate',()=>{this.grip.mode='rotate';this.grip.on=true;})),
-   ui.select('Raster',String(this.grip.step),[['0','frei'],['1','1 mm'],['5','5 mm'],['10','10 mm']],v=>{this.grip.step=Number(v);this.drawHandles();}),
+   ui.select(this.onGrid(d)?'Raster ohne Katalog (Alt)':'Raster',String(this.grip.step),[['0','frei'],['1','1 mm'],['5','5 mm'],['10','10 mm']],v=>{this.grip.step=Number(v);this.drawHandles();}),
    ui.select('Winkelraster',String(this.grip.angle),[['0','frei'],['5','5°'],['15','15°'],['45','45°'],['90','90°']],v=>{this.grip.angle=Number(v);this.drawHandles();}),
    ...this.gridControls(d),
    el('label',{className:'check'},searchAfter,'Nach dem Ziehen Getriebe suchen'),

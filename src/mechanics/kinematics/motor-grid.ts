@@ -19,11 +19,12 @@ import type {Drive,DriveCatalog} from './drive.ts';
  * it (the distance is then the offset between both shaft lines). */
 export type GridFamily={key:string;kind:'parallel'|'across';lo:number;hi:number;stages:number;label:string};
 /** `axis`: the driven axis on the carrying link (z along it). */
-export type MotorGrid={axis:Frame;families:GridFamily[]};
+/** `alternatives`: without families, the reductions nearest to the target that the catalog does reach (as many stages). */
+export type MotorGrid={axis:Frame;families:GridFamily[];alternatives:{ratio:number;stages:number;label:string}[]};
 export type Snapped={frame:Frame;family:GridFamily;distance:number};
 
 // Parts by their teeth (LEGO: module 1, so twice the pitch radius); worms by their name.
-const part=(e:PairChoice['a'])=>{const s=e.surfaces[0];if(s?.profile.kind==='helical')return e.label.replace(/^LEGO \S+ /,'');if(e.source.kind==='library'&&e.source.library==='lego'&&s?.pitch.kind==='circle')return `z${Math.round(2*s.pitch.r)}`;return /z\d+/.exec(e.label)?.[0]??e.label;};
+const part=(e:PairChoice['a'])=>{const s=e.surfaces[0];if(s?.profile.kind==='helical')return `${s.profile.starts}-gängig`;if(e.source.kind==='library'&&e.source.library==='lego'&&s?.pitch.kind==='circle')return `z${Math.round(2*s.pitch.r)}`;return /z\d+/.exec(e.label)?.[0]??e.label;};
 const pairLabel=(c:PairChoice)=>`${part(c.a)} → ${part(c.b)}`;
 const ruleLabel:Record<string,string>={'external-spur':'Stirnräder','gt2-belt':'GT2-Riemen','bevel-mesh':'Kegelräder','worm-mesh':'Schnecke','lego-spur':'LEGO','lego-bevel-90':'LEGO-Kegel','lego-worm':'LEGO-Schnecke'};
 const stageLabel=(c:PairChoice)=>`${ruleLabel[c.rule]??c.rule} ${pairLabel(c)}${c.rule==='gt2-belt'?` (${c.params.length} mm)`:''}`;
@@ -55,7 +56,13 @@ export function motorGrid(m:Mechanism,d:Drive,o:{catalog?:DriveCatalog;allowed?:
    for(let i=from;i<list.length;i++){const x=list[i];if(x.turn&&path.some(y=>y.turn))continue;const next=r*x.factor;if(finish(stages-path.length-1,next))walk([...path,x],i,next);}
   };
   walk([],0,1);}
- return {axis:side.local,families:[...families.values()].sort((a,b)=>a.stages-b.stages||(a.kind===b.kind?0:a.kind==='parallel'?-1:1)||a.hi-a.lo-(b.hi-b.lo)||a.hi-b.hi)};
+ // Nothing within the tolerance: the nearest reductions within reach tell what to change.
+ const alternatives:MotorGrid['alternatives']=[];
+ if(!families.size){const seen=new Map<string,MotorGrid['alternatives'][number]>();let visits=0;
+  const walk=(path:Pair[],from:number,r:number)=>{if(++visits>limit)return;if(path.length){const key=r.toFixed(3);if(!seen.has(key)||seen.get(key)!.stages>path.length)seen.set(key,{ratio:r,stages:path.length,label:path.map(x=>stageLabel(x.c)).join(' · ')});}
+   if(path.length<max)for(let i=from;i<list.length;i++){const x=list[i];if(x.turn&&path.some(y=>y.turn))continue;walk([...path,x],i,r*x.factor);}};
+  walk([],0,1);alternatives.push(...[...seen.values()].sort((a,b)=>Math.abs(Math.log(a.ratio/target))-Math.abs(Math.log(b.ratio/target))||a.stages-b.stages).slice(0,3));}
+ return {axis:side.local,alternatives,families:[...families.values()].sort((a,b)=>a.stages-b.stages||(a.kind===b.kind?0:a.kind==='parallel'?-1:1)||a.hi-a.lo-(b.hi-b.lo)||a.hi-b.hi)};
 }
 
 /** Nearest grid distance to `r` among families: a one-stage circle within `magnet` mm wins; inside a ring the motor
