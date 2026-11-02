@@ -268,16 +268,24 @@ export class MechanismEditor{
  private snapNow(id:string){const d=this.drives().find(x=>x.id===id),grid=d&&this.grid(d),s=grid&&d?snapMotor(grid,d.frame,{only:this.grip.family||undefined}):undefined;if(!s){this.host.status('Kein Rasterplatz für diesen Motor.');return;}this.snapped=s;
   this.editDrive(id,`Motor ${id} eingerastet: ${s.family.label}`,(x,mm)=>{x.frame={position:s.frame.position.map(n=>Math.round(n*100)/100) as V,rotation:s.frame.rotation};removeGear(mm,x);placeMotor(mm,x);});}
  /** Catalog grid on the drive page: on/off, the family to snap to, snapping now, and its state. */
+ /** What moving snaps to: the next place a catalog train reaches (default), free, or a mm step. */
+ private snapChoice(d:Drive){
+  const grid=this.grid(d),s=el('select');s.dataset.grip='raster';
+  s.add(new Option(grid?'Nächste Getriebe-Möglichkeit (Katalog)':'Nächste Getriebe-Möglichkeit – nur an Drehachsen','catalog'));s.options[0].disabled=!grid;
+  for(const [v,t] of [['0','frei'],['1','1-mm-Raster'],['5','5-mm-Raster'],['10','10-mm-Raster']])s.add(new Option(t,v));
+  s.value=this.grip.catalog&&grid?'catalog':String(this.grip.step);
+  s.onchange=()=>{if(s.value==='catalog')this.grip.catalog=true;else{this.grip.catalog=false;this.grip.step=Number(s.value);}this.snapped=undefined;this.renderProperties();};
+  return el('label',{},'Verschieben rastet ein auf',s);}
  private gridControls(d:Drive){
-  const grid=this.grid(d),on=el('button',{textContent:'Katalog-Raster'});on.dataset.grip='catalog';on.setAttribute('aria-pressed',String(this.grip.catalog));on.onclick=()=>{this.grip.catalog=!this.grip.catalog;this.snapped=undefined;this.renderProperties();};
-  const now=el('button',{textContent:'Jetzt einrasten'});now.dataset.grip='snap';now.disabled=!this.grip.catalog||!grid?.families.length;now.onclick=()=>this.snapNow(d.id);
-  const text=el('p',{id:'drive-grid',className:'muted',textContent:this.gridText(d)});if(this.grip.catalog&&grid&&!grid.families.length)text.dataset.state='warn';
-  if(!this.grip.catalog||!grid?.families.length)return [el('div',{className:'button-row'},on,now),text];
+  const grid=this.grid(d);if(!this.grip.catalog||!grid)return [];
+  const now=el('button',{textContent:'Jetzt einrasten'});now.dataset.grip='snap';now.disabled=!grid.families.length;now.onclick=()=>this.snapNow(d.id);
+  const text=el('p',{id:'drive-grid',className:'muted',textContent:this.gridText(d)});if(!grid.families.length)text.dataset.state='warn';
+  if(!grid.families.length)return [text];
   const range=(f:MotorGrid['families'][number])=>f.hi-f.lo<.05?`${f.lo.toFixed(1)} mm`:`${f.lo.toFixed(0)}–${f.hi.toFixed(0)} mm`;
   const family=el('select');family.dataset.grip='family';family.add(new Option(`Nächster Platz (alle ${grid.families.length})`,''));
   for(const f of grid.families.slice(0,60))family.add(new Option(`${f.stages} St. · ${f.kind==='across'?'quer · ':''}${range(f)} · ${f.label}`,f.key));
   family.value=this.grip.family;family.onchange=()=>{this.grip.family=family.value;this.snapped=undefined;this.drawHandles();text.textContent=this.gridText(d);};
-  return [el('div',{className:'button-row'},on,now),el('label',{},'Getriebefamilie',family),text];}
+  return [el('label',{},'Getriebefamilie',family),text,el('div',{className:'button-row'},now)];}
  private axisTools(joint?:string){
   const tool=(mode:'cylinder'|'edge'|'points',label:string,hint:string)=>{const b=el('button',{textContent:label,title:hint});b.dataset.axisTool=mode;b.setAttribute('aria-pressed',String(this.tool?.mode===mode));b.onclick=()=>{this.tool=this.tool?.mode===mode?undefined:{mode,joint};this.host.status(this.tool?hint:'Werkzeug beendet.');this.renderProperties();};return b;};
   const out:HTMLElement[]=[el('div',{className:'button-row'},tool('cylinder','Zylinder anklicken','Zylindermantel anklicken (Bohrung, Welle, Gelenkgehäuse): Drehachse = Zylinderachse.'),tool('edge','Kante anklicken','Nahe an eine gerade Kante klicken: Achse entlang der Kante.'),tool('points','Zwei Punkte','Zwei Punkte am Modell anklicken: Achse von Punkt 1 nach Punkt 2.'))];
@@ -468,11 +476,11 @@ export class MechanismEditor{
   const grip=el('p',{id:'drive-grip',className:'muted'});grip.dataset.drive=id;
   out.push(el('h2',{textContent:'Lage des Motors'}),
    el('div',{className:'button-row'},toggle('Im 3D ziehen',this.grip.on,'on',()=>{this.grip.on=!this.grip.on;}),toggle('Verschieben',this.grip.on&&this.grip.mode==='translate','translate',()=>{this.grip.mode='translate';this.grip.on=true;}),toggle('Drehen',this.grip.on&&this.grip.mode==='rotate','rotate',()=>{this.grip.mode='rotate';this.grip.on=true;})),
-   ui.select(this.onGrid(d)?'Raster ohne Katalog (Alt)':'Raster',String(this.grip.step),[['0','frei'],['1','1 mm'],['5','5 mm'],['10','10 mm']],v=>{this.grip.step=Number(v);this.drawHandles();}),
+   this.snapChoice(d),
    ui.select('Winkelraster',String(this.grip.angle),[['0','frei'],['5','5°'],['15','15°'],['45','45°'],['90','90°']],v=>{this.grip.angle=Number(v);this.drawHandles();}),
    ...this.gridControls(d),
    el('label',{className:'check'},searchAfter,'Nach dem Ziehen Getriebe suchen'),
-   el('p',{className:'muted',textContent:'Griff im 3D-Fenster: Pfeile und Ebenen verschieben, Ringe drehen (Achsen am Motor, z = Welle). Alt gedrückt halten: ohne Raster.'}),grip,
+   el('p',{className:'muted',textContent:'Griff im 3D-Fenster: Pfeile und Ebenen verschieben, Ringe drehen (Achsen am Motor, z = Welle). Alt gedrückt halten: ganz frei, ohne jedes Einrasten.'}),grip,
    el('div',{className:'button-row'},click,parallel),...ui.frameFields('Flansch auf dem Glied (z = Welle)',d.frame,f=>this.editDrive(id,'Motor verschoben',(x,mm)=>{x.frame=f;removeGear(mm,x);placeMotor(mm,x);})));
   // Gear.
   const s=this.search?.drive===id?this.search:undefined,find=el('button',{textContent:s?.state==='running'?'Suche läuft …':'Getriebe finden',className:'primary'});find.dataset.findGear=id;find.disabled=s?.state==='running';find.onclick=()=>void this.findGear(id);

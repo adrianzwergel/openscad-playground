@@ -26,6 +26,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.evaluate(()=>document.getElementById('undo').click());await ready();
  assert.deepEqual((await saved()).d.frame.position,before.frame.position,'Rückgängig stellt den Motor zurück');
  // Catalog grid: a one-stage family (a circle at its centre distance), snapped now, stays on its circle while dragged.
+ assert.deepEqual(await p.$eval('[data-grip="raster"]',s=>[s.value,s.selectedOptions[0].textContent]),['catalog','Nächste Getriebe-Möglichkeit (Katalog)'],'Einrasten auf die nächste Möglichkeit ist der Standard');
  assert.match(await p.$eval('#drive-grid',e=>e.textContent),/\d+ Familien aus dem Katalog/);
  const circle=await p.$$eval('[data-grip="family"] option',l=>l.map(o=>({value:o.value,text:o.textContent})).find(o=>/^1 St\. · \d/.test(o.text)));assert.ok(circle,'einstufige Familie wählbar');
  await p.select('[data-grip="family"]',circle.value);await p.click('[data-grip="snap"]');await ready();
