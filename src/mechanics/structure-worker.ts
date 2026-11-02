@@ -27,7 +27,7 @@ self.onmessage=async({data})=>{
   let last=0;
   const links=await linkStructures(m,drives,plan,assets,{...settings,pool:pool.run},(link,stage,f)=>{const now=performance.now();if(now-last>150){last=now;self.postMessage({type:'progress',link,stage,f});}});
   for(const x of links){
-   if(!x.result){self.postMessage({type:'link',link:x.link,error:x.error,checks:x.checks});continue;}
+   if(!x.result){self.postMessage({type:'link',link:x.link,error:x.error,skipped:x.skipped,checks:x.checks});continue;}
    // The STL lies on the bed in its best print direction; the overlay stays in the link's frame.
    const positions=soup(x.result.mesh),stl=stlBinary(orientForPrint(x.result.mesh,x.result.report.print.up),x.link);
    self.postMessage({type:'link',link:x.link,positions,stl,report:{...x.result.report,checks:undefined},checks:x.checks,anchors:x.anchors.map(a=>({id:a.id,role:a.role,kind:a.feature.kind}))},{transfer:[positions.buffer,stl.buffer]});

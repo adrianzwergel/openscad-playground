@@ -4,7 +4,9 @@
 //  - Roboterarm: three rotary axes, motors on the carrying links,
 //  - CNC-Portal: three linear axes (spindles, belts or racks),
 //  - Schlitten: a wagon on an up-and-down path, the motor rides on the wagon and
-//    a pinion rolls on a rail along the path.
+//    a pinion rolls on a rail along the path,
+//  - Handgetriebe: a LEGO axle turned by hand drives an output axle 1 : 2.5, both
+//    LEGO cross axles in printed plain bearings (LEGO z16 → z40).
 import type {V,Frame,Q} from './kinematics/math.ts';
 import {identity,compose,axisAngle,inverse} from './kinematics/math.ts';
 import type {Mechanism,JointRelation} from './kinematics/model.ts';
@@ -13,7 +15,8 @@ import {toward} from './kinematics/drive.ts';
 import {curve} from './kinematics/curves.ts';
 
 export type Asset={id:string;name:string;scale:number;parts:{id:string;name:string;positions:Float32Array}[]};
-export type Demo={label:string;asset:Asset;mechanism:Mechanism;drives:Drive[]};
+/** `fabrication`: bearing settings the demo is meant with (e.g. LEGO axles in plain bearings). */
+export type Demo={label:string;asset:Asset;mechanism:Mechanism;drives:Drive[];fabrication?:{bearings:Record<string,string|number>}};
 
 // ---------- triangle soups ----------
 type Tri=[V,V,V];
@@ -92,5 +95,16 @@ export function slopeSled():Demo{
  const drives=[drive('M1','Wagen',[30,70,-15],[0,0,-1],'Fahrt',2*Math.PI*20/4)];
  return {label:'Demo Schlitten',asset,mechanism,drives};
 }
-export const demos={robot:robotArm,cnc:cncPortal,sled:slopeSled};
+/** Hand gearbox on a base plate: input and output are LEGO cross axles along y, 45 mm above the plate, 28 mm apart (the
+ * centre distance of LEGO z16 → z40). Plain bearings Ø5.0 (axle 4.8 with 0.2 clearance). */
+export function handGearbox():Demo{
+ const {asset,mesh}=build('demo-handgetriebe','Demo Handgetriebe',[['Grundplatte',box([-14,0,3],[110,70,6])],['Abtriebsachse',cylinder('y',[0,0,45],2.4,72)]]);
+ const mechanism:Mechanism={format:'kinematics-1',parameters:[],elements:[],contacts:[],patterns:[],
+  bodies:[{id:'ground',frame:identity(),ground:true,display:mesh(['Grundplatte'])},{id:'Abtrieb',frame:identity(),display:mesh(['Abtriebsachse'])}],
+  joints:[joint('Abtrieb','revolute','ground','Abtrieb',{position:[0,0,45],rotation:along.y},-180,180)],
+  input:{kind:'coordinate',joint:'Abtrieb',coordinate:0},output:{kind:'coordinate',joint:'Abtrieb',coordinate:0},range:{from:-180,to:180,samples:37}};
+ const drives=[{...drive('H1','ground',[-28,-24,45],[0,1,0],'Abtrieb',2.5,'lego-achse'),maxStages:1}];
+ return {label:'Demo Handgetriebe',asset,mechanism,drives,fabrication:{bearings:{shaft:'lego',prefer:'plain',clearance:.2}}};
+}
+export const demos={robot:robotArm,cnc:cncPortal,sled:slopeSled,hand:handGearbox};
 export {inverse};

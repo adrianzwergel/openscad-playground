@@ -1,8 +1,10 @@
 // Studio steps 6 and 7 on a demo: all trains adopted, bearings planned (every line ✓, parts list),
 // structures generated per link, all checks pass (strength and stiffness included), the step bar is complete, an STL downloads.
-// Usage: node scripts/check-studio-structure-browser.mjs [robot|cnc|sled]
+// Handgetriebe: LEGO z16 → z40 found with the catalog, LEGO axles in plain bearings Ø5.0 (no purchased bearing), the
+// bare output axle has nothing to print.
+// Usage: node scripts/check-studio-structure-browser.mjs [robot|cnc|sled|hand]
 import puppeteer from 'puppeteer';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
-const demo=process.argv[2]??'robot',drives={robot:['M1','M2','M3'],cnc:['M1','M2','M3'],sled:['M1']}[demo];
+const demo=process.argv[2]??'robot',drives={robot:['M1','M2','M3'],cnc:['M1','M2','M3'],sled:['M1'],hand:['H1']}[demo];
 const dir=await fs.mkdtemp(path.join(os.tmpdir(),'studio-structure-'));
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--enable-unsafe-swiftshader']});
 try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});
@@ -13,11 +15,12 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.click(`[data-demo="${demo}"]`);await ready();
  for(const id of drives){await open('⚡ '+id);await p.waitForSelector(`[data-find-gear="${id}"]`);await p.click(`[data-find-gear="${id}"]`);
   await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#drive-progress')?.dataset.state),{timeout:180000});await p.click('[data-adopt="0"]');
-  await p.waitForFunction(()=>['ok','hit','error'].includes(document.querySelector('#drive-check')?.dataset.state),{timeout:180000});await ready();}
+  await p.waitForFunction(()=>['ok','hit','error'].includes(document.querySelector('#drive-check')?.dataset.state),{timeout:180000});await ready();if(demo==='hand')assert.match(await p.$eval('.drive-gear',e=>e.textContent),/16 Tooth.*40 Tooth.*1 : 2.50/);}
  // Step 6: bearings.
  await open('Lager & Wellen');await p.waitForSelector('#bearing-lines');
  const lines=await p.$$eval('.bearing-line',l=>l.map(x=>x.dataset.state));assert.ok(lines.length>0&&lines.every(s=>s==='pass'),'Lager: '+lines.join(','));
- const bom=await p.$$eval('ul.bom li',l=>l.map(x=>x.textContent));assert.ok(bom.some(x=>/lager/i.test(x)),bom.join(' | '));
+ const bom=await p.$$eval('ul.bom li',l=>l.map(x=>x.textContent));assert.ok(bom.some(x=>demo==='hand'?/LEGO-Kreuzachse/.test(x):/lager/i.test(x)),bom.join(' | '));
+ if(demo==='hand'){const text=await p.$eval('#bearing-lines',e=>e.textContent);assert.ok(lines.length===2&&/Bohrung Ø5 für Welle Ø4.8/.test(text)&&!/Rillenkugellager/.test(text),text);}
  // Step 7: structures.
  await open('Struktur je Glied');await p.waitForSelector('[data-generate-structures]');const t0=Date.now();await p.click('[data-generate-structures]');
  await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#structure-progress')?.dataset.state),{timeout:900000});
@@ -26,7 +29,8 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
   // The stored 3D models too (IndexedDB), as JSON with plain arrays.
   await fs.writeFile(process.env.DOC+'.assets.json',await p.evaluate(()=>new Promise((res,rej)=>{const r=indexedDB.open('mechanics-studio-assets',1);r.onsuccess=()=>{const q=r.result.transaction('assets').objectStore('assets').getAll();q.onsuccess=()=>res(JSON.stringify(q.result,(k,v)=>v instanceof Float32Array?Array.from(v):v));q.onerror=()=>rej(q.error);};r.onerror=()=>rej(r.error);})));}
  const report=await p.$eval('#structure-progress',e=>e.textContent),rows=await p.$$eval('.structure-row',l=>l.map(x=>({link:x.dataset.link,state:x.dataset.state,text:x.textContent})));
- assert.match(report,/Fertig/,report+' '+JSON.stringify(rows.map(r=>r.text)));assert.ok(rows.length>=2&&rows.every(r=>r.state==='ok'),JSON.stringify(rows));
+ assert.match(report,/Fertig/,report+' '+JSON.stringify(rows.map(r=>r.text)));assert.ok(rows.length>=2&&rows.every(r=>r.state==='ok'||demo==='hand'&&r.state==='skip'),JSON.stringify(rows));
+ if(demo==='hand')assert.ok(rows.some(r=>r.link==='Abtrieb'&&r.state==='skip'&&/Nichts zu drucken/.test(r.text)),JSON.stringify(rows));
  // Strong and stiff enough under the design loads: no hint on utilisation or deflection.
  assert.ok(rows.every(r=>!/Größte (Auslastung|Verformung)/.test(r.text)),JSON.stringify(rows.map(r=>r.text)));
  assert.deepEqual(await p.$$eval('.steps li',l=>l.map(x=>x.dataset.state)),Array(7).fill('done'),'alle Schritte erledigt');
@@ -36,7 +40,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.waitForFunction(()=>document.querySelector('#axes-report')?.dataset.state==='ok',{timeout:20000});
  if(process.env.SHOT){await p.evaluate(()=>document.querySelector('#fit')?.click());await new Promise(r=>setTimeout(r,1500));await p.screenshot({path:process.env.SHOT});}
  // Download one link.
- const link=rows[0].link;await p.click(`[data-structure-stl="${link}"]`);
+ const link=rows.find(r=>r.state==='ok').link;await p.click(`[data-structure-stl="${link}"]`);
  let size=0;for(let i=0;i<100&&!size;i++){try{size=(await fs.stat(path.join(dir,(await fs.readdir(dir)).find(f=>f.endsWith('.stl'))))).size;}catch{await new Promise(r=>setTimeout(r,100));}}
  assert.ok(size>10000,'STL heruntergeladen');
  assert.deepEqual(errors,[]);console.log(`Studio Struktur (${demo}): ${rows.map(r=>r.text.replace(/STL$/,'')).join(' | ')} · ${((Date.now()-t0)/1000).toFixed(0)} s · ${bom.length} Stücklistenposten`);

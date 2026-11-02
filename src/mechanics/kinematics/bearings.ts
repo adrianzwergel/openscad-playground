@@ -26,11 +26,14 @@ export const bearingCatalog:BearingSpec[]=[
  {id:'LM12UU',label:'Linearkugellager LM12UU (12×21×30)',kind:'linear',d:12,D:21,B:30,C0:800,price:2},
 ];
 /** A printed plain bearing: bore with clearance, no purchased part. */
-const plainSpec=(d:number):BearingSpec=>({id:`gleit-${d}`,label:`Gleitlager gedruckt Ø${d} mit Spiel`,kind:'plain',d,D:d,B:Math.max(8,1.5*d),C0:60,price:0});
+const plainSpec=(d:number,clearance:number):BearingSpec=>({id:`gleit-${d}`,label:`Gleitlager gedruckt, Bohrung Ø${+(d+clearance).toFixed(2)} für Welle Ø${d}`,kind:'plain',d,D:d,B:Math.max(8,1.5*d),C0:60,price:0});
+/** A LEGO cross axle across its flats (the bore of a plain bearing adds the clearance). */
+export const LEGO_AXLE=4.8;
 
-/** `linearSpan`: distance between the two linear bearings on one rod (a wide base carries moments). */
-export type BearingSettings={prefer:'ball'|'plain';gearGap:number;wall:number;fit:number;clearance:number;axisShaft:number;axles:'rotating'|'fixed';hubLength:number;rod:number;rodOffset:number;maxOverhang:number;linearSpan:number};
-export const defaultBearingSettings:BearingSettings={prefer:'ball',gearGap:2,wall:2.5,fit:.15,clearance:.3,axisShaft:8,axles:'rotating',hubLength:18,rod:8,rodOffset:40,maxOverhang:40,linearSpan:80};
+/** `linearSpan`: distance between the two linear bearings on one rod (a wide base carries moments). `shaft: 'lego'`: every
+ * shaft is a LEGO cross axle (Ø4.8) in printed plain bearings, wheels sit on it without a clamp hub. */
+export type BearingSettings={shaft:'round'|'lego';prefer:'ball'|'plain';gearGap:number;wall:number;fit:number;clearance:number;axisShaft:number;axles:'rotating'|'fixed';hubLength:number;rod:number;rodOffset:number;maxOverhang:number;linearSpan:number};
+export const defaultBearingSettings:BearingSettings={shaft:'round',prefer:'ball',gearGap:2,wall:2.5,fit:.15,clearance:.3,axisShaft:8,axles:'rotating',hubLength:18,rod:8,rodOffset:40,maxOverhang:40,linearSpan:80};
 
 /** `link`: the link the seat is printed into; `frame` in that link's coordinates (pose 0), z along the axis. */
 /** `keep`: space of the purchased part itself that the structure must leave free (a roller's outer ring). */
@@ -50,7 +53,7 @@ export function modelPoints(m:Mechanism,assets:Assets|undefined,link:string,limi
 }
 function pick(d:number,s:BearingSettings,maxD=Infinity):BearingSpec[]{
  const balls=bearingCatalog.filter(x=>x.kind==='ball'&&x.d===d&&x.D<=maxD).sort((a,b)=>b.C0-a.C0);
- return s.prefer==='plain'?[plainSpec(d),...balls]:[...balls,plainSpec(d)];
+ return s.prefer==='plain'||s.shaft==='lego'?[plainSpec(d,s.clearance),...balls]:[...balls,plainSpec(d,s.clearance)];
 }
 const bearingFeature=(b:BearingSpec,s:BearingSettings,open:1|-1):Feature=>b.kind==='plain'?{kind:'plain',d:b.d,length:b.B,clearance:s.clearance,wall:s.wall+1}:{kind:'bearing',d:b.d,D:b.D,B:b.B,fit:s.fit,wall:s.wall,open};
 
@@ -115,8 +118,8 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
   const d=drives.find(x=>b.id.startsWith(x.id+'/'))!,carrier=carrierOf(j.a.body),f=local(carrier,world(j.a.body,j.a.local));
   const on=m.elements.filter(e=>e.mounts[0].body===b.id||e.mounts[0].body===`${b.id}/rotor`),occupied=on.map(e=>[e.mounts[0].pose.position[2]+e.envelope.min,e.mounts[0].pose.position[2]+e.envelope.max] as [number,number]);
   if(!occupied.length)continue;
-  const motor=b.id===`${d.id}/s0`,spindle=on.some(e=>e.source.kind==='library'&&e.surfaces[0]?.profile.kind==='helical'),diameter=spindle?8:b.shaft.diameter;
-  const line:ShaftLine={id:b.id,kind:spindle?'spindle':motor?'motor':'train',link:carrier,d:diameter,frame:f,z0:b.shaft.start,z1:b.shaft.end,seats:[],state:'pass',message:''};lines.push(line);
+  const motor=b.id===`${d.id}/s0`,spindle=on.some(e=>e.source.kind==='library'&&e.surfaces[0]?.profile.kind==='helical'),diameter=spindle?8:s.shaft==='lego'?LEGO_AXLE:b.shaft.diameter;
+  const line:ShaftLine={id:b.id,kind:spindle?'spindle':motor&&driveSpec(d.spec).housing!==false?'motor':'train',link:carrier,d:diameter,frame:f,z0:b.shaft.start,z1:b.shaft.end,seats:[],state:'pass',message:''};lines.push(line);
   const mine=(e:Element)=>on.includes(e);
   if(spindle){
    // Fixed bearing at the motor end, floating at the far end; the nut runs in between.
@@ -127,7 +130,7 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
      line.message=`${spec.label} · Fest- und Loslager, Mutterweg dazwischen`;line.z0=z0;line.z1=z1;break;}}
    if(!line.seats.length){line.state='fail';line.message='Spindellager kollidieren.';}
    continue;}
-  if(motor){
+  if(motor&&driveSpec(d.spec).housing!==false){
    // The motor carries its shaft; a wheel beyond the shaft end needs a support bearing.
    const spec=driveSpec(d.spec),far=Math.max(...occupied.map(x=>x[1]));
    if(far<=spec.shaft.length+1){line.message='im Motor gelagert';continue;}
@@ -145,7 +148,7 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
  for(const j of axes){
   const A=j.a.body,B=j.b.body;
   if(j.joint.kind==='revolute'){
-   const f=j.a.local,fw=world(A,f),axis=rotate(fw.rotation,[0,0,1]),d=s.axisShaft;
+   const f=j.a.local,fw=world(A,f),axis=rotate(fw.rotation,[0,0,1]),lego=s.shaft==='lego',d=lego?LEGO_AXLE:s.axisShaft;
    const along=(p:V)=>{const q=compose(inverse(fw),{position:p,rotation:[0,0,0,1]}).position;return {z:q[2],r:Math.hypot(q[0],q[1])};};
    // Where does each link have material around the axis? B's arms leave its hub there; A's seats belong where A is close.
    const ptsA=modelPoints(m,assets,A).map(along),ptsB=modelPoints(m,assets,B).map(along),hubR=d/2+s.wall+2;
@@ -161,12 +164,13 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
    // The shaft is clamped in B where B's arms are; wheels on B along the axis sit on the same shaft.
    // The clamp hub is a flange: the link's arms leave it all around (it carries the whole link).
    const hubZ=sides.lo&&!sides.hi?bz0+s.hubLength/2:sides.hi&&!sides.lo?bz1-s.hubLength/2:(bz0+bz1)/2,hub:Feature={kind:'hub',d,length:s.hubLength,wall:s.wall+6,setScrew:true};
-   const hubFrame=local(B,compose(fw,{position:[0,0,hubZ],rotation:[0,0,0,1]})),seat:Seat={id:`${j.id}/nabe`,link:B,line:line.id,kind:'hub',frame:hubFrame,feature:hub,support:true};seats.push(seat);line.seats.push(seat.id);
+   // A LEGO axle carries its wheels by its cross: no clamp hub.
+   const hubFrame=local(B,compose(fw,{position:[0,0,hubZ],rotation:[0,0,0,1]})),seat:Seat={id:`${j.id}/nabe`,link:B,line:line.id,kind:'hub',frame:hubFrame,feature:hub,support:true};if(!lego){seats.push(seat);line.seats.push(seat.id);}
    for(const x of coax)edits.push({element:x.e.id,bore:d+.1});
    // The shaft runs from the outer seat through the hub to the last wheel on it.
-   const ends=[...line.seats.map(id=>seats.find(x=>x.id===id)!).filter(x=>x.link===A).map(x=>compose(inverse(f),x.frame).position[2]),hubZ-s.hubLength/2,hubZ+s.hubLength/2,...occupied.flat()];
+   const ends=[...line.seats.map(id=>seats.find(x=>x.id===id)!).filter(x=>x.link===A).map(x=>compose(inverse(f),x.frame).position[2]),...(lego?[]:[hubZ-s.hubLength/2,hubZ+s.hubLength/2]),...occupied.flat()];
    line.z0=Math.min(...ends)-6;line.z1=Math.max(...ends)+3;
-   if(ok)line.message+=` · Welle Ø${d} in ${B} geklemmt`;
+   if(ok)line.message+=lego?' · LEGO-Achse, Räder auf dem Kreuz':` · Welle Ø${d} in ${B} geklemmt`;
   }
   else if(j.joint.kind==='prismatic'){
    const f=j.a.local,fw=world(A,f),t=rotate(fw.rotation,[0,0,1]),lo=j.limits?.min??0,hi=j.limits?.max??200;
@@ -196,15 +200,15 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
   }
  }
  // ---------- motor flanges ----------
- for(const d of drives){const spec=driveSpec(d.spec),carrier=carrierOf(d.body);if(spec.kind!=='motor'){seats.push({id:`${d.id}/bock`,link:carrier,line:d.id,kind:'flange',frame:local(carrier,world(d.body,d.frame)),feature:{kind:'flange',size:spec.size[0],pilot:spec.shaft.diameter+8,spacing:spec.size[0]-12,hole:4.5,thickness:5}});continue;}
+ for(const d of drives){const spec=driveSpec(d.spec),carrier=carrierOf(d.body);if(spec.housing===false)continue;if(spec.kind!=='motor'){seats.push({id:`${d.id}/bock`,link:carrier,line:d.id,kind:'flange',frame:local(carrier,world(d.body,d.frame)),feature:{kind:'flange',size:spec.size[0],pilot:spec.shaft.diameter+8,spacing:spec.size[0]-12,hole:4.5,thickness:5}});continue;}
   const pilot=spec.size[0]>50?38.1:spec.size[0]>40?22:22,spacing=spec.size[0]>50?47.1:spec.size[0]>40?31:26;
   seats.push({id:`${d.id}/flansch`,link:carrier,line:d.id,kind:'flange',part:d.spec,frame:local(carrier,world(d.body,d.frame)),feature:{kind:'flange',size:spec.size[0]+12,pilot,spacing,hole:3.4,thickness:5}});}
  for(const e of edits){const x=m.elements.find(y=>y.id===e.element);void x;}
  // ---------- checks and parts list ----------
  for(const l of lines)checks.push({id:`lager/${l.id}`,state:l.state,message:`${l.id}: ${l.message}`});
  const count=new Map<string,{label:string;count:number;length?:number}>();
- for(const x of seats){if(!x.part)continue;const b=bearingCatalog.find(y=>y.id===x.part),motor=driveCatalogLabel(x.part),label=b?.label??motor??x.part;const c=count.get(x.part)??{label,count:0};c.count++;count.set(x.part,c);}
- for(const l of lines)if(l.kind==='axis'||l.kind==='train'||l.kind==='rod'){const key=`Welle Ø${l.d}`,len=Math.ceil((l.z1-l.z0)/5)*5,c=count.get(key+len)??{label:`Silberstahlwelle Ø${l.d} × ${len} mm`,count:0,length:len};c.count++;count.set(key+len,c);}
+ for(const x of seats){if(!x.part||x.kind==='plain')continue;const b=bearingCatalog.find(y=>y.id===x.part),motor=driveCatalogLabel(x.part),label=b?.label??motor??x.part;const c=count.get(x.part)??{label,count:0};c.count++;count.set(x.part,c);}
+ for(const l of lines)if(l.kind==='axis'||l.kind==='train'||l.kind==='rod'){const lego=l.d===LEGO_AXLE,studs=Math.ceil((l.z1-l.z0)/8),key=`Welle Ø${l.d}`,len=lego?studs*8:Math.ceil((l.z1-l.z0)/5)*5,c=count.get(key+len)??{label:lego?`LEGO-Kreuzachse ${studs}L (${len} mm)`:`Silberstahlwelle Ø${l.d} × ${len} mm`,count:0,length:len};c.count++;count.set(key+len,c);}
  const bom=[...count.entries()].map(([part,v])=>({part,...v}));
  return {lines,seats,bom,checks,edits};
 }

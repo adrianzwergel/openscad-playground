@@ -160,6 +160,19 @@ Erweiterung von kinematics-1 (keine neue Dokumentart):
 | Linear | LM8UU (8×15×24), LM12UU, gedruckte Buchse auf 8-mm-Welle | Linearachsen |
 | Axial | Anlaufscheibe, 51100 | Schnecken, Kegelräder (Axialkraft) |
 | Welle | Silberstahl 3/5/6/8/10/12 mm, Länge nach Bedarf, Anflachung, Nut DIN 471 | alle |
+| LEGO-Achse | Kreuzachse 4,8 mm, Länge in Noppen (8 mm) | LEGO-Räder, langsame Handgetriebe |
+
+**LEGO-Wellen** (Lagereinstellung `shaft: 'lego'`):
+- Jede Welle ist eine Kreuzachse Ø4,8 in gedruckten Gleitlagern. Die Bohrung
+  ist 4,8 mm plus Spiel, mit Standard 0,2 mm also Ø5,0; das Spiel ist im Studio
+  einstellbar.
+- Räder sitzen auf dem Kreuz. Der Abtrieb braucht keine Klemmnabe; ein Glied,
+  das nur aus der Achse besteht, hat nichts zu drucken.
+- Der Antrieb „LEGO-Achse, von Hand gedreht“ (`housing: false`) hat weder
+  Gehäuse noch Lagerbock. Seine Welle läuft wie eine Getriebewelle in
+  Gleitlagern; Kurbel oder Rad steckt man selbst auf.
+- Die Stückliste nennt die Achsen in Noppen, z. B. „LEGO-Kreuzachse 5L (40 mm)“.
+- Die Demo „Handgetriebe“ ist LEGO z16 → z40 (1 : 2,5) auf einer Grundplatte.
 
 Jeder Eintrag trägt Tragzahl (C, C0), zulässige Drehzahl, Preisstufe und
 Montageart (Presssitz, Klemmhälften, Flansch mit Schrauben).

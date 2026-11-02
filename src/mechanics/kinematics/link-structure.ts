@@ -37,7 +37,8 @@ export type LinkPool={field:(link:string,built:BuiltStructure[],job:FieldJob,poi
 export type LinkSettings={structure:Partial<StructureSettings>;load:number;payload:number;gap:number;region:number;drives:Partial<DriveLoadSettings>;only?:string[];pool?:LinkPool;
  environment?:(env:{clearanceFor:(link:string)=>((p:V)=>number)&{seed:(pairs:Float64Array)=>void};add:(b:BuiltStructure)=>void})=>void;inspect?:(link:string,anchors:Anchor[],clearance:(p:V)=>number,parts:(p:V)=>{link:string;d:number}[])=>void};
 export const defaultLinkSettings:LinkSettings={structure:{},load:20,payload:20,gap:1,region:35,drives:{}};
-export type LinkStructure={link:string;anchors:Anchor[];result?:StructureResult;error?:string;clearance?:number;checks:{id:string;state:'pass'|'fail'|'warn';message:string}[]};
+/** `skipped`: nothing to print for this link (no seat, flange or hub on it, e.g. a bare LEGO output axle). */
+export type LinkStructure={link:string;anchors:Anchor[];result?:StructureResult;error?:string;skipped?:string;clearance?:number;checks:{id:string;state:'pass'|'fail'|'warn';message:string}[]};
 
 const toFrame=(p:V):Frame=>({position:p,rotation:[0,0,0,1]});
 const quatToward=(v:V):Frame['rotation']=>{const z:V=[0,0,1],c=cross(z,v),s=norm(c),d=v[2]/norm(v);if(s<1e-9)return d>0?[0,0,0,1]:[1,0,0,0];const a=Math.atan2(s/norm(v),d)/2,k=Math.sin(a)/s;return [c[0]*k,c[1]*k,c[2]*k,Math.cos(a)];};
@@ -179,6 +180,7 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
  if(s.environment){s.environment({clearanceFor:l=>clearanceFor(l),add:register});return out;}
  for(const l of order){
   const list=anchors.get(l)!,entry:LinkStructure={link:l,anchors:list,checks:[]};out.push(entry);
+  if(!list.length){entry.skipped='Nichts zu drucken: kein Lager, Flansch oder Nabe auf diesem Glied.';continue;}
   if(!list.some(a=>a.role==='load')||!list.some(a=>a.role==='support')){entry.error='Glied hat keine Haltepunkte zum Verbinden.';continue;}
   if(s.only&&!s.only.includes(l))continue;
   if(s.inspect){const own=indexOf(l,false),others=tree.links.filter(x=>x!==l&&adjacent(l,x)).map(x=>({x,index:indexOf(x),steps:path(m,tree,l,x)}));s.inspect(l,list,clearanceFor(l),p=>[{link:l,d:own.distance(p)},...others.map(o=>({link:o.x,d:sweptDistance(p,o.steps,0,o.index,-1)}))]);continue;}
