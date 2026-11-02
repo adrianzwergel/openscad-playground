@@ -4,9 +4,9 @@
 // bare output axle has nothing to print.
 // Planetengetriebe: its train comes with the demo; five shaft lines, the carrier on the output axle by a cross hole,
 // the ring gear on four heat-set inserts.
-// Usage: node scripts/check-studio-structure-browser.mjs [robot|cnc|sled|hand|planet]
+// Usage: node scripts/check-studio-structure-browser.mjs [robot|cnc|sled|hand|planet|planet16]
 import puppeteer from 'puppeteer';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
-const demo=process.argv[2]??'robot',drives={robot:['M1','M2','M3'],cnc:['M1','M2','M3'],sled:['M1'],hand:['H1'],planet:[]}[demo];
+const demo=process.argv[2]??'robot',drives={robot:['M1','M2','M3'],cnc:['M1','M2','M3'],sled:['M1'],hand:['H1'],planet:[],planet16:[]}[demo];
 const dir=await fs.mkdtemp(path.join(os.tmpdir(),'studio-structure-'));
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--enable-unsafe-swiftshader']});
 try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});
@@ -21,9 +21,9 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // Step 6: bearings.
  await open('Lager & Wellen');await p.waitForSelector('#bearing-lines');
  const lines=await p.$$eval('.bearing-line',l=>l.map(x=>x.dataset.state));assert.ok(lines.length>0&&lines.every(s=>s==='pass'),'Lager: '+lines.join(','));
- const bom=await p.$$eval('ul.bom li',l=>l.map(x=>x.textContent));assert.ok(bom.some(x=>demo==='hand'||demo==='planet'?/LEGO-Kreuzachse/.test(x):/lager/i.test(x)),bom.join(' | '));
+ const bom=await p.$$eval('ul.bom li',l=>l.map(x=>x.textContent));assert.ok(bom.some(x=>demo==='hand'||demo.startsWith('planet')?/LEGO-Kreuzachse/.test(x):/lager/i.test(x)),bom.join(' | '));
  if(demo==='hand'){const text=await p.$eval('#bearing-lines',e=>e.textContent);assert.ok(lines.length===2&&/Bohrung Ø5 für Welle Ø4.8/.test(text)&&!/Rillenkugellager/.test(text),text);}
- if(demo==='planet'){const text=await p.$eval('#bearing-lines',e=>e.textContent);assert.ok(lines.length===5&&/Steg mit Kreuzbohrung/.test(text)&&!/Rillenkugellager/.test(text),text);assert.ok(bom.some(x=>/4× Einpressmutter M3/.test(x)),bom.join(' | '));}
+ if(demo.startsWith('planet')){const text=await p.$eval('#bearing-lines',e=>e.textContent);assert.ok(lines.length===5&&/Steg mit Kreuzbohrung/.test(text)&&!/Rillenkugellager/.test(text),text);assert.ok(bom.some(x=>/4× Einpressmutter M3/.test(x)),bom.join(' | '));}
  // Step 7: structures.
  await open('Struktur je Glied');await p.waitForSelector('[data-generate-structures]');const t0=Date.now();await p.click('[data-generate-structures]');
  await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#structure-progress')?.dataset.state),{timeout:900000});

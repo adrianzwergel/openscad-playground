@@ -8,7 +8,8 @@
 //  - Handgetriebe: a LEGO axle turned by hand drives an output axle 1 : 2.5, both
 //    LEGO cross axles in printed plain bearings (LEGO z16 → z40),
 //  - Planetengetriebe: the same parts as a planetary stage 1 : 7 (sun z16, three
-//    planets z40, a printed ring gear z96 screwed to the frame).
+//    planets z40, a printed ring gear z96 screwed to the frame),
+//  - Planetengetriebe 4 × z16: sun and planets LEGO z16, ring gear z48, 1 : 4.
 import type {V,Frame,Q} from './kinematics/math.ts';
 import {identity,compose,axisAngle,inverse} from './kinematics/math.ts';
 import type {Mechanism,JointRelation,Element} from './kinematics/model.ts';
@@ -110,32 +111,38 @@ export function handGearbox():Demo{
  const drives=[{...drive('H1','ground',[-28,-24,45],[0,1,0],'Abtrieb',2.5,'lego-achse'),maxStages:1}];
  return {label:'Demo Handgetriebe',asset,mechanism,drives,fabrication:{bearings:{shaft:'lego',prefer:'plain',clearance:.2}}};
 }
-/** Planetary stage of LEGO parts: sun z16 on the input axle, three planets z40 on a carrier, a printed ring gear z96
- * fixed to the frame; the carrier drives the output axle (1 : 7). (16 + 96)/3 is no whole number, so the planets sit at
- * 0°, 37 and 75 teeth of 112 (0°, 118.9°, 241.1°), where all three mesh. The train belongs to the hand drive H1 like an
+/** Planetary stage of LEGO parts: a sun on the input axle, three planets on a carrier, a printed ring gear (sun + 2 ×
+ * planet teeth, module 1) fixed to the frame; the carrier drives the output axle (1 : 1 + ring/sun). Planets mesh with
+ * sun and ring only at whole multiples of 360°/(sun + ring): they sit at the multiples nearest to thirds (z16/z40:
+ * 0, 37 and 75 of 112 teeth, i.e. 0°, 118.9°, 241.1°). The train belongs to the hand drive H1 like an
  * adopted one: sun and planets follow the carrier with fixed rates. The carrier is one-sided (on the output side, its
  * model says so): between the planets there is no room for struts to a second plate. */
-export function planetGearbox():Demo{
- const H=70,a=28,angles=[0,360*37/112,360*75/112],centre:Frame={position:[0,0,H],rotation:along.y};
- const {asset,mesh}=build('demo-planetengetriebe','Demo Planetengetriebe',[['Grundplatte',box([0,0,3],[170,130,6])],['Abtriebslager',box([0,46,H],[24,10,24])],
-  ['Steg',cylinder('y',[0,10,H],36,3)],['Abtriebsachse',cylinder('y',[0,35,H],2.4,50)]]);
+export function planetGearbox(o:{id:string;label:string;sun:string;planet:string}={id:'demo-planetengetriebe',label:'Demo Planetengetriebe',sun:'4019',planet:'3649'}):Demo{
+ const teethOf=(part:string)=>legoParts.find(p=>p.id===part)!.teeth,zs=teethOf(o.sun),zp=teethOf(o.planet),zr=zs+2*zp,n=zs+zr;
+ // Ring: root at r + 1.25 m, about 4.75 mm of wall beyond; the lugs reach 12 mm further.
+ const a=(zs+zp)/2,outer=zr/2+6,H=outer+16,angles=[0,1,2].map(k=>360*Math.round(k*n/3)/n),centre:Frame={position:[0,0,H],rotation:along.y};
+ const {asset,mesh}=build(o.id,o.label,[['Grundplatte',box([0,0,3],[2*outer+62,2*outer+22,6])],['Abtriebslager',box([0,46,H],[24,10,24])],
+  ['Steg',cylinder('y',[0,10,H],a+8,3)],['Abtriebsachse',cylinder('y',[0,35,H],2.4,50)]]);
  const on=(local:V):Frame=>({position:local,rotation:[0,0,0,1]}),planetAt=(k:number):V=>[a*Math.cos(angles[k]*Math.PI/180),a*Math.sin(angles[k]*Math.PI/180),0];
  const lego=(id:string,part:string,body:string):Element=>{const s=legoSpec(legoParts.find(p=>p.id===part)!,'spur');return {id,source:s.source,surfaces:s.surfaces,interfaces:s.interfaces,envelope:s.envelope,mounts:[{interface:'bore',body,pose:identity()}],phase:0};};
- const ring:Element={id:'hohlrad',source:{kind:'printed'},surfaces:[{id:'teeth',pitch:{kind:'circle',r:48},profile:{kind:'involute',module:1,pressureAngle:20,backlash:.2},z:[-4,4],side:'internal'}],interfaces:[{id:'aussen',kind:'outer-ring',diameter:108,z:[-4,4]}],envelope:{radius:66,min:-4,max:4},mounts:[{interface:'aussen',body:'ground',pose:centre}],phase:0};
+ const ring:Element={id:'hohlrad',source:{kind:'printed'},surfaces:[{id:'teeth',pitch:{kind:'circle',r:zr/2},profile:{kind:'involute',module:1,pressureAngle:20,backlash:.2},z:[-4,4],side:'internal'}],interfaces:[{id:'aussen',kind:'outer-ring',diameter:2*outer,z:[-4,4]}],envelope:{radius:outer+12,min:-4,max:4},mounts:[{interface:'aussen',body:'ground',pose:centre}],phase:0};
  const planets=[0,1,2];
  const mechanism:Mechanism={format:'kinematics-1',parameters:[],patterns:[],
   bodies:[{id:'ground',frame:identity(),ground:true,display:mesh(['Grundplatte','Abtriebslager'])},{id:'Steg',frame:centre,display:mesh(['Steg','Abtriebsachse'])},
    {id:'H1/s0',frame:centre,shaft:{diameter:4.8,start:-50,end:6}},...planets.map(k=>({id:`H1/p${k+1}`,frame:compose(centre,on(planetAt(k))),shaft:{diameter:4.8,start:-14,end:14}}))],
   joints:[{id:'Abtrieb',joint:{kind:'revolute'},a:{body:'ground',local:centre},b:{body:'Steg',local:identity()},limits:{min:-180,max:180}},{id:'H1/ground/s0',joint:{kind:'revolute'},a:{body:'ground',local:centre},b:{body:'H1/s0',local:identity()}},
    ...planets.map(k=>({id:`H1/steg/p${k+1}`,joint:{kind:'revolute' as const},a:{body:'Steg',local:on(planetAt(k))},b:{body:`H1/p${k+1}`,local:identity()}}))],
-  elements:[lego('H1/sonne','4019','H1/s0'),...planets.map(k=>lego(`H1/planet${k+1}`,'3649',`H1/p${k+1}`)),ring],
+  elements:[lego('H1/sonne',o.sun,'H1/s0'),...planets.map(k=>lego(`H1/planet${k+1}`,o.planet,`H1/p${k+1}`)),ring],
   // Three planets close the same loop three times: the ring contacts of planets 2 and 3 are redundant.
   contacts:planets.flatMap(k=>[{id:`H1/sonne-planet${k+1}`,kind:'roll' as const,mode:'fixed-axes' as const,a:{element:'H1/sonne',surface:'teeth'},b:{element:`H1/planet${k+1}`,surface:'teeth'},params:{offsetA:0,offsetB:0}},
    {id:`H1/planet${k+1}-hohlrad`,kind:'roll' as const,mode:'fixed-axes' as const,a:{element:`H1/planet${k+1}`,surface:'teeth'},b:{element:'hohlrad',surface:'teeth'},params:{offsetA:0,offsetB:0},...(k?{redundant:true}:{})}]),
   input:{kind:'coordinate',joint:'Abtrieb',coordinate:0},output:{kind:'coordinate',joint:'Abtrieb',coordinate:0},range:{from:-180,to:180,samples:37}};
- const rates:Record<string,number>={'H1/ground/s0':7,...Object.fromEntries(planets.map(k=>[`H1/steg/p${k+1}`,-2.4]))};
- const drives:Drive[]=[{...drive('H1','ground',[0,-56,H],[0,1,0],'Abtrieb',7,'lego-achse'),maxStages:2,gear:{reference:0,rates,offsets:Object.fromEntries(Object.keys(rates).map(id=>[id,0])),label:'Planetenstufe: LEGO z16 Sonne · 3 × LEGO z40 · Hohlrad z96 (gedruckt)',ratio:7,notes:[]}}];
- return {label:'Demo Planetengetriebe',asset,mechanism,drives,fabrication:{bearings:{shaft:'lego',prefer:'plain',clearance:.2,wall:4}}};
+ // Per degree of the carrier (ring fixed): the sun turns 1 + ring/sun, each planet −ring/planet against the carrier.
+ const ratio=1+zr/zs,rates:Record<string,number>={'H1/ground/s0':ratio,...Object.fromEntries(planets.map(k=>[`H1/steg/p${k+1}`,-zr/zp]))};
+ const drives:Drive[]=[{...drive('H1','ground',[0,-56,H],[0,1,0],'Abtrieb',ratio,'lego-achse'),maxStages:2,gear:{reference:0,rates,offsets:Object.fromEntries(Object.keys(rates).map(id=>[id,0])),label:`Planetenstufe: LEGO z${zs} Sonne · 3 × LEGO z${zp} · Hohlrad z${zr} (gedruckt)`,ratio,notes:[]}}];
+ return {label:o.label,asset,mechanism,drives,fabrication:{bearings:{shaft:'lego',prefer:'plain',clearance:.2,wall:4}}};
 }
-export const demos={robot:robotArm,cnc:cncPortal,sled:slopeSled,hand:handGearbox,planet:planetGearbox};
+/** The same with four LEGO z16: sun and three planets, ring gear z48, 1 : 4. */
+export const planetGearbox16=()=>planetGearbox({id:'demo-planetengetriebe-z16',label:'Demo Planetengetriebe 4 × z16',sun:'4019',planet:'4019'});
+export const demos={robot:robotArm,cnc:cncPortal,sled:slopeSled,hand:handGearbox,planet:()=>planetGearbox(),planet16:planetGearbox16};
 export {inverse};

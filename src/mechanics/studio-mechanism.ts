@@ -315,7 +315,7 @@ export class MechanismEditor{
   }
   root.append(el('div',{className:'tree-group',textContent:'Neu'}));
   const add=el('div',{className:'mechanism-add'});
-  const demoButtons=([['robot','▶ Demo: Roboterarm'],['cnc','▶ Demo: CNC-Portal'],['sled','▶ Demo: Schlitten auf Wellenbahn'],['hand','▶ Demo: Handgetriebe (LEGO)'],['planet','▶ Demo: Planetengetriebe (LEGO)']] as const).map(([key,label])=>{const b=el('button',{textContent:label,className:'primary'});b.dataset.demo=key;b.onclick=()=>void this.loadDemo(key);return b;});
+  const demoButtons=([['robot','▶ Demo: Roboterarm'],['cnc','▶ Demo: CNC-Portal'],['sled','▶ Demo: Schlitten auf Wellenbahn'],['hand','▶ Demo: Handgetriebe (LEGO)'],['planet','▶ Demo: Planetengetriebe (LEGO)'],['planet16','▶ Demo: Planetengetriebe 4 × LEGO z16']] as const).map(([key,label])=>{const b=el('button',{textContent:label,className:'primary'});b.dataset.demo=key;b.onclick=()=>void this.loadDemo(key);return b;});
   const templateBox=el('details',{className:'templates'},el('summary',{textContent:'Vorlagen (Getriebe-Beispiele)'}));
   for(const [key,t] of Object.entries(templates)){const b=el('button',{textContent:'+ '+t.label});b.dataset.mechanismTemplate=key;b.onclick=()=>{const id='mech-'+crypto.randomUUID().slice(0,8);this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label:t.label.replace(' (Vorlage)',''),mechanism:t.build()}];},`${t.label} angelegt`);this.enter(id);this.host.leave();};templateBox.append(b);}
   const file=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});file.id='model-file';

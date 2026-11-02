@@ -174,7 +174,7 @@ Erweiterung von kinematics-1 (keine neue Dokumentart):
 - Die Stückliste nennt die Achsen in Noppen, z. B. „LEGO-Kreuzachse 5L (40 mm)“.
 - Die Demo „Handgetriebe“ ist LEGO z16 → z40 (1 : 2,5) auf einer Grundplatte.
 
-**Planetengetriebe** (Demo „Planetengetriebe“, Abnahme `scripts/kinematics/check-planet.mjs`):
+**Planetengetriebe** (Demos „Planetengetriebe“ z16/z40/z96 1 : 7 und „Planetengetriebe 4 × z16“ z16/z16/z48 1 : 4, ein Baukasten `planetGearbox`; Abnahme `scripts/kinematics/check-planet.mjs [planet|planet16]`):
 - **Aufbau:** Sonne LEGO z16, drei Planeten LEGO z40 und ein gedrucktes Hohlrad
   z96 (m1) ergeben 1 : 7. Weil (16 + 96)/3 nicht ganzzahlig ist, sitzen die
   Planeten bei 0°, 118,9° und 241,1°, also nach 37 und 75 von 112 Zähnen. Dort
