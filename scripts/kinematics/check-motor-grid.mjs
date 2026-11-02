@@ -39,6 +39,13 @@ for(const turn of [0,90,180,270,45,135,225,315]){tried++;
  const r=await route(task.request,{...task.options,maxStages:1});
  found=r.solutions.find(sol=>sol.chain.stages.length===1&&sol.chain.stages[0].choice.rule==='external-spur');if(found)break;}
 assert.ok(found,'Suche findet am Rasterplatz das einstufige Getriebe z20 → z40');
+// (M3 with the demo's reduction 3 again.) Pairs too close for the search's clearance test (1 mm from a sphere around each wheel to the other shaft) are no
+// family: LEGO z8 → z24 at 16 mm fails it, z12 → z36 at 24 mm passes, and the search finds a train on its circle.
+{const m3=drives.find(x=>x.id==='M3'),lg=motorGrid(m,{...m3,target:3,tolerance:5,maxStages:1},{catalog:{excludedRules:[],lockedParts:[]}}),labels=lg.families.map(f=>f.label);
+ assert.ok(!labels.includes('LEGO z8 → z24'),'z8 → z24 zu eng');const z36=lg.families.find(f=>f.label==='LEGO z12 → z36'&&f.kind==='parallel');assert.ok(z36,'z12 → z36 im Raster');
+ const at=snapMotor(lg,m3.frame,{only:z36.key}).frame,x=structuredClone(m),xd=structuredClone(drives),dd=xd.find(y=>y.id==='M3');Object.assign(dd,{frame:at,target:3,tolerance:5,maxStages:1});removeGear(x,dd);placeMotor(x,dd);
+ const task=driveTask(x,xd,dd,id=>id===demo.asset.id?demo.asset:undefined,ref.poses[0].bodies,values,{catalog:{excludedRules:[],lockedParts:[]},budget:4000});
+ assert.ok((await route(task.request,task.options)).solutions.length,'Suche findet am Kreis von z12 → z36 ein Getriebe');}
 // Locked part and switched-off kind leave the grid.
 {const g=motorGrid(m,d,{allowed:c=>![c.a,c.b].some(e=>e.legacy?.family==='spur'&&e.legacy.params.teeth===40)});assert.ok(!g.families.some(f=>/Stirnräder[^·]*z40/.test(f.label)),'gesperrtes z40 fehlt im Raster');}
 {const g=motorGrid(m,d,{catalog:{excludedRules:['bevel-mesh','worm-mesh','lego-bevel-90','lego-worm'],lockedParts:[]}});assert.ok(g.families.every(f=>f.kind==='parallel'),'ohne Kegel und Schnecke nur parallele Familien');}

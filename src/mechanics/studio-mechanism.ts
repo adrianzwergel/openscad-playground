@@ -401,12 +401,15 @@ export class MechanismEditor{
    w.onmessage=({data})=>{if(this.search!==search)return;
     if(data.type==='progress')search.text=`Suche läuft · ${Math.round(100*data.visited/data.budget)} % · ${search.results.length} Lösung(en)`;
     if(data.type==='solution'){search.results.push(data.solution);search.results.sort((a,b)=>a.summary.elements-b.summary.elements||a.summary.length-b.summary.length);}
-    if(data.type==='done'){w.terminate();search.state='done';search.text=search.results.length?`${search.results.length} Getriebe gefunden.`:'Kein Getriebe gefunden. Motor näher an die Achse, Ziel oder Stufenzahl ändern, oder Sperrzonen prüfen.';}
+    if(data.type==='done'){w.terminate();search.state='done';search.text=search.results.length?`${search.results.length} Getriebe gefunden.`:`Kein Getriebe gefunden${this.rejectionText(data.rejections)}. Motor an einen anderen Platz, Ziel oder Stufenzahl ändern, oder Sperrzonen prüfen.`;}
     if(data.type==='error'){w.terminate();search.state='error';search.text='Suche fehlgeschlagen: '+data.message;}
     this.renderSearch();};
    w.postMessage({request:task.request,options:task.options,rail:task.info.rail});
   }catch(e){this.host.status('Suche nicht möglich: '+(e instanceof Error?e.message:e));}
   this.renderProperties();}
+ /** Why the tried trains were turned down, in words (the search's rejection counts). */
+ private rejectionText(r?:Record<string,number>){const words:Record<string,string>={closure:'gingen nicht auf',space:'stießen an Teile des Modells oder aneinander',rail:'hätten die Schiene hinter die Bahn gelegt',reach:'reichten nicht bis zur Achse',domain:'waren geometrisch ungültig',seed:'ließen sich nicht ansetzen'};
+  const parts=Object.entries(r??{}).filter(([k,n])=>words[k]&&n>0).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${n} ${words[k]}`);return parts.length?` (geprüfte Getriebe: ${parts.join(', ')})`:'';}
  private ratioText(kind:TaskInfo['kind'],ratio:number){return kind==='rotation'?`1 : ${ratio.toFixed(2)}`:kind==='translation'?`${ratio.toFixed(2)} mm/U`:`${(2*Math.PI*20/ratio).toFixed(2)} mm/U`;}
  private renderSearch(){
   const s=this.search,progress=document.getElementById('drive-progress'),list=document.getElementById('drive-results');if(!s||!progress||!list||progress.dataset.drive!==s.drive)return;

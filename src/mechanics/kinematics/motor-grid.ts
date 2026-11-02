@@ -27,6 +27,7 @@ export type Snapped={frame:Frame;family:GridFamily;distance:number};
 const part=(e:PairChoice['a'])=>{const s=e.surfaces[0];if(s?.profile.kind==='helical')return `${s.profile.starts}-gängig`;if(e.source.kind==='library'&&e.source.library==='lego'&&s?.pitch.kind==='circle')return `z${Math.round(2*s.pitch.r)}`;return /z\d+/.exec(e.label)?.[0]??e.label;};
 const pairLabel=(c:PairChoice)=>`${part(c.a)} → ${part(c.b)}`;
 const ruleLabel:Record<string,string>={'external-spur':'Stirnräder','gt2-belt':'GT2-Riemen','bevel-mesh':'Kegelräder','worm-mesh':'Schnecke','lego-spur':'LEGO','lego-bevel-90':'LEGO-Kegel','lego-worm':'LEGO-Schnecke'};
+const sphere=(e:PairChoice['a'])=>Math.hypot(e.envelope.radius,(e.envelope.max-e.envelope.min)/2),SHAFT=2.5,MARGIN=1;
 const stageLabel=(c:PairChoice)=>`${ruleLabel[c.rule]??c.rule} ${pairLabel(c)}${c.rule==='gt2-belt'?` (${c.params.length} mm)`:''}`;
 
 /** The grid of a drive on a rotary axis (undefined for linear axes and paths: there the motor is placed freely).
@@ -39,7 +40,10 @@ export function motorGrid(m:Mechanism,d:Drive,o:{catalog?:DriveCatalog;allowed?:
  // Pairs with the same reduction and distance reach the same places: one of each is enough.
  type Pair={factor:number;d:number;c:PairChoice;turn:boolean};const pairs=new Map<string,Pair>();
  for(const c of choices){try{const g=choiceGeometry(c,c.variables.some(v=>v.key==='angle')?90:undefined);
-  if(c.changesAxis&&g.kind!=='helical'&&Math.abs(g.sigma-90)>1e-6)continue;const dist=c.changesAxis?(g.kind==='helical'?g.distance:0):g.distance,key=`${c.changesAxis}:${c.factor.toFixed(9)}:${dist.toFixed(2)}`;
+  if(c.changesAxis&&g.kind!=='helical'&&Math.abs(g.sigma-90)>1e-6)continue;
+  // The search's own clearance test (construction.ts): a sphere around each wheel keeps 1 mm from the other shaft
+  // (Ø 5). Pairs closer than that never pass it, however the motor stands.
+  if(!c.changesAxis&&c.kind!=='belt'&&g.distance-Math.max(sphere(c.a),sphere(c.b))-SHAFT<MARGIN)continue;const dist=c.changesAxis?(g.kind==='helical'?g.distance:0):g.distance,key=`${c.changesAxis}:${c.factor.toFixed(9)}:${dist.toFixed(2)}`;
   if(!pairs.has(key))pairs.set(key,{factor:c.factor,d:dist,c,turn:c.changesAxis});}catch{/* a pair without this geometry */}}
  const list=[...pairs.values()],target=d.target,tol=d.tolerance/100,within=(r:number)=>Math.abs(r-target)/target<=tol+1e-9,max=d.maxStages??3;
  const factors=[...new Set(list.map(x=>x.factor))];
