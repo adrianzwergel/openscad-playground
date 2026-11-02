@@ -14,7 +14,7 @@ export async function adopted(name){
  const axes=modelAxes(m,drives),values=Object.fromEntries(axes.map(j=>[j.id,m.input.kind==='coordinate'&&m.input.joint===j.id?m.range.from:Math.max(j.limits?.min??-180,Math.min(j.limits?.max??180,0))]));
  const held=(free)=>{const out={};for(const j of axes)if(j.id!==free)out[j.id]=[values[j.id]];Object.assign(out,heldTrains(drives.filter(d=>d.axis!==free),values));return out;};
  const ref=await solve({...structuredClone(m),input:{kind:'none'},output:{kind:'none'},range:{from:0,to:0,samples:1}},{yield:false,fixed:held()});
- for(const d of drives){const task=driveTask(m,drives,d,id=>id===demo.asset.id?demo.asset:undefined,ref.poses[0].bodies,values,demo.fabrication?.bearings.shaft==='lego'?{catalog:{excludedRules:[],lockedParts:[]}}:{});const r=await route(task.request,task.options);const best=r.solutions[0];
+ for(const d of drives){if(d.gear)continue;const task=driveTask(m,drives,d,id=>id===demo.asset.id?demo.asset:undefined,ref.poses[0].bodies,values,demo.fabrication?.bearings.shaft==='lego'?{catalog:{excludedRules:[],lockedParts:[]}}:{});const r=await route(task.request,task.options);const best=r.solutions[0];
   await adoptGear(m,d,best.mechanism,task.info,best.chain.stages.map(s=>s.choice.a.label+'→'+s.choice.b.label).join(' · '),best.ratio,held(d.axis));}
  const out={key,mechanism:m,drives,values};fs.writeFileSync(cache,JSON.stringify(out));return {...out,asset:demo.asset,fabrication:demo.fabrication};
 }

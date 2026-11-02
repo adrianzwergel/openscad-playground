@@ -16,6 +16,7 @@ import {involuteOutline} from './involute.ts';
 import type {V2} from './involute.ts';
 import {railProfile,railMesh} from './rail.ts';
 import {generateMate,generateConjugate,extrudeStar} from './hull.ts';
+import {ringMesh,ringOuter} from './ring.ts';
 import type {Mesh} from './mesh.ts';
 
 export type Part={mesh:Mesh;name:string;method:string};
@@ -65,5 +66,8 @@ export function partMesh(input:Mechanism,elementId:string):Part{
   const mesh=railMesh(profile),mid=(z0+z1)/2;for(const p of mesh.positions)p[2]+=mid;
   return {mesh,name:e.id,method:`Zahnstange entlang Pfad (${length.toFixed(0)} mm) für Ritzel ${pinion.id}`};
  }
+ // A ring gear (internal teeth on a circle): its gaps cut from a ring with lugs to screw it to the frame.
+ const ref=reference(s.profile);
+ if(s.side==='internal'&&s.pitch.kind==='circle'&&ref){const z=Math.round(teeth(s)!);return {mesh:ringMesh({module:ref.module,teeth:z,pressureAngle:ref.pressureAngle,backlash:s.profile.kind==='involute'?Math.max(.2,s.profile.backlash):.2,z0,z1,outer:ringOuter(e)}),name:e.id,method:`Hohlrad z${z} m${ref.module} mit vier Laschen (M3)`};}
  const o=outline(m,e,s);return {mesh:extrudeStar(o.points,z0,z1),name:e.id,method:o.method};
 }

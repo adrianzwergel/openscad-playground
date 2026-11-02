@@ -39,7 +39,8 @@ export function pitchChecks(fn:CurveFn,profile:Profile,options:{profileShift?:bo
   try{polarOf(fn);checks.push({id:'pitch/star',state:'pass',message:'Jeder Strahl von der Achse schneidet die Wälzkurve genau einmal.'});}
   catch(e){checks.push({id:'pitch/star',state:'fail',message:String((e as Error).message)});}
  }
- if(ref&&profile.kind!=='helical'&&Number.isFinite(fn.length)){
+ // Undercut is a matter of cutting teeth: a library part (LEGO) exists as it is.
+ if(ref&&profile.kind!=='helical'&&profile.kind!=='library'&&Number.isFinite(fn.length)){
   const rhoMin=ref.module*(options.profileShift?4:8.5);let worst=Infinity;for(let i=0;i<n;i++){const k=fn.curvature(ds*i);if(k>1e-12)worst=Math.min(worst,1/k);}
   checks.push({id:'pitch/curvature',state:worst>=rhoMin-1e-9?'pass':'fail',message:`Kleinster Krümmungsradius ${worst.toFixed(2)} mm, erforderlich ${rhoMin.toFixed(2)} mm (${options.profileShift?'mit':'ohne'} Profilverschiebung).`});
   if(fn.polar){let slope=0;for(let i=0;i<n;i++){const {r,dr}=fn.polar(TAU*i/n);slope=Math.max(slope,Math.abs(Math.atan2(dr,r))*180/Math.PI);}

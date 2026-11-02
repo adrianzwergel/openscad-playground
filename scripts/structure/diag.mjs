@@ -11,7 +11,7 @@ const fromStudio=async file=>{const doc=JSON.parse(fs.readFileSync(file,'utf8'))
  // With FILE.assets.json (written by the Studio test) the Studio's own stored model.
  let asset=demo.asset;if(fs.existsSync(file+'.assets.json')){const a=JSON.parse(fs.readFileSync(file+'.assets.json','utf8')).find(y=>y.id===demo.asset.id);if(a)asset={...a,parts:a.parts.map(p=>({...p,positions:Float32Array.from(p.positions)}))};}
  return {mechanism:x.mechanism,drives:x.drives,asset};};
-const {mechanism:m,drives,asset}=name.endsWith('.json')?await fromStudio(name):await adopted(name),assets=id=>id===asset.id?asset:undefined,plan=planBearings(m,drives,assets);applyBearings(m,plan);
+const {mechanism:m,drives,asset,fabrication}=name.endsWith('.json')?await fromStudio(name):await adopted(name),assets=id=>id===asset.id?asset:undefined,plan=planBearings(m,drives,assets,fabrication?.bearings);applyBearings(m,plan);
 const t0=performance.now();
 const times={};let lastKey='',lastT=performance.now();
 const workers=process.env.WORKERS?await nodePool(m,drives,plan,asset,settings,Number(process.env.WORKERS)||undefined):undefined;

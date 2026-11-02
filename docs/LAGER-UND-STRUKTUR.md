@@ -174,6 +174,38 @@ Erweiterung von kinematics-1 (keine neue Dokumentart):
 - Die Stückliste nennt die Achsen in Noppen, z. B. „LEGO-Kreuzachse 5L (40 mm)“.
 - Die Demo „Handgetriebe“ ist LEGO z16 → z40 (1 : 2,5) auf einer Grundplatte.
 
+**Planetengetriebe** (Demo „Planetengetriebe“, Abnahme `scripts/kinematics/check-planet.mjs`):
+- **Aufbau:** Sonne LEGO z16, drei Planeten LEGO z40 und ein gedrucktes Hohlrad
+  z96 (m1) ergeben 1 : 7. Weil (16 + 96)/3 nicht ganzzahlig ist, sitzen die
+  Planeten bei 0°, 118,9° und 241,1°, also nach 37 und 75 von 112 Zähnen. Dort
+  greifen alle drei. Die Getriebesuche baut keine Planetenstufen; das Getriebe
+  steckt fertig in der Demo und gehört dem Handantrieb H1 wie ein übernommenes,
+  mit festen Raten (Sonne 7, Planeten −2,4 je Stegdrehung).
+- **Hohlrad** (`generate/ring.ts`): Die Zahnlücken sind der Umriss eines
+  Außenrads gleicher Zähnezahl mit Profilverschiebung +0,25 m, verbreitert um das
+  Spiel. Dazu kommen vier Laschen mit Ø3,4-Löchern. Es ist ein Druckteil für
+  sich und liegt im Teile-ZIP.
+- **Befestigung im Gestell:** Hinter den Laschen bekommt das Gestell vier Augen
+  für M3-Einpressmuttern (Sitzart `mount`).
+- **Steg:** Er ist einseitig. Zwischen den Planeten bleiben nur etwa 6 mm, und
+  außen liegt das Hohlrad; eine zweite Stegplatte ließe sich nicht anbinden. Bei
+  einem beweglichen Glied mit Modell entscheidet das Modell, auf welcher Seite
+  die Lager einer Getriebewelle sitzen. Der Steg sitzt mit einer Kreuzbohrung
+  auf der Abtriebsachse (`hub` mit `cross`), neben den Rädern der Achslinie.
+  Lager, die ein Glied selbst nahe der Achse trägt, zählen zu seinem Bereich;
+  die Gestell-Lager kommen dahinter.
+- **Kein Lager im Raum eines anderen Glieds:** Gegen dessen Modellflächen wird
+  alle paar Millimeter geprüft.
+- **Wandstärke:** Bei LEGO-Achsen sind die Lageraugen klein, und eine Strebe
+  wird nicht dicker als ihr Auge. Die Demo nimmt deshalb 4 mm Wand um die
+  Lagersitze.
+- **Gekaufte Räder:** Unterschnitt ist eine Frage des Zahnschneidens; für
+  gekaufte Räder (LEGO) entfällt die Krümmungsprüfung.
+
+**Füße:** Das Gestell steht nur auf seinen Füßen. Unter der Fußunterkante ist
+nichts, und bis 1 mm darüber nur die Fußplatten; die Streben setzen oben auf
+den Platten an.
+
 Jeder Eintrag trägt Tragzahl (C, C0), zulässige Drehzahl, Preisstufe und
 Montageart (Presssitz, Klemmhälften, Flansch mit Schrauben).
 

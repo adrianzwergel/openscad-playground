@@ -11,6 +11,7 @@ import type {Drive,Assets} from './drive.ts';
 import {owned,driveSpec,modelAxes,toward} from './drive.ts';
 import type {Feature} from '../../structure/features.ts';
 import {featureSize} from '../../structure/features.ts';
+import {ringMounts,ringOuter} from './generate/ring.ts';
 
 export type BearingSpec={id:string;label:string;kind:'ball'|'plain'|'linear';d:number;D:number;B:number;C0:number;price:number};
 export const bearingCatalog:BearingSpec[]=[
@@ -38,7 +39,7 @@ export const defaultBearingSettings:BearingSettings={shaft:'round',prefer:'ball'
 /** `link`: the link the seat is printed into; `frame` in that link's coordinates (pose 0), z along the axis. */
 /** `keep`: space of the purchased part itself that the structure must leave free (a roller's outer ring). */
 /** `load`: share of the design load this seat carries (a floating bearing takes only small radial forces). */
-export type Seat={id:string;link:string;line:string;kind:'bearing'|'plain'|'hub'|'linear'|'rod'|'flange'|'nut'|'roller';part?:string;frame:Frame;feature:Feature;support?:boolean;load?:number;keep?:{frame:Frame;r:number;z0:number;z1:number}};
+export type Seat={id:string;link:string;line:string;kind:'bearing'|'plain'|'hub'|'linear'|'rod'|'flange'|'nut'|'roller'|'mount';part?:string;frame:Frame;feature:Feature;support?:boolean;load?:number;keep?:{frame:Frame;r:number;z0:number;z1:number}};
 export type ShaftLine={id:string;kind:'train'|'motor'|'axis'|'spindle'|'rod'|'roller';link:string;d:number;frame:Frame;z0:number;z1:number;seats:string[];state:'pass'|'fail';message:string};
 export type BearingPlan={lines:ShaftLine[];seats:Seat[];bom:{part:string;label:string;count:number;length?:number}[];checks:{id:string;state:'pass'|'fail';message:string}[];edits:{element:string;bore:number}[]};
 
@@ -68,6 +69,14 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
  const placed:{f:Frame;r:number;z0:number;z1:number;line:string}[]=[];
  const motorBoxes=drives.map(d=>{const spec=driveSpec(d.spec);return {f:compose(world(d.body,d.frame),{position:[0,0,-spec.size[2]/2],rotation:[0,0,0,1]}),half:scale(spec.size,.5) as V,id:d.id};});
  /** Does a seat cylinder (world frame f, radius r, z0..z1) hit a wheel, a motor or another seat? */
+ // Seats stay out of other links' space (a frame bearing inside a turning carrier): their model surfaces, sampled every
+ // few millimetres (big faces have few vertices). `avoid`: per line, the links it must keep out of.
+ const avoid=new Map<string,string[]>(),dense=new Map<string,V[]>();
+ const pointsOf=(link:string)=>{let out=dense.get(link);if(out)return out;out=[];const b=m.bodies.find(x=>x.id===link),asset=b?.display?.kind==='mesh'&&assets?assets(b.display.asset):undefined;
+  if(b?.display?.kind==='mesh'&&asset)for(const id of b.display.parts){const p=asset.parts.find(x=>x.id===id)?.positions;if(!p)continue;
+   for(let t=0;t<p.length;t+=9){const a:V=[p[t],p[t+1],p[t+2]],u:V=[p[t+3]-p[t],p[t+4]-p[t+1],p[t+5]-p[t+2]],v:V=[p[t+6]-p[t],p[t+7]-p[t+1],p[t+8]-p[t+2]],n=Math.min(40,Math.ceil(Math.max(norm(u),norm(v))/4));
+    for(let i=0;i<=n;i++)for(let k=0;k<=n-i;k++)out.push(add(a,add(scale(u,i/n),scale(v,k/n))));}}
+  dense.set(link,out);return out;};
  const hits=(f:Frame,r:number,z0:number,z1:number,line:string,ignore:(e:Element)=>boolean)=>{
   const axis=rotate(f.rotation,[0,0,1]),samples:V[]=[];for(const z of [z0,(z0+z1)/2,z1])for(let k=0;k<12;k++){const a=k*Math.PI/6;samples.push(compose(f,{position:[r*Math.cos(a),r*Math.sin(a),z],rotation:[0,0,0,1]}).position);}samples.push(compose(f,{position:[0,0,z0],rotation:[0,0,0,1]}).position,compose(f,{position:[0,0,z1],rotation:[0,0,0,1]}).position);
   const inCyl=(p:V,c:Frame,rc:number,a:number,b:number)=>{const q=compose(inverse(c),{position:p,rotation:[0,0,0,1]}).position;return Math.hypot(q[0],q[1])<rc&&q[2]>a&&q[2]<b;};
@@ -77,6 +86,7 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
    if(rim.some(p=>inCyl(p,f,r+g,z0-g,z1+g)))return `Rad ${w.e.id}`;}
   for(const mb of motorBoxes)if(samples.some(p=>{const q=compose(inverse(mb.f),{position:p,rotation:[0,0,0,1]}).position;return q.every((x,i)=>Math.abs(x)<mb.half[i]+1);}))return `Motor ${mb.id}`;
   for(const o of placed){if(o.line===line)continue;if(samples.some(p=>inCyl(p,o.f,o.r+1,o.z0-1,o.z1+1)))return 'anderes Lager';}
+  for(const l of avoid.get(line)??[])if(pointsOf(l).some(p=>inCyl(p,f,r+1,z0-1,z1+1)))return `Glied ${l}`;
   void axis;return undefined;
  };
  /** Can a strut reach the seat? A free corridor (radius 5, 35 mm) axially outwards or radially in one of eight directions. */
@@ -134,14 +144,19 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
    // The motor carries its shaft; a wheel beyond the shaft end needs a support bearing.
    const spec=driveSpec(d.spec),far=Math.max(...occupied.map(x=>x[1]));
    if(far<=spec.shaft.length+1){line.message='im Motor gelagert';continue;}
-   seatLine(line,f,occupied,pick(5,s),mine,{lo:false,hi:true});line.message='Stützlager: '+line.message+` · Wellenverlängerung bis ${line.z1.toFixed(0)} mm`;continue;}
+   avoid.set(line.id,links.filter(l=>l!==carrier));seatLine(line,f,occupied,pick(5,s),mine,{lo:false,hi:true});line.message='Stützlager: '+line.message+` · Wellenverlängerung bis ${line.z1.toFixed(0)} mm`;continue;}
   const fixedAxle=s.axles==='fixed';
   if(fixedAxle){
    // Fixed axle clamped in the link; the wheels run on it.
    const lo=Math.min(...occupied.map(x=>x[0])),hi=Math.max(...occupied.map(x=>x[1])),fe:Feature={kind:'hub',d:diameter,length:10,wall:s.wall,setScrew:true},fz=featureSize(fe);
    [lo-s.gearGap-fz.z1,hi+s.gearGap-fz.z0].forEach((z,k)=>{const seat:Seat={id:`${line.id}/halter${k+1}`,link:carrier,line:line.id,kind:'hub',frame:shift(f,z),feature:fe};seats.push(seat);line.seats.push(seat.id);});
    line.message='feste Achse, Räder laufen darauf';continue;}
-  seatLine(line,f,occupied,pick(diameter,s),mine);
+  // On a moving link with a model, the model tells on which side of the wheels the link is (a one-sided planet carrier):
+  // seats go where its material is within reach; if it is on neither or both sides, on both.
+  let sides={lo:true,hi:true};
+  if(!m.bodies.find(x=>x.id===carrier)?.ground){const fw=world(carrier,f),pts=modelPoints(m,assets,carrier).map(p=>compose(inverse(fw),{position:p,rotation:[0,0,0,1]}).position);
+   if(pts.length){const lo=Math.min(...occupied.map(x=>x[0])),hi=Math.max(...occupied.map(x=>x[1])),near=(z:number)=>pts.some(q=>Math.abs(q[2]-z)<15&&Math.hypot(q[0],q[1])<40),at={lo:near(lo-s.gearGap-4),hi:near(hi+s.gearGap+4)};if(at.lo!==at.hi)sides=at;}}
+  avoid.set(line.id,links.filter(l=>l!==carrier));seatLine(line,f,occupied,pick(diameter,s),mine,sides);
  }
  // ---------- model axes ----------
  const axes=modelAxes(m,drives);
@@ -156,21 +171,27 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
    const occupied=coax.map(x=>{const z=along(x.f.position).z,sg=dot(rotate(x.f.rotation,[0,0,1]),axis)>0?1:-1;return [z+Math.min(sg*x.e.envelope.min,sg*x.e.envelope.max),z+Math.max(sg*x.e.envelope.min,sg*x.e.envelope.max)] as [number,number];});
    let bz0=-s.hubLength/2,bz1=s.hubLength/2;
    if(bBand.length){const sorted=[...bBand].sort((a,b)=>a-b),q=(t:number)=>sorted[Math.floor(t*(sorted.length-1))];bz0=q(.02);bz1=q(.98);}
+   // Seats B carries near this axis (a planet carrier's bearings) are B's too: A's seats go beyond them.
+   for(const x of seats.filter(x=>x.link===B)){const p=along(world(B,x.frame).position),fz=featureSize(x.feature),h=Math.max(Math.abs(fz.z0),Math.abs(fz.z1));if(p.r<60){bz0=Math.min(bz0,p.z-h);bz1=Math.max(bz1,p.z+h);}}
    const line:ShaftLine={id:j.id,kind:'axis',link:A,d,frame:f,z0:bz0,z1:bz1,seats:[],state:'pass',message:''};lines.push(line);
    // A's material distance per side decides where its seats go.
    const near=(z:number)=>Math.min(Infinity,...ptsA.map(p=>Math.hypot(p.r,p.z-z)));
    const sides=ptsA.length?{lo:near(bz0-12)<60,hi:near(bz1+12)<60}:{lo:true,hi:true};if(!sides.lo&&!sides.hi){sides.lo=near(bz0-12)<=near(bz1+12);sides.hi=!sides.lo;}
-   const ok=seatLine(line,f,[[bz0,bz1],...occupied],pick(d,s),e=>coax.some(x=>x.e===e),sides,400);
+   avoid.set(line.id,links.filter(l=>l!==A&&l!==B));const ok=seatLine(line,f,[[bz0,bz1],...occupied],pick(d,s),e=>coax.some(x=>x.e===e),sides,400);
    // The shaft is clamped in B where B's arms are; wheels on B along the axis sit on the same shaft.
    // The clamp hub is a flange: the link's arms leave it all around (it carries the whole link).
-   const hubZ=sides.lo&&!sides.hi?bz0+s.hubLength/2:sides.hi&&!sides.lo?bz1-s.hubLength/2:(bz0+bz1)/2,hub:Feature={kind:'hub',d,length:s.hubLength,wall:s.wall+6,setScrew:true};
-   // A LEGO axle carries its wheels by its cross: no clamp hub.
-   const hubFrame=local(B,compose(fw,{position:[0,0,hubZ],rotation:[0,0,0,1]})),seat:Seat={id:`${j.id}/nabe`,link:B,line:line.id,kind:'hub',frame:hubFrame,feature:hub,support:true};if(!lego){seats.push(seat);line.seats.push(seat.id);}
+   let hubZ=sides.lo&&!sides.hi?bz0+s.hubLength/2:sides.hi&&!sides.lo?bz1-s.hubLength/2:(bz0+bz1)/2,hubLength=s.hubLength;const hub:Feature={kind:'hub',d,length:s.hubLength,wall:s.wall+6,setScrew:true};
+   // A LEGO axle carries its wheels by its cross: no clamp hub. A link that carries bearings itself (a planet carrier)
+   // sits on the axle with a cross hole instead, beside the wheels of other links on the same line (the sun).
+   const carries=seats.some(x=>x.link===B);
+   if(lego&&carries){const wheelsOn=m.elements.filter(e=>e.mounts[0].body!==B).map(e=>({e,f:elementWorld(e)})).filter(x=>norm(cross(rotate(x.f.rotation,[0,0,1]),axis))<1e-3&&along(x.f.position).r<.5).map(x=>{const z=along(x.f.position).z;return [z+x.e.envelope.min,z+x.e.envelope.max];});
+    if(wheelsOn.length){const hi=!(sides.lo&&!sides.hi),edge=hi?Math.max(...wheelsOn.map(w=>w[1]))+s.gearGap:Math.min(...wheelsOn.map(w=>w[0]))-s.gearGap;hubLength=Math.max(4,Math.min(s.hubLength,hi?bz1-edge:edge-bz0));hubZ=hi?bz1-hubLength/2:bz0+hubLength/2;}}
+   const hubFrame=local(B,compose(fw,{position:[0,0,hubZ],rotation:[0,0,0,1]})),seat:Seat={id:`${j.id}/nabe`,link:B,line:line.id,kind:'hub',frame:hubFrame,feature:lego?{kind:'hub',d,length:hubLength,wall:s.wall+2,setScrew:false,cross:true}:hub,support:true};if(!lego||carries){seats.push(seat);line.seats.push(seat.id);}
    for(const x of coax)edits.push({element:x.e.id,bore:d+.1});
    // The shaft runs from the outer seat through the hub to the last wheel on it.
-   const ends=[...line.seats.map(id=>seats.find(x=>x.id===id)!).filter(x=>x.link===A).map(x=>compose(inverse(f),x.frame).position[2]),...(lego?[]:[hubZ-s.hubLength/2,hubZ+s.hubLength/2]),...occupied.flat()];
+   const ends=[...line.seats.map(id=>seats.find(x=>x.id===id)!).filter(x=>x.link===A).map(x=>compose(inverse(f),x.frame).position[2]),...(lego&&!carries?[]:[hubZ-hubLength/2,hubZ+hubLength/2]),...occupied.flat()];
    line.z0=Math.min(...ends)-6;line.z1=Math.max(...ends)+3;
-   if(ok)line.message+=lego?' · LEGO-Achse, Räder auf dem Kreuz':` · Welle Ø${d} in ${B} geklemmt`;
+   if(ok)line.message+=lego?(carries?` · LEGO-Achse, ${B} mit Kreuzbohrung darauf`:' · LEGO-Achse, Räder auf dem Kreuz'):` · Welle Ø${d} in ${B} geklemmt`;
   }
   else if(j.joint.kind==='prismatic'){
    const f=j.a.local,fw=world(A,f),t=rotate(fw.rotation,[0,0,1]),lo=j.limits?.min??0,hi=j.limits?.max??200;
@@ -199,6 +220,10 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
     const seat:Seat={id:`${j.id}/rolle${k}`,link:B,line:j.id,kind:'roller',part:roller.id,frame:compose(at,{position:[0,0,-(roller.B/2+1+hubLen/2)],rotation:[0,0,0,1]}),feature:{kind:'hub',d:5,length:hubLen,wall:s.wall,setScrew:false},support:true,keep:{frame:at,r:roller.D/2+1,z0:-roller.B/2-.5,z1:roller.B/2+.5}};seats.push(seat);line.seats.push(seat.id);}
   }
  }
+ // ---------- ring gears ----------
+ // A printed ring gear is screwed to its link: four heat-set insert bosses behind its lugs (M3).
+ for(const e of m.elements){const sf=e.surfaces[0];if(e.source.kind!=='printed'||sf?.side!=='internal'||sf.pitch.kind!=='circle')continue;const link=carrierOf(e.mounts[0].body),ew=elementWorld(e);
+  ringMounts({outer:ringOuter(e),z1:sf.z[1]}).forEach((p,k)=>seats.push({id:`${e.id}/schraube${k+1}`,link,line:e.id,kind:'mount',part:'M3-Einpressmutter',frame:local(link,compose(ew,{position:p,rotation:[1,0,0,0]})),feature:{kind:'insert',outer:8,hole:4,depth:5.7,height:8}}));}
  // ---------- motor flanges ----------
  for(const d of drives){const spec=driveSpec(d.spec),carrier=carrierOf(d.body);if(spec.housing===false)continue;if(spec.kind!=='motor'){seats.push({id:`${d.id}/bock`,link:carrier,line:d.id,kind:'flange',frame:local(carrier,world(d.body,d.frame)),feature:{kind:'flange',size:spec.size[0],pilot:spec.shaft.diameter+8,spacing:spec.size[0]-12,hole:4.5,thickness:5}});continue;}
   const pilot=spec.size[0]>50?38.1:spec.size[0]>40?22:22,spacing=spec.size[0]>50?47.1:spec.size[0]>40?31:26;
@@ -207,7 +232,7 @@ export function planBearings(m:Mechanism,drives:Drive[],assets?:Assets,settings:
  // ---------- checks and parts list ----------
  for(const l of lines)checks.push({id:`lager/${l.id}`,state:l.state,message:`${l.id}: ${l.message}`});
  const count=new Map<string,{label:string;count:number;length?:number}>();
- for(const x of seats){if(!x.part||x.kind==='plain')continue;const b=bearingCatalog.find(y=>y.id===x.part),motor=driveCatalogLabel(x.part),label=b?.label??motor??x.part;const c=count.get(x.part)??{label,count:0};c.count++;count.set(x.part,c);}
+ for(const x of seats){if(!x.part||x.kind==='plain')continue;const b=bearingCatalog.find(y=>y.id===x.part),motor=driveCatalogLabel(x.part),label=b?.label??motor??(x.kind==='mount'?'Einpressmutter M3 mit Schraube M3 × 16':x.part);const c=count.get(x.part)??{label,count:0};c.count++;count.set(x.part,c);}
  for(const l of lines)if(l.kind==='axis'||l.kind==='train'||l.kind==='rod'){const lego=l.d===LEGO_AXLE,studs=Math.ceil((l.z1-l.z0)/8),key=`Welle Ø${l.d}`,len=lego?studs*8:Math.ceil((l.z1-l.z0)/5)*5,c=count.get(key+len)??{label:lego?`LEGO-Kreuzachse ${studs}L (${len} mm)`:`Silberstahlwelle Ø${l.d} × ${len} mm`,count:0,length:len};c.count++;count.set(key+len,c);}
  const bom=[...count.entries()].map(([part,v])=>({part,...v}));
  return {lines,seats,bom,checks,edits};

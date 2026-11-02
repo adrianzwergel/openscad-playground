@@ -10,7 +10,7 @@ import type {Prim} from './sdf.ts';
 export type Feature=
  |{kind:'bearing';d:number;D:number;B:number;fit:number;wall:number;open:1|-1}
  |{kind:'plain';d:number;length:number;clearance:number;wall:number}
- |{kind:'hub';d:number;length:number;wall:number;setScrew:boolean}
+ |{kind:'hub';d:number;length:number;wall:number;setScrew:boolean;cross?:boolean}  // cross: a LEGO cross hole (d across, 1.8 arms), the axle drives it
  |{kind:'linear';D:number;B:number;fit:number;wall:number}
  |{kind:'rod';d:number;length:number;wall:number}
  |{kind:'flange';size:number;pilot:number;spacing:number;hole:number;thickness:number}
@@ -67,7 +67,7 @@ export function featureGeometry(f:Feature,frame:Frame):FeatureGeometry{
     // The bearing goes in from the open side: keep a corridor free.
     keep:[cyl(frame,f.D/2+1,o>0?face:face-30,o>0?face+30:face)],ports:ring(frame,s.radius,[s.z0+1.2,s.z1-1.2])};}
   case 'plain':return {solids:[cyl(frame,s.radius,s.z0,s.z1)],holes:[cyl(frame,(f.d+f.clearance)/2,s.z0-3,s.z1+3)],keep:[],ports:ring(frame,s.radius,[s.z0+1.2,s.z1-1.2])};
-  case 'hub':return {solids:[cyl(frame,s.radius,s.z0,s.z1)],holes:[cyl(frame,(f.d+.05)/2,s.z0-3,s.z1+3),...(f.setScrew?[radial(frame,0,f.d/2-.5,s.radius+3)]:[])],keep:[],ports:ring(frame,s.radius,[s.z0+1.2,s.z1-1.2])};
+  case 'hub':return {solids:[cyl(frame,s.radius,s.z0,s.z1)],holes:[...(f.cross?[[(f.d+.15)/2,(1.8+.2)/2],[(1.8+.2)/2,(f.d+.15)/2]].map(([x,y]):Prim=>({kind:'box',frame,half:[x,y,(s.z1-s.z0)/2+3]})):[cyl(frame,(f.d+.05)/2,s.z0-3,s.z1+3)]),...(f.setScrew?[radial(frame,0,f.d/2-.5,s.radius+3)]:[])],keep:[],ports:ring(frame,s.radius,[s.z0+1.2,s.z1-1.2])};
   case 'linear':return {solids:[cyl(frame,s.radius,s.z0,s.z1)],holes:[cyl(frame,(f.D+f.fit)/2,s.z0-3,s.z1+3)],keep:[],ports:ring(frame,s.radius,[s.z0+1.2,s.z1-1.2])};
   case 'rod':return {solids:[cyl(frame,s.radius,s.z0,s.z1)],holes:[cyl(frame,(f.d+.1)/2,s.z0-3,s.z1+3),radial(frame,0,f.d/2-.5,s.radius+3)],keep:[],ports:ring(frame,s.radius,[s.z0+1.2,s.z1-1.2])};
   case 'flange':{const c=f.spacing/2,t=f.thickness;

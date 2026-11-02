@@ -315,7 +315,7 @@ export class MechanismEditor{
   }
   root.append(el('div',{className:'tree-group',textContent:'Neu'}));
   const add=el('div',{className:'mechanism-add'});
-  const demoButtons=([['robot','▶ Demo: Roboterarm'],['cnc','▶ Demo: CNC-Portal'],['sled','▶ Demo: Schlitten auf Wellenbahn'],['hand','▶ Demo: Handgetriebe (LEGO)']] as const).map(([key,label])=>{const b=el('button',{textContent:label,className:'primary'});b.dataset.demo=key;b.onclick=()=>void this.loadDemo(key);return b;});
+  const demoButtons=([['robot','▶ Demo: Roboterarm'],['cnc','▶ Demo: CNC-Portal'],['sled','▶ Demo: Schlitten auf Wellenbahn'],['hand','▶ Demo: Handgetriebe (LEGO)'],['planet','▶ Demo: Planetengetriebe (LEGO)']] as const).map(([key,label])=>{const b=el('button',{textContent:label,className:'primary'});b.dataset.demo=key;b.onclick=()=>void this.loadDemo(key);return b;});
   const templateBox=el('details',{className:'templates'},el('summary',{textContent:'Vorlagen (Getriebe-Beispiele)'}));
   for(const [key,t] of Object.entries(templates)){const b=el('button',{textContent:'+ '+t.label});b.dataset.mechanismTemplate=key;b.onclick=()=>{const id='mech-'+crypto.randomUUID().slice(0,8);this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label:t.label.replace(' (Vorlage)',''),mechanism:t.build()}];},`${t.label} angelegt`);this.enter(id);this.host.leave();};templateBox.append(b);}
   const file=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});file.id='model-file';
@@ -560,7 +560,10 @@ export class MechanismEditor{
    if(x.stl){const dl=el('button',{textContent:'STL'});dl.dataset.structureStl=link;dl.onclick=()=>this.download(new Blob([x.stl! as BlobPart],{type:'model/stl'}),`${this.entry()!.label}-${link}.stl`.replace(/\s+/g,'-'));row.append(dl);}
    list.append(row);}
   out.push(list);
-  if([...this.structures.values()].some(x=>x.stl)){const zip=el('button',{textContent:'Alle Druckteile als ZIP'});zip.dataset.structureZip='true';zip.onclick=async()=>{const z=new JSZip();for(const [link,x] of this.structures)if(x.stl)z.file(`${link}.stl`,x.stl);const plan=this.plan(m);if(plan)z.file('stueckliste.txt',plan.bom.map(b=>`${b.count}x ${b.label}`).join('\n'));this.download(await z.generateAsync({type:'blob'}),`${this.entry()!.label}-druckteile.zip`.replace(/\s+/g,'-'));};out.push(zip);}
+  if([...this.structures.values()].some(x=>x.stl)){const zip=el('button',{textContent:'Alle Druckteile als ZIP'});zip.dataset.structureZip='true';zip.onclick=async()=>{const z=new JSZip();for(const [link,x] of this.structures)if(x.stl)z.file(`${link}.stl`,x.stl);
+   // Printed wheels belong to the print too (a ring gear, printed spur gears).
+   for(const e of m.elements)if(e.source.kind==='printed'&&e.surfaces.length){try{const p=partMesh(m,e.id);z.file(`${e.id.replace(/\//g,'-')}.stl`,stl(p.mesh,p.name));}catch{/* a part without a printable outline */}}
+   const plan=this.plan(m);if(plan)z.file('stueckliste.txt',plan.bom.map(b=>`${b.count}x ${b.label}`).join('\n'));this.download(await z.generateAsync({type:'blob'}),`${this.entry()!.label}-druckteile.zip`.replace(/\s+/g,'-'));};out.push(zip);}
   return out;
  }
  private download(blob:Blob,name:string){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
