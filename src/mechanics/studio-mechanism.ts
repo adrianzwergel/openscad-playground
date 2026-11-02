@@ -26,13 +26,16 @@ import type {Drive,TaskInfo,Collision} from './kinematics/drive';
 import {motorClash,driveCatalog,driveSpec,placeMotor,removeGear,removeDrive,heldTrains,modelAxes,owned,driveTask,adoptGear,sweepCollisions,faceNormal,standOn,parallelTo,linearAxis,toward} from './kinematics/drive';
 import {quaternionFromBasis,cross as crossV,unit} from './kinematics/math';
 import {KinematicsView,linkColor} from './kinematics-view';
+import {motorGrid,snapMotor,gridPlane} from './kinematics/motor-grid';
+import type {MotorGrid,Snapped} from './kinematics/motor-grid';
 import type {MotionSolution} from './kinematics-view';
 
 type Item='mechanism'|'model'|'axis-new'|'drive-new'|'bearings'|'structure'|`drive:${string}`|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
 /** How the 3D view's move/turn gizmo sits on a handle: steps in mm and degrees (0: free), axes along the handle. */
 export type GripOptions={mode:'translate'|'rotate';step:number;angle:number;space:'local'|'world'};
-/** `grip`: attaches the gizmo to a handle (undefined: takes it off a motor handle); `dragging`: the gizmo is held. */
-export type EditorHost={doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean};
+/** `grip`: attaches the gizmo to a handle (undefined: takes it off a motor handle); `dragging`: the gizmo is held;
+ * `free`: steps and grid are off (Alt held). */
+export type EditorHost={doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;free:()=>boolean};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
 const deg=180/Math.PI;
@@ -58,7 +61,11 @@ export class MechanismEditor{
  private sweeps:Record<string,{state:'running'|'ok'|'hit'|'error';text:string;hits?:Collision[]}>={};
  private newDrive={axis:'',spec:'nema17'};
  /** The motor grip on the drive page: shown or not, move or turn, steps (0: free), search once released. */
- private grip={on:true,mode:'translate' as 'translate'|'rotate',step:5,angle:15,search:true};
+ private grip={on:true,mode:'translate' as 'translate'|'rotate',step:5,angle:15,search:true,catalog:true,family:''};
+ /** Catalog grid of a drive (cached per drive, axis, target and catalog) and where the dragged motor snapped to. */
+ private gridCache?:{key:string;grid?:MotorGrid};private snapped?:Snapped;
+ /** Grid lines in the 3D view (not pickable: a group among the handles). */
+ private guides=new THREE.Group();
  /** The drive whose motor is being dragged (until the drag ends). */
  private dragged?:string;
  /** Step 6/7: the bearing plan (cached per document state) and generated structures per link. */
@@ -106,7 +113,7 @@ export class MechanismEditor{
   const open=this.preview.checks.filter(c=>c.state==='fail'&&(c.id==='closure'||c.id==='mobility'||c.id.startsWith('redundant/')));
   p.dataset.state=open.length?'open':'ok';p.textContent=(open.length?`Geht nicht auf · ${open.map(c=>c.message).join(' ')}`:`Vorschau gelöst · ${this.preview.mobility.message}`)+(this.partsPending?' · Teile werden erzeugt …':'');}
  private bodyFrame(id:string):Frame{return this.preview?.poses[0].bodies[id]??this.mechanism()?.bodies.find(b=>b.id===id)?.frame??identity();}
- private clearHandles(){for(const c of [...this.handles.children]){this.handles.remove(c);(c as THREE.Mesh).geometry.dispose();((c as THREE.Mesh).material as THREE.Material).dispose();}}
+ private clearHandles(){for(const c of [...this.handles.children]){this.handles.remove(c);c.traverse(x=>{if(x instanceof THREE.Mesh||x instanceof THREE.Line){x.geometry.dispose();(x.material as THREE.Material).dispose();}});}this.guides=new THREE.Group();}
  private drawHandles(){
   this.clearHandles();const m=this.mechanism();if(!m)return;
   for(const j of m.joints){if(j.joint.kind!=='path')continue;const base=compose(this.bodyFrame(j.a.body),j.a.local),selected=this.item===`joint:${j.id}`;
@@ -118,8 +125,30 @@ export class MechanismEditor{
   const size=driveSpec(d.spec).size,g=new THREE.BoxGeometry(size[0]+2,size[1]+2,size[2]+2);g.translate(0,0,-size[2]/2);
   const h=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0x4fc3f7,transparent:true,opacity:.22,depthWrite:false})),f=compose(this.bodyFrame(d.body),d.frame);
   h.position.fromArray(f.position);h.quaternion.fromArray(f.rotation);h.name=`motor:${d.id}`;h.userData.motor={drive:d.id};this.handles.add(h);
-  if(!this.host.dragging())this.host.grip(h,this.gripOptions());this.showClash(d.id);
+  if(!this.host.dragging())this.host.grip(h,this.gripOptions());this.handles.add(this.guides);this.drawGuides(d);this.showClash(d.id);
  }
+ /** What the catalog leaves to a drive's search: switched-off kinds, locked parts and a filter for pairs. */
+ private searchCatalog(){const base=defaultCatalog(),cat=this.host.doc().catalog??base,stock=new Map(base.parts.map(p=>[p.id,partKey(p.family,p.params)])),lockedParts=cat.parts.filter(p=>!partAllowed(cat,p)).map(p=>stock.get(p.id)??partKey(p.family,p.params)),locked=new Set(lockedParts);
+  return {catalog:{excludedRules:cat.excludedRules,lockedParts},allowed:(c:{a:{legacy?:{family:string;params:Record<string,number>}};b:{legacy?:{family:string;params:Record<string,number>}}})=>![c.a,c.b].some(e=>e.legacy&&locked.has(partKey(e.legacy.family,e.legacy.params)))};}
+ /** The catalog grid of a drive (undefined on linear axes and paths). */
+ private grid(d:Drive){const m=this.mechanism();if(!m)return undefined;const j=m.joints.find(x=>x.id===d.axis),c=this.searchCatalog(),key=JSON.stringify([d.id,d.body,d.axis,d.target,d.tolerance,d.maxStages,j?.a,j?.b,j?.joint.kind,c.catalog]);
+  if(this.gridCache?.key!==key){let grid:MotorGrid|undefined;try{grid=motorGrid(m,d,c);}catch{grid=undefined;}this.gridCache={key,grid};if(this.grip.family&&!grid?.families.some(f=>f.key===this.grip.family))this.grip.family='';}
+  return this.gridCache.grid;}
+ /** Rings and circles of the grid at the motor's height: the chosen family, else the family snapped to and every
+  * one-stage circle. Across families draw no lines (their shafts lie across the axis). */
+ private drawGuides(d:Drive){
+  for(const c of [...this.guides.children]){this.guides.remove(c);(c as THREE.Mesh).geometry.dispose();((c as THREE.Mesh).material as THREE.Material).dispose();}
+  const grid=this.grip.catalog?this.grid(d):undefined;if(!grid)return;const carrier=this.bodyFrame(d.body),plane=compose(carrier,gridPlane(grid,d.frame.position));
+  const chosen=grid.families.find(f=>f.key===this.grip.family),snapped=this.snappedAt(d),shown=new Set(chosen?[chosen]:[...(snapped&&snapped.family.kind==='parallel'?[snapped.family]:[]),...grid.families.filter(f=>f.stages===1)]);
+  // A circle is a thin line; a ring a light area with bright edges.
+  const add=(r0:number,r1:number,color:number,opacity:number)=>{const mesh=new THREE.Mesh(new THREE.RingGeometry(Math.max(0,r0),r1,128),new THREE.MeshBasicMaterial({color,transparent:true,opacity,side:THREE.DoubleSide,depthWrite:false}));mesh.position.fromArray(plane.position);mesh.quaternion.fromArray(plane.rotation);this.guides.add(mesh);};
+  for(const f of shown){if(f.kind!=='parallel')continue;const color=f===snapped?.family||f===chosen?0xffcc66:0x9ad1ff;
+   for(const r of f.hi-f.lo<.5?[f.lo]:[f.lo,f.hi])if(r>0)add(r-.6,r+.6,color,.9);if(f.hi-f.lo>=.5)add(f.lo,f.hi,color,.25);}}
+ /** The last snap while the motor still stands there (undo or typed numbers move it away). */
+ private snappedAt(d:Drive){const s=this.snapped;return s&&s.frame.position.every((n,i)=>Math.abs(n-d.frame.position[i])<.02)?s:undefined;}
+ /** Family choice and grid state for the drive page. */
+ private gridText(d:Drive){const grid=this.grid(d);if(!this.grip.catalog)return 'Katalog-Raster aus: der Motor folgt dem Griff frei.';if(!grid)return 'Katalog-Raster nur an Drehachsen – hier frei verschieben.';if(!grid.families.length)return 'Kein Getriebe aus dem Katalog erreicht die Untersetzung: Ziel, Toleranz, Stufen oder Katalog ändern.';
+  const s=this.snappedAt(d);return s?`Raster: ${s.family.stages} Stufe${s.family.stages>1?'n':''} · ${s.family.label} · ${s.family.kind==='across'?'Versatz':'Abstand'} ${s.distance.toFixed(1)} mm`:`${grid.families.length} Familien aus dem Katalog. Beim Ziehen rastet der Motor ein (Alt: frei).`;}
  /** Move or turn the motor (also from the 3D view's toolbar). */
  gripMode(mode:'translate'|'rotate'){this.grip.mode=mode;this.grip.on=true;this.renderProperties();}
  private gripOptions():GripOptions{return {mode:this.grip.mode,step:this.grip.step,angle:this.grip.angle,space:'local'};}
@@ -218,16 +247,34 @@ export class MechanismEditor{
  private dragMotor(o:THREE.Object3D,id:string){
   const e=this.entry(),d=e?.drives?.find(x=>x.id===id);if(!e||!d)return;
   if(this.search?.drive===id){this.search.worker.terminate();this.search=undefined;}delete this.sweeps[id];this.gearPreview=undefined;
-  const q=o.quaternion.clone().normalize(),world:Frame={position:o.position.toArray() as V,rotation:q.toArray() as Frame['rotation']},f=compose(inverse(this.bodyFrame(d.body)),world);
+  const q=o.quaternion.clone().normalize(),world:Frame={position:o.position.toArray() as V,rotation:q.toArray() as Frame['rotation']};let f=compose(inverse(this.bodyFrame(d.body)),world);
+  // Catalog grid: the flange goes onto the nearest reachable place (Alt held: free); the gizmo follows it.
+  const grid=this.grip.catalog&&!this.host.free()?this.grid(d):undefined,s=grid?snapMotor(grid,f,{only:this.grip.family||undefined}):undefined;this.snapped=s;
+  if(s){f=s.frame;const w=compose(this.bodyFrame(d.body),f);o.position.fromArray(w.position);o.quaternion.fromArray(w.rotation);}
   d.frame={position:f.position.map(n=>Math.round(n*100)/100) as V,rotation:f.rotation};const had=!!d.gear;removeGear(e.mechanism,d);placeMotor(e.mechanism,d);
   if(this.dragged!==id&&had)this.host.status(`Getriebe von ${id} entfernt – der Motor wird verschoben.`);this.dragged=id;
-  this.view.moveBody(d.id,compose(this.bodyFrame(d.body),d.frame));
+  this.view.moveBody(d.id,compose(this.bodyFrame(d.body),d.frame));this.drawGuides(d);const t=document.getElementById('drive-grid');if(t)t.textContent=this.gridText(d);
   const token=++this.clashToken;requestAnimationFrame(()=>{if(token===this.clashToken)this.showClash(id);});}
  /** After a drag (the document already taken over): a moved motor gets its train searched for the new place. */
  dragEnd(cancel=false){const id=this.dragged;this.dragged=undefined;if(!id||cancel)return;const d=this.drives().find(x=>x.id===id),m=this.mechanism();if(!d||!m)return;
   const frames=this.preview?.poses[0].bodies,hits=frames?motorClash(m,this.drives(),d,a=>this.assets.get(a),frames):[],at=d.frame.position.map(n=>n.toFixed(1)).join(', ');
-  if(hits.length){this.host.status(`Motor ${id} nach (${at}) gesetzt – steckt in ${hits.join(', ')}; erst frei ziehen, dann Getriebe suchen.`);return;}
-  if(this.grip.search){this.host.status(`Motor ${id} nach (${at}) gesetzt – Getriebe wird gesucht …`);void this.findGear(id);}else this.host.status(`Motor ${id} nach (${at}) gesetzt.`);}
+  const on=this.snapped?` (Raster: ${this.snapped.family.label})`:'';
+  if(hits.length){this.host.status(`Motor ${id} nach (${at}) gesetzt${on} – steckt in ${hits.join(', ')}; erst frei ziehen, dann Getriebe suchen.`);return;}
+  if(this.grip.search){this.host.status(`Motor ${id} nach (${at}) gesetzt${on} – Getriebe wird gesucht …`);void this.findGear(id);}else this.host.status(`Motor ${id} nach (${at}) gesetzt${on}.`);}
+ /** Puts the motor onto the grid where it stands (the chosen family or the nearest place). */
+ private snapNow(id:string){const d=this.drives().find(x=>x.id===id),grid=d&&this.grid(d),s=grid&&d?snapMotor(grid,d.frame,{only:this.grip.family||undefined}):undefined;if(!s){this.host.status('Kein Rasterplatz für diesen Motor.');return;}this.snapped=s;
+  this.editDrive(id,`Motor ${id} eingerastet: ${s.family.label}`,(x,mm)=>{x.frame={position:s.frame.position.map(n=>Math.round(n*100)/100) as V,rotation:s.frame.rotation};removeGear(mm,x);placeMotor(mm,x);});}
+ /** Catalog grid on the drive page: on/off, the family to snap to, snapping now, and its state. */
+ private gridControls(d:Drive){
+  const grid=this.grid(d),on=el('button',{textContent:'Katalog-Raster'});on.dataset.grip='catalog';on.setAttribute('aria-pressed',String(this.grip.catalog));on.onclick=()=>{this.grip.catalog=!this.grip.catalog;this.snapped=undefined;this.renderProperties();};
+  const now=el('button',{textContent:'Jetzt einrasten'});now.dataset.grip='snap';now.disabled=!this.grip.catalog||!grid?.families.length;now.onclick=()=>this.snapNow(d.id);
+  const text=el('p',{id:'drive-grid',className:'muted',textContent:this.gridText(d)});
+  if(!this.grip.catalog||!grid?.families.length)return [el('div',{className:'button-row'},on,now),text];
+  const range=(f:MotorGrid['families'][number])=>f.hi-f.lo<.05?`${f.lo.toFixed(1)} mm`:`${f.lo.toFixed(0)}–${f.hi.toFixed(0)} mm`;
+  const family=el('select');family.dataset.grip='family';family.add(new Option(`Nächster Platz (alle ${grid.families.length})`,''));
+  for(const f of grid.families.slice(0,60))family.add(new Option(`${f.stages} St. · ${f.kind==='across'?'quer · ':''}${range(f)} · ${f.label}`,f.key));
+  family.value=this.grip.family;family.onchange=()=>{this.grip.family=family.value;this.snapped=undefined;this.drawHandles();text.textContent=this.gridText(d);};
+  return [el('div',{className:'button-row'},on,now),el('label',{},'Getriebefamilie',family),text];}
  private axisTools(joint?:string){
   const tool=(mode:'cylinder'|'edge'|'points',label:string,hint:string)=>{const b=el('button',{textContent:label,title:hint});b.dataset.axisTool=mode;b.setAttribute('aria-pressed',String(this.tool?.mode===mode));b.onclick=()=>{this.tool=this.tool?.mode===mode?undefined:{mode,joint};this.host.status(this.tool?hint:'Werkzeug beendet.');this.renderProperties();};return b;};
   const out:HTMLElement[]=[el('div',{className:'button-row'},tool('cylinder','Zylinder anklicken','Zylindermantel anklicken (Bohrung, Welle, Gelenkgehäuse): Drehachse = Zylinderachse.'),tool('edge','Kante anklicken','Nahe an eine gerade Kante klicken: Achse entlang der Kante.'),tool('points','Zwei Punkte','Zwei Punkte am Modell anklicken: Achse von Punkt 1 nach Punkt 2.'))];
@@ -338,7 +385,7 @@ export class MechanismEditor{
   const m=this.mechanism(),drives=this.drives(),d=drives.find(x=>x.id===id);if(!m||!d)return;this.search?.worker.terminate();this.search=undefined;
   if(this.gearPreview){this.gearPreview=undefined;this.refresh();}
   try{
-   const values=this.values(m),ref=await this.poseAt(m,values),base=defaultCatalog(),cat=this.host.doc().catalog??base,stock=new Map(base.parts.map(p=>[p.id,partKey(p.family,p.params)])),task=driveTask(m,drives,d,a=>this.assets.get(a),ref.poses[0].bodies,values,{catalog:{excludedRules:cat.excludedRules,lockedParts:cat.parts.filter(p=>!partAllowed(cat,p)).map(p=>stock.get(p.id)??partKey(p.family,p.params))}});
+   const values=this.values(m),ref=await this.poseAt(m,values),task=driveTask(m,drives,d,a=>this.assets.get(a),ref.poses[0].bodies,values,{catalog:this.searchCatalog().catalog});
    const w=new Worker('./mechanics-drive-worker.js'),search={drive:id,worker:w,info:task.info,results:[] as NonNullable<MechanismEditor['search']>['results'],state:'running' as 'running'|'done'|'error',text:`Suche läuft · ${task.request.environment!.obstacles.length} Sperrzonen aus dem Modell …`};this.search=search;
    w.onmessage=({data})=>{if(this.search!==search)return;
     if(data.type==='progress')search.text=`Suche läuft · ${Math.round(100*data.visited/data.budget)} % · ${search.results.length} Lösung(en)`;
@@ -420,6 +467,7 @@ export class MechanismEditor{
    el('div',{className:'button-row'},toggle('Im 3D ziehen',this.grip.on,'on',()=>{this.grip.on=!this.grip.on;}),toggle('Verschieben',this.grip.on&&this.grip.mode==='translate','translate',()=>{this.grip.mode='translate';this.grip.on=true;}),toggle('Drehen',this.grip.on&&this.grip.mode==='rotate','rotate',()=>{this.grip.mode='rotate';this.grip.on=true;})),
    ui.select('Raster',String(this.grip.step),[['0','frei'],['1','1 mm'],['5','5 mm'],['10','10 mm']],v=>{this.grip.step=Number(v);this.drawHandles();}),
    ui.select('Winkelraster',String(this.grip.angle),[['0','frei'],['5','5°'],['15','15°'],['45','45°'],['90','90°']],v=>{this.grip.angle=Number(v);this.drawHandles();}),
+   ...this.gridControls(d),
    el('label',{className:'check'},searchAfter,'Nach dem Ziehen Getriebe suchen'),
    el('p',{className:'muted',textContent:'Griff im 3D-Fenster: Pfeile und Ebenen verschieben, Ringe drehen (Achsen am Motor, z = Welle). Alt gedrückt halten: ohne Raster.'}),grip,
    el('div',{className:'button-row'},click,parallel),...ui.frameFields('Flansch auf dem Glied (z = Welle)',d.frame,f=>this.editDrive(id,'Motor verschoben',(x,mm)=>{x.frame=f;removeGear(mm,x);placeMotor(mm,x);})));

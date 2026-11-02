@@ -134,6 +134,8 @@ const PINION={module:2,teeth:20,radius:20};
 /** `catalog`: what the Studio's catalog leaves to the search: transmission rules switched off and parts locked (part keys,
  * family and parameters as in graph/catalog). Without it the printed kinds are used (Node tests and scripts). */
 export type DriveCatalog={excludedRules:string[];lockedParts:string[]};
+/** Pairing rules a drive's search (and its placement grid) may use. */
+export const driveRules=(kind:TaskInfo['kind'],catalog?:DriveCatalog)=>['external-spur','gt2-belt','bevel-mesh','worm-mesh',...(kind==='translation'?['screw-nut','rack-drive']:[]),...(catalog?['lego-spur','lego-bevel-90','lego-worm']:[])].filter(id=>!catalog?.excludedRules.includes(id));
 export function driveTask(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frames:Record<string,Frame>,values:Record<string,number>,o:{budget?:number;seed?:number;catalog?:DriveCatalog}={}):DriveTask{
  const j=axisJoint(m,d.axis),side=j.a.body===d.body?'a':j.b.body===d.body?'b':undefined;
  if(!side)throw Error(`Der Motor muss auf einem der beiden Glieder der Achse ${j.id} sitzen (${j.a.body} oder ${j.b.body}).`);
@@ -159,7 +161,7 @@ export function driveTask(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frame
  const obstacles:Region[]=[...own.filter(near).map(x=>({id:x.id,frame:x.frame,size:x.size,...(x.body===driven&&kind!=='path'?{role:'output' as const}:x.body===d.body?{role:'carrier' as const}:{})})),...motors.filter(near)];
  // The catalog decides: its rules (LEGO pairs with their kind) minus those switched off; locked parts are filtered out.
  // With the catalog (LEGO pairs among the rest) the search has many more pairs: it gets 15000 steps instead of 6000.
- const rules=['external-spur','gt2-belt','bevel-mesh','worm-mesh',...(kind==='translation'?['screw-nut','rack-drive']:[]),...(o.catalog?['lego-spur','lego-bevel-90','lego-worm']:[])].filter(id=>!o.catalog?.excludedRules.includes(id));
+ const rules=driveRules(kind,o.catalog);
  const request:RouteRequest={input:{kind:'frame',body:'s0',local:identity(),target:d.frame,constraint:'frame'},output,environment:{obstacles,margin:1,terminals:'given'},...(kind==='translation'?{motion:'translation' as const,stroke:Math.min(400,hi-lo)}:{})};
  const options:RouteOptions&{lockedParts?:string[]}={target,tolerance:d.tolerance,maxStages:d.maxStages??3,budget:o.budget??(o.catalog?15000:6000),seed:o.seed??1,rules,axialGap:1,...(o.catalog?.lockedParts.length?{lockedParts:o.catalog.lockedParts}:{})};
  return {request,options,info:{drive:d.id,kind,carrier:d.body,driven,outPerAxis,reference,lo,hi,frames,...(pinion?{pinion,rail:{local:c.local,motor:d.frame,size:driveSpec(d.spec).size}}:{})}};

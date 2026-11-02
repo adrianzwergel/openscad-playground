@@ -31,7 +31,7 @@ const motion=new MotionPanel(()=>{if(mech.active)return mech.motionSource();cons
  on=>{detail.group.visible=!on;actualOutput.visible=!on;if(on)preview.visible=false;mech.view.group.visible=!on&&mech.active;},text=>{status.textContent=text;});
 
 // Mechanism mode: a kinematics-1 document replaces the gear assembly in view, explorer and properties.
-const mech=new MechanismEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>document.getElementById('fit')!.click(),grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.motor)transform.detach();},dragging:()=>transform.dragging});
+const mech=new MechanismEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>document.getElementById('fit')!.click(),grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.motor)transform.detach();},dragging:()=>transform.dragging,free:()=>free});
 const mechRoot=new THREE.Group();scene.add(mechRoot);mechRoot.add(mech.view.group,mech.handles,motion.view.group);
 // The gizmo on a mechanism handle: mode, steps (Alt held: none) and axes as the handle asks.
 let steps:{step:number;angle:number}={step:0,angle:0},free=false;

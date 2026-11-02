@@ -843,6 +843,35 @@ Achse eine Antriebsquelle; die Routensuche findet das Getriebe dazwischen
 - **Abnahme:** `scripts/kinematics/check-drive.mjs` (Suche, Übernahme, Lauf über
   den Bereich, Übersetzung, Raten, Kollisionen für Roboterarm, CNC-Portal,
   Schlitten) und `scripts/check-studio-drive-browser.mjs`.
+- **Motor im 3D ziehen:** Auf der Antriebsseite hat der Motor einen Griff zum
+  Verschieben und Drehen in seinen eigenen Achsen (z = Welle). Raster in mm und
+  Grad, mit Alt frei. Schon beim Ziehen wird der Motorquader gegen die anderen
+  Glieder geprüft (`motorClash`: grobe Teilquader, dann Dreiecke). Nach dem
+  Loslassen fliegt das alte Getriebe raus, und die Suche läuft für die neue Lage,
+  außer der Motor steckt in einem Glied.
+- **Katalog-Raster** (`kinematics/motor-grid.ts`, nur Drehachsen): Aus den
+  freigegebenen Paaren (dieselben Regeln wie die Suche, `driveRules`, gesperrte
+  Teile ausgefiltert) und der Untersetzung entstehen Familien, je Getriebe eine.
+  Es gelten die notwendigen Reichweitebedingungen der Suche:
+  - **Gerade Getriebe mit den Achsabständen d₁…dₖ:** Die Motorwelle liegt
+    parallel zur Achse, im Abstand zwischen max(0, 2·max d − Σd) und Σd. Eine
+    Stufe ergibt einen Kreis, mehrere Stufen einen Ring, weil die Winkel der
+    Zwischenwellen frei sind.
+  - **Getriebe mit einer Umlenkung (Kegelrad, Schnecke):** Die Motorwelle liegt
+    quer zur Achse. Ihr Versatz zur Achse weicht höchstens um die geraden
+    Abstände vom Versatz der Umlenkung ab.
+
+  Beim Ziehen rastet der Flansch ein. Die Wellenrichtung wird auf parallel oder
+  quer gedreht, je nachdem, was näher liegt. Der Abstand geht auf den nächsten
+  erreichbaren Wert; einstufige Kreise ziehen in 3 mm Nähe an. Die Höhe entlang
+  der Achse und die Drehung um die eigene Welle bleiben frei. Wählt man eine
+  Familie, rastet der Motor nur auf deren Kreis oder Ring ein. Die Ansicht
+  zeigt Kreise und Ringe in der Ebene des Motors. Das Raster ist eine notwendige
+  Bedingung; über Bauraum und Sitze entscheidet die Suche. Abnahme:
+  `scripts/kinematics/check-motor-grid.mjs` prüft, dass die Suche am
+  Rasterplatz genau das Getriebe der Familie findet.
+  `scripts/check-studio-motor-grip-browser.mjs` prüft Ziehen, Einrasten,
+  Kollision und Rückgängig.
 
 Offen: Kollisionen zwischen Gliedern selbst, Stellungen anderer Achsen beim
 Verfahren, Motordrehzahl/-moment als Ziel, Bauraum-Markierung im Modell.
