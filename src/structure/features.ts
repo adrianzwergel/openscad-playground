@@ -15,7 +15,7 @@ export type Feature=
  |{kind:'rod';d:number;length:number;wall:number}
  |{kind:'flange';size:number;pilot:number;spacing:number;hole:number;thickness:number}
  |{kind:'nut';flange:number;body:number;circle:number;hole:number;thickness:number}
- |{kind:'pad';width:number;depth:number;thickness:number;holes:[number,number][];hole:number}
+ |{kind:'pad';width:number;depth:number;thickness:number;holes:[number,number][];hole:number;top?:boolean}  // top: struts start on its back face (a foot: nothing beside it near the table)
  |{kind:'din';width:number;thickness:number}
  |{kind:'standoff';height:number;outer:number;hole:number}
  /** Boss for a heat-set threaded insert (M3: hole 4.0, depth 5.7), its face at z = 0, the boss below. */
@@ -79,7 +79,7 @@ export function featureGeometry(f:Feature,frame:Frame):FeatureGeometry{
     // Ports round the rim and on both faces: the thrust along the screw can leave the flange axially, not only by bending.
     keep:[],ports:[...ring(frame,s.radius,[0],8),...ring(frame,s.radius-2,[-t/2,t/2],8)]};}
   case 'pad':{const t=f.thickness;
-   return {solids:[{kind:'box',frame:at(frame,0,0,-t/2),half:[f.width/2,f.depth/2,t/2],round:1.5}],holes:f.holes.map(([x,y])=>cyl(at(frame,x,y,0),f.hole/2,-t-2,2)),keep:[],ports:rim(frame,f.width,f.depth,-t/2)};}
+   return {solids:[{kind:'box',frame:at(frame,0,0,-t/2),half:[f.width/2,f.depth/2,t/2],round:1.5}],holes:f.holes.map(([x,y])=>cyl(at(frame,x,y,0),f.hole/2,-t-2,2)),keep:[],ports:rim(frame,f.width,f.depth,f.top?-t:-t/2)};}
   case 'din':{
    // 35 mm top-hat rail clip: a base plate with a fixed hook and a sprung hook (EN 60715).
    const t=f.thickness,w=f.width;

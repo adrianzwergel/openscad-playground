@@ -144,7 +144,7 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   if(long){const alongX=x1-x0>=y1-y0,n=Math.max(2,Math.round(Math.max(x1-x0,y1-y0)/300)+1),across=alongX?(y1-y0)/2:(x1-x0)/2,narrow=Math.max(25,across),wide=Math.max(narrow,.6*(top-floor));
    for(let i=0;i<n;i++){const t=i/(n-1);for(const side of [-1,1]){const at=(w:number):V=>alongX?[x0+(x1-x0)*t,(y0+y1)/2+side*w,floor]:[(x0+x1)/2+side*w,y0+(y1-y0)*t,floor];feet.push(at(wide));fallback.set(feet.length-1,at(narrow));}}}
   else{const w=Math.max(30,(x1-x0)/2),h=Math.max(30,(y1-y0)/2),cx=(x0+x1)/2,cy=(y0+y1)/2;for(const [a,b] of [[-1,-1],[1,-1],[1,1],[-1,1]])feet.push([cx+a*w,cy+b*h,floor]);}
-  feet.forEach((p,i)=>list.push({id:`fuss${i+1}`,frame:{position:p,rotation:[1,0,0,0]},feature:{kind:'pad',width:30,depth:30,thickness:5,holes:[[-8,0],[8,0]],hole:4.5},role:'support'}));
+  feet.forEach((p,i)=>list.push({id:`fuss${i+1}`,frame:{position:p,rotation:[1,0,0,0]},feature:{kind:'pad',width:30,depth:30,thickness:5,holes:[[-8,0],[8,0]],hole:4.5,top:true},role:'support'}));
  }
  // Rail holders are reached from below and outside: that corridor stays free of the wagon.
  for(const f of railAccess)access.get(ground)!.push({kind:'box',frame:f,half:[13,28,12]});
@@ -159,6 +159,9 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
  const order=[...tree.links].sort((a,b)=>tree.depth.get(b)!-tree.depth.get(a)!),out:LinkStructure[]=[];
  /** Primitives of link `l` as seen from `from`: a rail on `l` that `from` runs along is left out (it is in `from`'s own view). */
  const indexOf=(l:string,withBosses=true,from?:string,exact=false)=>{const x=new PrimIndex(15,40),skipRail=from&&railOf.get(l)?.has(from);for(const p of carried.get(l)!)if(!(skipRail&&railPrims.has(p))&&!(exact&&padded.has(p)))x.add(p);if(exact)for(const p of realOf.get(l)!)x.add(p);if(withBosses)for(const p of bossesOf(l))x.add(p);return x;};
+ // Below the feet is the table: the structure keeps LIFT mm above it, only the foot pads (joined after the clip) reach down,
+ // so the ground stands on its four feet and nothing else.
+ const LIFT=1;
  const floorOf=(l:string)=>{if(l!==ground)return undefined;const f=anchors.get(ground)!.filter(a=>a.id.startsWith('fuss')).map(a=>a.frame.position[2]);return f.length?Math.min(...f):undefined;};
  const clearanceFor=(l:string,own:string[]=[])=>{
   // Generation avoids the neighbours over their joint; links further away meet only at extreme axis values (checked at the end).
@@ -168,7 +171,7 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   // `prime`: values computed elsewhere (by workers, for points known in advance) go into the cache.
   // Values on a 0.5 mm lattice, each taken at its lattice point: the same whichever point (or worker) asks first.
   return Object.assign((p0:V)=>{const key=keyOf(p0),hit=cache.get(key);if(hit!==undefined)return hit;const p:V=[Math.round(p0[0]*2)/2,Math.round(p0[1]*2)/2,Math.round(p0[2]*2)/2];
-   let d=self.distance(p);if(floor!==undefined)d=Math.min(d,p[2]-floor+5);
+   let d=self.distance(p);if(floor!==undefined)d=Math.min(d,p[2]-floor-LIFT);
    for(const o of others){if(d<=0)break;d=Math.min(d,sweptDistance(p,o.steps,0,o.index,0));}
    d-=s.gap;cache.set(key,d);return d;},{prime:(points:Float64Array,values:Float64Array)=>{for(let i=0;i<values.length;i++){const key=keyOf([points[3*i],points[3*i+1],points[3*i+2]]);if(!cache.has(key))cache.set(key,values[i]);}},
    // The cache as key–value pairs, and taking such pairs over (a worker starts with what the main thread knows).
@@ -184,7 +187,8 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
   if(!list.some(a=>a.role==='load')||!list.some(a=>a.role==='support')){entry.error='Glied hat keine Haltepunkte zum Verbinden.';continue;}
   if(s.only&&!s.only.includes(l))continue;
   if(s.inspect){const own=indexOf(l,false),others=tree.links.filter(x=>x!==l&&adjacent(l,x)).map(x=>({x,index:indexOf(x),steps:path(m,tree,l,x)}));s.inspect(l,list,clearanceFor(l),p=>[{link:l,d:own.distance(p)},...others.map(o=>({link:o.x,d:sweptDistance(p,o.steps,0,o.index,-1)}))]);continue;}
-  if(l===ground)for(const [i,p] of feetFallback){const a=list.find(x=>x.id===`fuss${i+1}`);if(a&&clearanceFor(l)(add(a.frame.position,[0,0,8]))<12)a.frame={...a.frame,position:p};}
+  // Room above a foot (measured where the table's keep-out leaves 13 mm, as before the keep-out existed).
+  if(l===ground)for(const [i,p] of feetFallback){const a=list.find(x=>x.id===`fuss${i+1}`);if(a&&clearanceFor(l)(add(a.frame.position,[0,0,LIFT+13]))<12)a.frame={...a.frame,position:p};}
   // Drive loads: one case per drive on this link's seats; the pinion on a rail loads each rail holder in turn.
   const cases:Record<string,V>[]=[];
   for(const c of driveCases){const own=Object.fromEntries([...c.forces].filter(([id])=>list.some(a=>a.id===id)));if(Object.keys(own).length)cases.push(own);

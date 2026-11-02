@@ -30,6 +30,10 @@ for(const name of selected){
    if(out)fs.writeFileSync(path.join(out,`${name}-${x.link}.stl`),stlBinary(orientForPrint(x.result.mesh,x.result.report.print.up),x.link));}});
  if(out&&items.length)render(path.join(out,`${name}.png`),items,[{azimuth:-35,elevation:20},{azimuth:55,elevation:15},{azimuth:-120,elevation:30}],460);
  assert.ok(links.every(x=>x.skipped||x.result&&x.checks.every(c=>c.state!=='fail')),name+': nicht alle Glieder in Ordnung');assert.ok(links.some(x=>x.result),name+': kein Glied erzeugt');
+ // The ground stands on its feet only: nothing below their underside, nothing but the pads within 1 mm above it (the table).
+ for(const x of links.filter(x=>x.result)){const feet=x.anchors.filter(a=>a.id.startsWith('fuss')).map(a=>a.frame.position);if(!feet.length)continue;const floor=Math.min(...feet.map(f=>f[2])),v=x.result.mesh.vertices;
+  for(let k=0;k<v.length;k+=3){const p=[v[k],v[k+1],v[k+2]];assert.ok(p[2]>=floor-.05,`${name}/${x.link}: unter den Füßen bei ${p.map(n=>n.toFixed(1))}`);
+   if(p[2]<floor+1)assert.ok(feet.some(f=>Math.abs(p[0]-f[0])<16&&Math.abs(p[1]-f[1])<16),`${name}/${x.link}: Gestell auf Tischhöhe neben den Füßen bei ${p.map(n=>n.toFixed(1))}`);}}
  // Under the design loads (20 N per anchor, PLA, safety 3) every link must also be strong and stiff enough.
  for(const x of links.filter(x=>x.result))for(const id of ['strength','stiffness'])assert.equal(x.checks.find(c=>c.id===id)?.state,'pass',`${name}/${x.link}: ${x.checks.find(c=>c.id===id)?.message}`);
 }
