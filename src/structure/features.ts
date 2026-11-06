@@ -87,7 +87,7 @@ export function featureGeometry(f:Feature,frame:Frame):FeatureGeometry{
      {kind:'box',frame:at(frame,0,-18.75,-t-2.5),half:[w/2,1.5,3.5]},{kind:'box',frame:at(frame,0,-17.25,-t-5.2),half:[w/2,3,.8]}],
     holes:[{kind:'box',frame:at(frame,0,-12,-t/2),half:[w/2+1,1,t/2+1]}],keep:[{kind:'box',frame:at(frame,0,0,-t-5),half:[w/2+2,16.5,4.2]}],ports:rim(frame,w,44,-t/2)};}
   case 'plate':{const t=f.thickness;return {solids:[{kind:'slab',frame,points:f.points,z0:-t/2,z1:t/2}],holes:[],keep:[],ports:f.points.flatMap((p,i)=>{const q=f.points[(i+1)%f.points.length];return [apply(frame,[p[0],p[1],0]),apply(frame,[(p[0]+q[0])/2,(p[1]+q[1])/2,0])];})};}
-  case 'standoff':return {solids:[cyl(frame,f.outer/2,-f.height,0)],holes:[cyl(frame,f.hole/2,-f.height-2,2)],keep:[cyl(frame,f.outer/2+1,0,8)],ports:ring(frame,f.outer/2,[-f.height+1.2],4)};
+  case 'standoff':return {solids:[cyl(frame,f.outer/2,-f.height,0)],holes:f.hole>0?[cyl(frame,f.hole/2,-f.height-2,2)]:[],keep:[cyl(frame,f.outer/2+1,0,8)],ports:ring(frame,f.outer/2,[-f.height+1.2],4)};
   // The insert is pressed in from the face: its hole, a little deeper for the melt, and room above for the iron.
   case 'insert':return {solids:[cyl(frame,f.outer/2,-f.height,0)],holes:[cyl(frame,f.hole/2,-f.depth-.5,1)],keep:[cyl(frame,f.outer/2+1,0,10)],ports:ring(frame,f.outer/2,[-f.height+1.2],4)};
   case 'snap':{const t=f.thickness,L=f.length,w=f.width,c=f.lip*1.5;

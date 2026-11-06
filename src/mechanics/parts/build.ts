@@ -3,7 +3,8 @@
 // everything else (a plate's outline in auto mode, holes, domes, collisions) follows from it.
 import {partById} from './catalog.ts';
 import type {Part} from './catalog.ts';
-import {generator,defaultHolder} from './generators.ts';
+import {generator,defaultHolder,clipLayout,clipArm} from './generators.ts';
+import {snapStrain} from '../../structure/features.ts';
 import type {HolderHole} from './generators.ts';
 import type {Prim} from '../../structure/sdf.ts';
 import type {Frame,V} from '../kinematics/math.ts';
@@ -25,7 +26,7 @@ export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];p
 /** One plate with what sits on it: all the planar logic below works on this. */
 export type Sheet={plate:Plate;items:BuildItem[];parts:Part[];grid:number};
 export type Rect={corners:P2[]};
-export type Issue={kind:'body'|'plug'|'edge'|'floor'|'model';items:string[];message:string};
+export type Issue={kind:'body'|'plug'|'edge'|'floor'|'model'|'holder';items:string[];message:string};
 
 export const newPlate=():Plate=>({mode:'auto',size:[120,80],center:[0,0],margin:6,thickness:3,corner:3,holes:[],mount:{on:true,d:3.4,inset:5}});
 export const newPlateNode=(id:string,frame:Frame=identity(),body?:string):PlateNode=>({...newPlate(),id,free:{frame,...(body?{body}:{})}});
@@ -98,7 +99,7 @@ export function plateRect(b:Sheet){const p=b.plate;
  const all=b.items.map(i=>bounds(footprint(partOf(b,i),i))),m=p.margin;return {x0:Math.min(...all.map(r=>r.x0))-m,x1:Math.max(...all.map(r=>r.x1))+m,y0:Math.min(...all.map(r=>r.y0))-m,y1:Math.max(...all.map(r=>r.y1))+m};}
 export function mountHoles(b:Sheet):PlateHole[]{const m=b.plate.mount;if(!m.on)return [];const r=plateRect(b);return ([[r.x0+m.inset,r.y0+m.inset],[r.x1-m.inset,r.y0+m.inset],[r.x1-m.inset,r.y1-m.inset],[r.x0+m.inset,r.y1-m.inset]] as P2[]).map((at,k)=>({id:`ecke-${k+1}`,at,d:m.d}));}
 /** What the item's holder adds to the carrier. */
-export function holderGeometry(b:Sheet,i:BuildItem){const p=partOf(b,i),g=generator(i.holder.kind);if(!g)throw Error(`Halter ${i.holder.kind} unbekannt`);return g.build({part:p,holes:itemHoles(p,i),side:i.side==='top'?1:-1,params:i.holder.params,top:0,bottom:-b.plate.thickness,...(p.pilot?{pilot:{at:i.at,d:p.pilot+.6}}:{})});}
+export function holderGeometry(b:Sheet,i:BuildItem){const p=partOf(b,i),g=generator(i.holder.kind);if(!g)throw Error(`Halter ${i.holder.kind} unbekannt`);return g.build({part:p,holes:itemHoles(p,i),side:i.side==='top'?1:-1,params:i.holder.params,top:0,bottom:-b.plate.thickness,map:q=>toPlate(p,i,q),...(p.pilot?{pilot:{at:i.at,d:p.pilot+.6}}:{})});}
 export function plateOutline(b:Sheet,segments=8):P2[]{const r=plateRect(b),c=Math.min(b.plate.corner,(r.x1-r.x0)/2-.01,(r.y1-r.y0)/2-.01),out:P2[]=[];const arc=(x:number,y:number,a:number)=>{if(c<=0){out.push([x,y]);return;}for(let k=0;k<=segments;k++){const t=a+k/segments*Math.PI/2;out.push([x+c*Math.cos(t),y+c*Math.sin(t)]);}};
  if(c<=0)return [[r.x0,r.y0],[r.x1,r.y0],[r.x1,r.y1],[r.x0,r.y1]];arc(r.x1-c,r.y0+c,-Math.PI/2);arc(r.x1-c,r.y1-c,0);arc(r.x0+c,r.y1-c,Math.PI/2);arc(r.x0+c,r.y0+c,Math.PI);return out;}
 export const plateHoles=(b:Sheet)=>[...mountHoles(b),...b.plate.holes];
@@ -113,8 +114,15 @@ export function issues(b:Sheet):Issue[]{const out:Issue[]=[],r=plateRect(b);
  b.items.forEach((i,n)=>{const p=partOf(b,i);
   if(b.plate.mode==='fixed'&&footprint(p,i).corners.some(c=>c[0]<r.x0-1e-6||c[0]>r.x1+1e-6||c[1]<r.y0-1e-6||c[1]>r.y1+1e-6))out.push({kind:'edge',items:[i.id],message:`${p.label} ragt über die Platte.`});
   if(p.body>0&&p.box.min[2]<0&&liftOf(i)<-p.box.min[2]-1e-6&&i.holder.kind!=='none')out.push({kind:'floor',items:[i.id],message:`${p.label}: unten stehen ${(-p.box.min[2]).toFixed(1)} mm über, Halter nur ${liftOf(i).toFixed(1)} mm hoch.`});
+  out.push(...clipIssues(p,i));
   for(const o of b.items.slice(n+1)){const q=partOf(b,o);if(hits(b,i,o))out.push({kind:'body',items:[i.id,o.id],message:`${p.label} und ${q.label}: unter ${Math.max(i.clearance,o.clearance)} mm Abstand.`});}
   for(const o of b.items){if(o===i)continue;for(const c of plugged(b,i,o))out.push({kind:'plug',items:[i.id,o.id],message:`${partOf(b,o).label} steht vor dem Stecker ${c.label} von ${p.label}.`});}});
+ return out;}
+/** A clip that would break or not hold: the arm's strain, the hook's bite, a plug in the arm's way. */
+export function clipIssues(p:Part,i:BuildItem):Issue[]{if(i.holder.kind!=='clip')return [];const out:Issue[]=[],h=i.holder.params,c=clipLayout(p,h),arm=clipArm(c.t,h),strain=snapStrain(arm);
+ if(strain>.02)out.push({kind:'holder',items:[i.id],message:`${p.label}: Federarm dehnt sich um ${(strain*100).toFixed(1)} % (PLA bricht ab etwa 2 %). Höher auflegen, Arm dünner oder Haken flacher.`});
+ if(h.lip-h.fit<.3)out.push({kind:'holder',items:[i.id],message:`${p.label}: Haken greift nur ${(h.lip-h.fit).toFixed(1)} mm über den Rand.`});
+ const ways=plugRects(p,i);for(const a of c.arms){const half=[Math.abs(a.inward[1])*h.width/2+Math.abs(a.inward[0])*h.thickness,Math.abs(a.inward[0])*h.width/2+Math.abs(a.inward[1])*h.thickness],r:Rect={corners:[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>toPlate(p,i,[a.at[0]+x*half[0],a.at[1]+y*half[1]]))};for(const w of ways)if(overlap(w.rect,r))out.push({kind:'holder',items:[i.id],message:`${p.label}: Federarm steht vor dem Stecker ${w.label}. Arme längs verschieben.`});}
  return out;}
 /** Parts and screws to buy. */
 export function shopping(b:{items:BuildItem[];parts:Part[]}){const lines=new Map<string,number>(),add=(k:string,n:number)=>lines.set(k,(lines.get(k)??0)+n);for(const i of b.items){const p=partOf(b,i);add(p.label,1);const n=itemHoles(p,i).length;if(n&&i.holder.kind==='dome')add(`Blechschraube für Ø ${(i.holder.params.pilot).toFixed(1)} mm Kernloch`,n);if(n&&i.holder.kind==='through')add('Schraube mit Mutter passend zur Bohrung',n);}return [...lines].map(([label,count])=>({label,count}));}
@@ -137,6 +145,10 @@ export function plateBox(b:Build,n:PlateNode,world:Frame){const r=plateRect(shee
 export function holderPiece(b:Build,i:BuildItem):Sheet{const plate={...newPlate(),margin:4,mount:{on:false,d:3.4,inset:5}},item:BuildItem={...i,at:[0,0],angle:0,side:partOf(b,i).body>0?'top':'bottom'};delete item.free;return {plate,items:[item],parts:b.parts,grid:0};}
 /** Where the free parts on a link want to be printed into it: one seat per hole, the part's room kept free. */
 export function partSeats(b:Build):Seat[]{const out:Seat[]=[];
- for(const i of b.items){if(!i.free?.body||i.holder.kind==='none')continue;const p=partOf(b,i),f=i.free.frame,turn:Frame={position:[0,0,0],rotation:p.body>0?[0,0,0,1]:[1,0,0,0]},h=Math.max(1,liftOf(i)||5),keep=Math.hypot(p.box.max[0]-p.box.min[0],p.box.max[1]-p.box.min[1])/2+1;
+ for(const i of b.items){if(!i.free?.body||i.holder.kind==='none')continue;const p=partOf(b,i),f=i.free.frame,link=i.free.body;
+  if(i.holder.kind==='clip'){const h=i.holder.params,c=clipLayout(p,h),arm=clipArm(c.t,h),seat=(id:string,frame:Frame,feature:Seat['feature'],room=false):Seat=>({id:`${i.id}/${id}`,link,line:i.id,kind:'mount',part:p.id,frame:compose(f,frame),feature,...(room?{keep:{frame:f,r:Math.hypot(p.size[0],p.size[1])/2+1,z0:.5,z1:Math.max(p.box.max[2],1)+1}}:{})});
+   c.arms.forEach((a,k)=>out.push(seat(`arm${k+1}`,{position:[a.at[0],a.at[1],-h.height],rotation:axisAngle([0,0,1],Math.atan2(a.inward[1],a.inward[0])*180/Math.PI)},arm,k===0)));
+   [...c.posts,...c.stops].forEach((x,k)=>out.push(seat(`stuetze${k+1}`,{position:[x.at[0],x.at[1],x.feature.height-h.height],rotation:[0,0,0,1]},x.feature)));continue;}
+  const turn:Frame={position:[0,0,0],rotation:p.body>0?[0,0,0,1]:[1,0,0,0]},h=Math.max(1,liftOf(i)||5),keep=Math.hypot(p.box.max[0]-p.box.min[0],p.box.max[1]-p.box.min[1])/2+1;
   p.holes.forEach((x,k)=>{if(i.holes?.[k]?.off)return;const d=i.holes?.[k]?.d??x.d;out.push({id:`${i.id}/loch${k+1}`,link:i.free!.body!,line:i.id,kind:'mount',part:p.id,frame:compose(compose(f,{position:[x.at[0],x.at[1],0],rotation:[0,0,0,1]}),turn),feature:{kind:'standoff',height:h,outer:Math.max(5,d+3.2),hole:i.holder.params.pilot??d-.4},...(k===0?{keep:{frame:compose(f,turn),r:keep,z0:.5,z1:Math.max(p.box.max[2],-p.box.min[2])+1}}:{})});});}
  return out;}

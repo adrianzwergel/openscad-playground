@@ -6,6 +6,9 @@ import {parts,partById} from '../../src/mechanics/parts/catalog.ts';
 import {newBuild,newItem,newPlate,newPlateNode,modelBuild,parseBuild,sheet,issues,nearestFree,snapTo,plateRect,buildGeometry,itemHoles,footprint,overlap,plugRects,mountHoles,toPlate,shopping,onSurface,reframe,worldOf,holderPiece,partSeats} from '../../src/mechanics/parts/build.ts';
 import {compose,axisAngle,rotate} from '../../src/mechanics/kinematics/math.ts';
 import {solidScad} from '../../src/mechanics/parts/scad.ts';
+import {clipArm,clipLayout,generator} from '../../src/mechanics/parts/generators.ts';
+import {snapStrain} from '../../src/structure/features.ts';
+import {primDistance} from '../../src/structure/sdf.ts';
 const near=(a,b,e=.01)=>assert.ok(Math.abs(a-b)<e,`${a} ≠ ${b}`);
 const spacing=id=>{const h=partById(id).holes.map(x=>x.at);return [Math.max(...h.map(p=>p[0]))-Math.min(...h.map(p=>p[0])),Math.max(...h.map(p=>p[1]))-Math.min(...h.map(p=>p[1]))];};
 // Hole patterns a data sheet states.
@@ -55,4 +58,20 @@ assert.deepEqual(sheet(two,'p1').items.map(i=>i.id),['u']);assert.deepEqual(pars
 // A free part: holder as a piece of its own, and seats on its link, one per hole, reaching away from the part.
 const piece=buildGeometry(holderPiece(two,two.items[2]));assert.equal(piece.solids.length,5);assert.equal(piece.holes.length,4);
 const seats=partSeats(two);assert.equal(seats.length,4);assert.ok(seats.every(s=>s.link==='arm'&&s.feature.kind==='standoff'));assert.ok(seats.some(s=>s.keep));near(seats[0].feature.height,two.items[2].holder.params.height);
+// Clip: boards without holes get one by default; the board fits between the arms, on the supports, under the hooks.
+const render=g=>{const c=OpenSCADs.pop();c.FS.writeFile('/c.scad',solidScad(g));assert.equal(c.callMain(['/c.scad','--backend=manifold','--export-format','binstl','-o','/c.stl']),0);return c.FS.readFile('/c.stl');};
+const OpenSCADs=[await OpenSCAD({wasmBinary:fs.readFileSync('src/wasm/openscad.wasm'),noInitialRun:true,print:()=>{},printErr:()=>{}})];
+for(const [id,angle] of [['d1-mini',0],['arduinonano',90],['a4988',30],['esp32-devkitc',0]]){const part=partById(id),s=flat(),c=newItem('c',part,[20,10]);c.angle=angle;if(id==='arduinonano')c.holder={kind:'clip',params:generator('clip').defaults(part)};s.items.push(c);if(id!=='arduinonano')assert.equal(c.holder.kind,'clip',id);
+ const h=c.holder.params,t=part.size[2],l=clipLayout(part,h),g=buildGeometry(s),arm=clipArm(t,h);assert.ok(snapStrain(arm)<=.02,id+': Dehnung '+snapStrain(arm));assert.deepEqual(issues(s).filter(x=>x.kind==='holder'||x.kind==='floor'),[]);
+ // Sample the seated board: no solid may reach into it; the hooks lie just above it, the posts just below.
+ const a0=c.angle*Math.PI/180,toWorld=(x,y,z)=>[c.at[0]+x*Math.cos(a0)-y*Math.sin(a0),c.at[1]+x*Math.sin(a0)+y*Math.cos(a0),z];let worst=Infinity;for(let x=-.5;x<=.5;x+=.05)for(let y=-.5;y<=.5;y+=.05)for(const z of [0,.5,1])worst=Math.min(worst,...g.solids.slice(1).map(p=>primDistance(toWorld(x*part.size[0],y*part.size[1],h.height+z*t),p)));assert.ok(worst>-.05,id+': Körper im Brett '+worst);
+ const long=part.size[0]>=part.size[1]?1:0,edge=part.size[long]/2,hook=toWorld(long?0:edge-.3,long?edge-.3:0,h.height+t+h.fit+.1);assert.ok(Math.min(...g.solids.slice(1).map(p=>primDistance(hook,p)))<.15,id+': Haken über dem Rand');
+ if(!OpenSCADs.length)OpenSCADs.push(await OpenSCAD({wasmBinary:fs.readFileSync('src/wasm/openscad.wasm'),noInitialRun:true,print:()=>{},printErr:()=>{}}));const out=render(g),view=new DataView(out.buffer,out.byteOffset);assert.ok(view.getUint32(80,true)>100,id);if(!OpenSCADs.length)OpenSCADs.push(await OpenSCAD({wasmBinary:fs.readFileSync('src/wasm/openscad.wasm'),noInitialRun:true,print:()=>{},printErr:()=>{}}));
+ assert.ok(l.arms.length===2&&l.posts.length===2);}
+// A clip too stiff, too shallow, or a plug behind the arm is reported.
+{const part=partById('d1-mini'),s=flat(),c=newItem('c',part,[0,0]);s.items.push(c);c.holder.params={...c.holder.params,height:2,thickness:2.5};assert.ok(issues(s).some(x=>x.kind==='holder'&&/dehnt/.test(x.message)));c.holder.params={...generator('clip').defaults(part),lip:.4};assert.ok(issues(s).some(x=>/greift nur/.test(x.message)));
+ const side={...part,id:'seitlich',plugs:[{label:'USB',at:[0,part.size[1]/2-1],dir:90,width:10,height:4}]},s2={plate:newPlate(),items:[],parts:[side],grid:1},d=newItem('d',side,[0,0]);d.holder={kind:'clip',params:generator('clip').defaults(side)};s2.items.push(d);assert.ok(issues(s2).some(x=>/Federarm steht/.test(x.message)));d.holder.params.shift=11;assert.ok(!issues(s2).some(x=>/Federarm steht/.test(x.message)));}
+// A clip on a link: arms and supports become seats.
+{const part=partById('d1-mini'),t2=modelBuild('t','m'),c=newItem('c',part,[0,0]);c.free={frame:wall,body:'arm'};t2.items.push(c);const s=partSeats(t2);assert.deepEqual(s.map(x=>x.feature.kind),['snap','snap','standoff','standoff','standoff','standoff']);assert.ok(s[0].keep);
+ const piece=buildGeometry(holderPiece(t2,c));assert.equal(piece.solids.length,1+2*2+4);}
 console.log(`Teilekatalog: ${parts.length} Teile, ${parts.filter(p=>p.checked).length} aus NopSCADlib; Platte ${(plateRect(m).x1-plateRect(m).x0).toFixed(1)} × ${(plateRect(m).y1-plateRect(m).y0).toFixed(1)} mm, ${n} Dreiecke.`);

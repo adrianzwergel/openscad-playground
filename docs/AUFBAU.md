@@ -9,7 +9,7 @@ unverändert; sie sollen später von hier aus angesprochen werden.
 |---|---|---|
 | 1 | Katalog, Platzieren, Bodenplatte, Projektdateien | fertig |
 | 1b | Freie Lage im Raum, Teile am Modell, Platte als Element | fertig |
-| 2 | Clip-Generator als weiterer Halter | offen |
+| 2 | Clip-Generator als weiterer Halter | fertig |
 | 3 | Zahnräder im Store, Übersetzung in das Mechanismus-Format | offen |
 | 4 | Lage als Bereich oder Auto, das Tool sucht die Plätze | offen |
 | 5 | Automatische Gehäuse, Getriebe-Vorschläge | offen |
@@ -38,7 +38,15 @@ diese Geometrie ein und muss den Halter nicht kennen. Ein neuer Halter ist ein n
 |---|---|
 | `dome` | Schraubdome, nutzt das `standoff`-Feature des Strukturkerns |
 | `through` | Durchgangsbohrungen, bei Motoren mit Bohrung für den Bund |
+| `clip` | zwei Federarme, Stützen, Stopper; Standard für Platinen ohne Löcher |
 | `none` | nur aufgelegt |
+
+**Clip:** Der Generator braucht nur den Umriss und die Dicke des Teils, also Maße, kein Bohrbild. Die Arme sitzen an den
+Längsseiten, weil an den kurzen Enden oft Stecker liegen. Stützen und Stopper sitzen an den kurzen Enden, weil
+Stiftleisten längs laufen. Der Arm ist das `snap`-Feature des Strukturkerns, seine Haltekante liegt `fit` über der
+Platine. Die Auflagehöhe wird so gewählt, dass die Dehnung im Arm unter 1,8 % bleibt (Grenze für PLA etwa 2 %), und
+mindestens so, dass Pins unter der Platine frei stehen. Die Prüfung meldet zu viel Dehnung, einen Haken, der kaum greift,
+und einen Stecker hinter einem Arm; dafür lassen sich die Arme längs verschieben.
 
 ## Aufbau (`src/mechanics/parts/build.ts`)
 
@@ -58,7 +66,7 @@ mit ihm zusammen; der Store steht unter seinem Baum.
 - **Befestigung:** `partSeats` macht aus jedem Loch eines Teils auf einem Glied einen Sitz: Die Struktur druckt den Dom
   ein und hält den Platz des Teils frei. Für importierte Modelle gibt `holderPiece` den Halter als Einzelteil aus.
 - **Im Raum prüfen:** Hüllquader gegeneinander und gegen die Teile des Modells, in der aktuellen Stellung und per Knopf
-  über den Fahrweg jeder Achse. Grenze: Die Modellprüfung arbeitet auf der Oberfläche. Ein Teil, das komplett im
+  über den Fahrweg jeder Achse. Halter von Clip und Domen zählen nicht zur Hülle. Grenze: Die Modellprüfung arbeitet auf der Oberfläche. Ein Teil, das komplett im
   Inneren eines Körpers liegt, ohne eine Wand zu berühren, fällt nicht auf.
 
 - **Prüfung:** Teile derselben Seite halten den größeren der beiden Mindestabstände, Stecker behalten 20 mm Freiraum,

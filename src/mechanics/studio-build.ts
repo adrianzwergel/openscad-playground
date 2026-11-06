@@ -36,6 +36,15 @@ const place=(o:THREE.Object3D,f:Frame)=>{o.position.set(...f.position);o.quatern
 const shapes=new Map<string,Promise<THREE.BufferGeometry>>();
 /** A part's model, loaded once and shared by all its copies. */
 function modelOf(url:string){let g=shapes.get(url);if(!g){g=new STLLoader().loadAsync(url).then(x=>{x.computeVertexNormals();return x;});shapes.set(url,g);}return g;}
+/** A holder's solid in the view: the same prim that goes to the printer. */
+function primMesh(s:Prim){
+ const material=new THREE.MeshStandardMaterial({color:0xa4b1bb,roughness:.7});let geometry:THREE.BufferGeometry;
+ if(s.kind==='cylinder')geometry=new THREE.CylinderGeometry(s.r,s.r,s.z1-s.z0,28).rotateX(Math.PI/2).translate(0,0,(s.z0+s.z1)/2);
+ else if(s.kind==='box')geometry=new THREE.BoxGeometry(...s.half.map(v=>2*v) as [number,number,number]);
+ else if(s.kind==='slab')geometry=new THREE.ExtrudeGeometry(new THREE.Shape(s.points.map(([x,y])=>new THREE.Vector2(x,y))),{depth:s.z1-s.z0,bevelEnabled:false}).translate(0,0,s.z0);
+ else return undefined;
+ const m=new THREE.Mesh(geometry,material);place(m,s.frame);return m;
+}
 type NumberField=(l:string,v:number,w:(n:number)=>void,s?:string)=>HTMLElement;
 type SelectField=(l:string,v:string,o:[string,string][],w:(v:string)=>void)=>HTMLElement;
 
@@ -70,6 +79,7 @@ export class BuildEditor{
   const frames=this.host.frames(),found=this.allIssues(b),bad=new Set(found.flatMap(x=>x.items));
   for(const n of b.plates){const g=new THREE.Group();g.userData.plate=n.id;place(g,worldOf(n.free,frames));this.followers.push({object:g,free:n.free});this.drawSheet(g,sheet(b,n.id),n,bad);this.group.add(g);}
   for(const i of b.items){if(!i.free)continue;const p=partOf(b,i),g=new THREE.Group();place(g,worldOf(i.free,frames));this.followers.push({object:g,free:i.free});g.add(this.partObject(p,i));this.group.add(g);
+   if(p.body>0&&i.holder.kind!=='none'){const seat=holderPiece(b,i),under=new THREE.Group();under.position.z=-liftOf(i);for(const s of holderGeometry(seat,seat.items[0]).solids){const m=primMesh(s);if(m)under.add(m);}g.add(under);}
    const q=partBox(p,{position:[0,0,0],rotation:[0,0,0,1]}),box=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(...q.half.map(v=>2*v) as [number,number,number])),new THREE.LineBasicMaterial({color:bad.has(i.id)?0xff5a55:i.id===this.selected?0xffffff:0x63cbb3}));box.position.set(...q.center);g.add(box);}
   this.syncGizmo();
   if(this.fitNext){this.fitNext=false;this.host.fit();}
@@ -90,7 +100,7 @@ export class BuildEditor{
   for(const h of plateHoles(b))if(inside(h.at[0],h.at[1],h.d/2))round(h.at[0],h.at[1],h.d/2);
   const solids:Prim[]=[];for(const i of b.items){const g=holderGeometry(b,i);solids.push(...g.solids);for(const p of g.holes)if(p.kind==='cylinder'&&p.z0<-t&&p.z1>0&&inside(p.frame.position[0],p.frame.position[1],p.r))round(p.frame.position[0],p.frame.position[1],p.r);}
   const plate=new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth:t,bevelEnabled:false,curveSegments:32}),new THREE.MeshStandardMaterial({color:0x8d9aa5,metalness:.1,roughness:.7}));plate.position.z=-t;root.add(plate);
-  for(const s of solids)if(s.kind==='cylinder'){const m=new THREE.Mesh(new THREE.CylinderGeometry(s.r,s.r,s.z1-s.z0,28),new THREE.MeshStandardMaterial({color:0xa4b1bb,roughness:.7}));m.rotation.x=Math.PI/2;m.position.set(s.frame.position[0],s.frame.position[1],s.frame.position[2]+(s.z0+s.z1)/2*(s.frame.rotation[0]?-1:1));root.add(m);}
+  for(const s of solids){const m=primMesh(s);if(m)root.add(m);}
   for(const i of b.items){const p=partOf(b,i),holder=this.partObject(p,i);
    holder.position.set(i.at[0],i.at[1],i.side==='top'?liftOf(i):-t-liftOf(i));holder.rotation.set(flipped(p,i)?Math.PI:0,0,0);holder.rotateOnWorldAxis(new THREE.Vector3(0,0,1),i.angle*Math.PI/180);root.add(holder);
    const z=(i.side==='top'?.15:-t-.15),line=(pts:[number,number][],color:number)=>{const l=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts.map(([x,y])=>new THREE.Vector3(x,y,z))),new THREE.LineBasicMaterial({color}));root.add(l);};

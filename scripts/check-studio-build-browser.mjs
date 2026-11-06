@@ -43,7 +43,10 @@ try{let p=await open(browser);
  // A second project stays apart; switching brings the first one back.
  p.answer='Zweites';await p.click('#project-new');await p.waitForFunction(()=>document.getElementById('project').selectedOptions[0]?.textContent==='Zweites');assert.equal(await p.evaluate(()=>document.body.dataset.mode),'gear');
  await p.click('[data-new-build]');await p.waitForSelector('[data-part="nema17-40"]');await dragPart(p,'nema17-40',[0,0]);f=await settled(p,x=>x.name==='Zweites'&&x.doc.builds?.[0]?.items[0]?.side==='bottom');
- const firstId=await p.$eval('#project',s=>[...s.options].find(o=>o.textContent==='Mein Projekt').value);await p.select('#project',firstId);await p.waitForFunction(()=>document.querySelectorAll('[data-item]').length===2);
+ // A board without holes comes in a clip; its numbers can be changed, a bad choice is reported.
+ await dragPart(p,'d1-mini',[60,0]);f=await settled(p,x=>x.doc.builds[0].items.length===2);assert.equal(f.doc.builds[0].items[1].holder.kind,'clip');await p.waitForSelector('[data-field="Armdicke [mm]"]');
+ await p.$eval('[data-field="Armdicke [mm]"]',e=>{e.value='3';e.dispatchEvent(new Event('change'));});await p.waitForFunction(()=>/dehnt sich/.test(document.getElementById('build-issues')?.textContent??''));await p.$eval('[data-field="Armdicke [mm]"]',e=>{e.value='1.2';e.dispatchEvent(new Event('change'));});await p.waitForFunction(()=>/Nichts/.test(document.getElementById('build-issues')?.textContent??''));
+ const firstId=await p.$eval('#project',s=>[...s.options].find(o=>o.textContent==='Mein Projekt').value);await p.select('#project',firstId);await p.waitForFunction(()=>[...document.querySelectorAll('[data-item]')].some(x=>x.textContent.includes('Raspberry Pi 4')));
  assert.equal(await p.$eval('#undo',b=>b.disabled),true,'Rückgängig gehört zur Datei');
  assert.deepEqual(p.errors,[]);
  await wait(500);await browser.close();
