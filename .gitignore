@@ -7,4 +7,5 @@ public/openscad.wasm
 src/wasm
 public/mechanics-assets/*
 !public/mechanics-assets/ldraw/
+!public/mechanics-assets/parts/
 .DS_Store

@@ -8,8 +8,11 @@ import type {Mechanism as Kinematics} from './kinematics/model.ts';
 import {parseMechanism as parseKinematics} from './kinematics/model.ts';
 import type {Drive} from './kinematics/drive.ts';
 import {parseDrives} from './kinematics/drive.ts';
-/** `mechanisms` are kinematics-1 documents edited in the Studio (stored raw: parameters may be expressions). */
-export type StudioDocument={version:1;catalog?:SearchCatalog;assemblies:{id:string;graph:Mechanism;adopted?:boolean}[];mechanisms?:{id:string;label:string;mechanism:Kinematics;drives?:Drive[];fabrication?:{bearings?:Record<string,string|number>;structure?:Record<string,string|number>}}[];routes:{id:string;assembly:string;source:'input';target:'output';ratio?:number}[]};
+import {parseBuild} from './parts/build.ts';
+import type {Build} from './parts/build.ts';
+/** `mechanisms` are kinematics-1 documents edited in the Studio (stored raw: parameters may be expressions).
+ * `builds`: plates with parts from the store. */
+export type StudioDocument={version:1;builds?:Build[];catalog?:SearchCatalog;assemblies:{id:string;graph:Mechanism;adopted?:boolean}[];mechanisms?:{id:string;label:string;mechanism:Kinematics;drives?:Drive[];fabrication?:{bearings?:Record<string,string|number>;structure?:Record<string,string|number>}}[];routes:{id:string;assembly:string;source:'input';target:'output';ratio?:number}[]};
 const id=(x:unknown)=>{if(typeof x!=='string'||! /^[a-zA-Z0-9_-]{1,80}$/.test(x))throw Error('Ungültige Studio-ID');return x;};
 export function parseStudio(value:unknown):StudioDocument{
  const p=value as StudioDocument;if(!p||p.version!==1||!Array.isArray(p.assemblies)||p.assemblies.length<1||p.assemblies.length>16||!Array.isArray(p.routes)||p.routes.length<1||p.routes.length>32)throw Error('Ungültiges Studio-Projekt');
@@ -19,7 +22,9 @@ export function parseStudio(value:unknown):StudioDocument{
  const mechanisms=p.mechanisms?.map(m=>{if(!m||typeof m.label!=='string'||!m.label.trim()||m.label.length>80)throw Error('Mechanismus braucht einen Namen');let drives:Drive[]=[];try{drives=parseDrives(m.drives,parseKinematics(structuredClone(m.mechanism)));}catch(e){throw Error(`Mechanismus ${m.label}: ${e instanceof Error?e.message:e}`);}const fab=m.fabrication;if(fab!==undefined&&(typeof fab!=='object'||[fab.bearings,fab.structure].some(x=>x!==undefined&&(typeof x!=='object'||Object.values(x).some(v=>typeof v!=='string'&&typeof v!=='number')))))throw Error(`Mechanismus ${m.label}: Fertigungseinstellungen ungültig.`);
   return {id:id(m.id),label:m.label,mechanism:structuredClone(m.mechanism),...(drives.length?{drives}:{}),...(fab?{fabrication:structuredClone(fab)}:{})};});
  if(mechanisms&&new Set(mechanisms.map(m=>m.id)).size!==mechanisms.length)throw Error('Doppelte Studio-ID');
- if(new Set(assemblies.map(a=>a.id)).size!==assemblies.length||new Set(routes.map(r=>r.id)).size!==routes.length)throw Error('Doppelte Studio-ID');return {version:1,assemblies,routes,...(mechanisms?{mechanisms}:{}),...(p.catalog===undefined?{}:{catalog:parseCatalog(p.catalog)})};
+ if(p.builds!==undefined&&(!Array.isArray(p.builds)||p.builds.length>32))throw Error('Ungültige Aufbauliste');
+ const builds=p.builds?.map(parseBuild);if(builds&&new Set(builds.map(b=>b.id)).size!==builds.length)throw Error('Doppelte Studio-ID');
+ if(new Set(assemblies.map(a=>a.id)).size!==assemblies.length||new Set(routes.map(r=>r.id)).size!==routes.length)throw Error('Doppelte Studio-ID');return {version:1,assemblies,routes,...(mechanisms?{mechanisms}:{}),...(builds?{builds}:{}),...(p.catalog===undefined?{}:{catalog:parseCatalog(p.catalog)})};
 }
 export function importStudio(text:string){if(text.length>2000000)throw Error('Projekt zu groß (max. 2 MB)');const p=JSON.parse(text);if(p.format==='mechanics10'){const project=parseProject(text);if(!project.graph)throw Error('Migration unterstützt derzeit Mechanics-Projekte mit Elementgraph.');const value=resolveMechanism(project.graph).value;return parseStudio({version:1,assemblies:[{id:'main',graph:project.graph}],routes:[{id:'route-1',assembly:'main',source:'input',target:'output',ratio:Number.isFinite(value)&&value>0&&value<=1000?value:1}]});}return parseStudio(p);}
 export const serializeStudio=(doc:StudioDocument)=>JSON.stringify(parseStudio(doc),null,2);

@@ -68,3 +68,10 @@ ul.bom{margin:4px 0;padding-left:18px;color:#c8d6df;font-size:12px}
 .steps{flex-wrap:wrap}
 .steps li{flex:1 1 13%;min-width:52px;font-size:10.5px;padding:4px 1px}
 #drive-grid[data-state=warn]{color:#ffcc66}#drive-grip[data-state=hit]{color:#ff8f8f}
+
+body[data-mode=build] #workspace{grid-template-rows:45px minmax(160px,1fr) 0 0}body[data-mode=build] #motion-panel{display:none}
+.project-pick{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#adbdc7}#project{max-width:180px}#save-state{font-size:11px;white-space:nowrap}
+.part-store details{margin-top:4px}.part-store summary{cursor:pointer;font-size:12px;color:#adbdc7;padding:3px 0}
+.part-card{padding:5px 7px;margin:3px 0;border:1px solid #34434e;border-radius:4px;background:#1c2730;cursor:grab;user-select:none;touch-action:none}.part-card:hover{border-color:#63cbb3}.part-card strong{display:block;font-size:12px;font-weight:600}.part-card small{font-size:11px;color:#9fb1bc}
+.hole-row{display:flex;align-items:center;gap:5px;margin:3px 0;font-size:12px}.hole-row span{flex:1}.hole-row input[type=number]{width:62px;flex:1;min-width:0}
+.state-pass{color:#63cbb3;font-size:12px}.state-fail{color:#ff8a85;font-size:12px}.state-warn{color:#e5b65f;font-size:12px}label.check{display:flex;gap:6px;align-items:center;font-size:12px}

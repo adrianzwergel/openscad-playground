@@ -211,6 +211,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### NopSCADlib
 
+The Studio's parts catalog (`src/mechanics/parts/nopscadlib.generated.ts`, `public/mechanics-assets/parts/`) is generated from this library.
+
 https://github.com/nophead/NopSCADlib
 
 Licensed under the [GPLv3](#gplv3).
