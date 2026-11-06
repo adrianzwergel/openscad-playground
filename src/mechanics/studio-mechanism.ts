@@ -25,6 +25,7 @@ import JSZip from 'jszip';
 import type {Drive,TaskInfo,Collision} from './kinematics/drive';
 import {motorClash,driveCatalog,driveSpec,placeMotor,removeGear,removeDrive,heldTrains,modelAxes,owned,driveTask,adoptGear,sweepCollisions,faceNormal,standOn,parallelTo,linearAxis,toward} from './kinematics/drive';
 import {quaternionFromBasis,cross as crossV,unit} from './kinematics/math';
+import type {Seat} from './kinematics/bearings';
 import {KinematicsView,linkColor} from './kinematics-view';
 import {motorGrid,snapMotor,gridPlane} from './kinematics/motor-grid';
 import type {MotorGrid,Snapped} from './kinematics/motor-grid';
@@ -35,7 +36,7 @@ type Item='mechanism'|'model'|'axis-new'|'drive-new'|'bearings'|'structure'|`dri
 export type GripOptions={mode:'translate'|'rotate';step:number;angle:number;space:'local'|'world'};
 /** `grip`: attaches the gizmo to a handle (undefined: takes it off a motor handle); `dragging`: the gizmo is held;
  * `free`: steps and grid are off (Alt held). */
-export type EditorHost={doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;free:()=>boolean};
+export type EditorHost={/** Takes the properties panel over (a part from the store is selected). */sideProperties?:()=>boolean;/** Seats of what else is mounted on the links. */extraSeats?:()=>Seat[];doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;free:()=>boolean};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
 const deg=180/Math.PI;
@@ -163,6 +164,13 @@ export class MechanismEditor{
   const p=document.getElementById('drive-grip');if(p&&p.dataset.drive===id){p.dataset.state=hits.length?'hit':'ok';p.textContent=hits.length?`Motor steckt in ${hits.join(', ')}.`:'Motor frei.';p.dataset.flange=JSON.stringify(compose(frames[d.body]??identity(),d.frame).position);}}
  /** Pointer over something editable: a path handle or a model part. */
  hover(ray:THREE.Raycaster){return !!ray.intersectObjects(this.handles.children,false)[0]||!!this.view.pick(ray);}
+ /** The links as shown now. */
+ framesNow():Record<string,Frame>{const m=this.mechanism();return this.view.frames??this.preview?.poses[0].bodies??Object.fromEntries(m?.bodies.map(b=>[b.id,b.frame])??[]);}
+ /** The model's surface under a ray, in view coordinates. */
+ surfaceAt(ray:THREE.Raycaster){const hit=this.view.pick(ray);if(!hit)return undefined;this.view.group.updateWorldMatrix(true,false);const back=this.view.group.matrixWorld.clone().invert();return {point:new THREE.Vector3(...hit.world).applyMatrix4(back).toArray() as V,normal:new THREE.Vector3(...hit.normal).transformDirection(back).toArray() as V,body:hit.body,distance:hit.distance};}
+ clashContext(){const m=this.mechanism();return m?{m,drives:this.drives(),assets:this.assetsOf(m)}:undefined;}
+ /** Link frames over every axis' way, the other axes where they are. */
+ async posesOverRange(samples=7){const m=this.mechanism();if(!m)return [];const out:{axis:string;value:number;frames:Record<string,Frame>}[]=[];for(const j of this.axes(m)){const lo=j.limits?.min??(linearAxis(j)?0:-180),hi=j.limits?.max??(linearAxis(j)?200:180);for(let k=0;k<samples;k++){const value=lo+(hi-lo)*k/(samples-1);out.push({axis:j.id,value,frames:(await this.poseAt(m,this.values(m,{[j.id]:value}))).poses[0].bodies});}}return out;}
  /** Click in the 3D view. Returns a handle to drag; part clicks are handled here. */
  click(ray:THREE.Raycaster):THREE.Object3D|undefined{
   const handle=ray.intersectObjects(this.handles.children,false)[0]?.object;if(handle&&!this.tool)return handle;
@@ -511,8 +519,8 @@ export class MechanismEditor{
  private assetsOf(m:Mechanism){return (id:string)=>{const a=this.assets.get(id);return a?{parts:a.parts}:undefined;};}
  /** The bearing plan for the current document (cached). */
  private plan(m:Mechanism):BearingPlan|undefined{
-  const settings=this.fabrication().bearings??{},key=JSON.stringify([m.bodies.length,m.elements.map(e=>[e.id,e.mounts[0].pose.position]),m.joints.map(j=>[j.id,j.a.local.position,j.limits]),this.drives().map(d=>[d.id,d.frame,!!d.gear]),settings,[...this.assets.keys()]]);
-  if(this.planCache?.key!==key){try{this.planCache={key,plan:planBearings(m,this.drives(),this.assetsOf(m),settings as Partial<BearingSettings>)};}catch{return undefined;}}
+  const extra=this.host.extraSeats?.()??[],settings=this.fabrication().bearings??{},key=JSON.stringify([extra,m.bodies.length,m.elements.map(e=>[e.id,e.mounts[0].pose.position]),m.joints.map(j=>[j.id,j.a.local.position,j.limits]),this.drives().map(d=>[d.id,d.frame,!!d.gear]),settings,[...this.assets.keys()]]);
+  if(this.planCache?.key!==key){try{const plan=planBearings(m,this.drives(),this.assetsOf(m),settings as Partial<BearingSettings>);plan.seats.push(...extra);this.planCache={key,plan};}catch{return undefined;}}
   return this.planCache.plan;
  }
  /** Bearings as rings in the view: outer and inner ring of every purchased seat. */
@@ -588,6 +596,7 @@ export class MechanismEditor{
 
  // ---------- properties ----------
  renderProperties(root:HTMLElement=document.getElementById('properties')!):void{
+  if(this.host.sideProperties?.())return;
   root.replaceChildren();const entry=this.entry();if(!entry)return;const m=entry.mechanism;queueMicrotask(()=>this.drawHandles());
   const edit=(message:string,fn:(m:Mechanism)=>void)=>this.host.change(()=>fn(this.mechanism()!),message);
   const number=(label:string,value:number,write:(n:number)=>void,step='0.1')=>{const input=el('input',{type:'number',step,value:String(value)});input.onchange=()=>{const n=Number(input.value);if(input.value===''||!Number.isFinite(n)){input.value=String(value);return;}write(n);};return el('label',{},label,input);};

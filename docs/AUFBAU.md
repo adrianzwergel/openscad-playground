@@ -8,6 +8,7 @@ unverändert; sie sollen später von hier aus angesprochen werden.
 | Schritt | Inhalt | Stand |
 |---|---|---|
 | 1 | Katalog, Platzieren, Bodenplatte, Projektdateien | fertig |
+| 1b | Freie Lage im Raum, Teile am Modell, Platte als Element | fertig |
 | 2 | Clip-Generator als weiterer Halter | offen |
 | 3 | Zahnräder im Store, Übersetzung in das Mechanismus-Format | offen |
 | 4 | Lage als Bereich oder Auto, das Tool sucht die Plätze | offen |
@@ -44,6 +45,22 @@ diese Geometrie ein und muss den Halter nicht kennen. Ein neuer Halter ist ein n
 Das Dokument speichert nur Entscheidungen: wo ein Teil liegt, welcher Halter, welche Änderungen an Löchern. Umriss im
 Auto-Modus, Bohrungen und Dome werden daraus berechnet. Verschiebt man ein Teil, wandern seine Bohrungen mit.
 
+Ein `Build` gehört zu einem Mechanismus (`mechanism`) oder steht allein. Das Studio zeigt die Teile eines Mechanismus
+mit ihm zusammen; der Store steht unter seinem Baum.
+
+- **Freie Lage:** Ein Teil hat entweder `plate` (dann gelten `at`, `angle`, `side` in den Koordinaten der Platte) oder
+  `free`: einen Frame auf einem Glied oder im Raum. Der Frame gilt relativ zum Glied, das Teil fährt also mit.
+- **Bodenplatte:** ein Element wie jedes andere, null bis viele je Build, selbst frei platziert. Alles Planare arbeitet
+  auf einem `Sheet`, das ist eine Platte mit ihren Teilen.
+- **Ablegen:** `onSurface` legt das Teil flach auf die Fläche unter dem Zeiger, der Körper zeigt zur Normalen, das Glied
+  der Fläche wird zum Träger. Liegt eine Platte näher als das Modell, landet es auf der Platte. Feinjustieren geht mit
+  dem Griff in der 3D-Ansicht. „Hängt an“ wechselt den Träger, das Teil bleibt dabei im Raum, wo es ist.
+- **Befestigung:** `partSeats` macht aus jedem Loch eines Teils auf einem Glied einen Sitz: Die Struktur druckt den Dom
+  ein und hält den Platz des Teils frei. Für importierte Modelle gibt `holderPiece` den Halter als Einzelteil aus.
+- **Im Raum prüfen:** Hüllquader gegeneinander und gegen die Teile des Modells, in der aktuellen Stellung und per Knopf
+  über den Fahrweg jeder Achse. Grenze: Die Modellprüfung arbeitet auf der Oberfläche. Ein Teil, das komplett im
+  Inneren eines Körpers liegt, ohne eine Wand zu berühren, fällt nicht auf.
+
 - **Prüfung:** Teile derselben Seite halten den größeren der beiden Mindestabstände, Stecker behalten 20 mm Freiraum,
   Motorbund und Welle zählen auf der Gegenseite. Hülle unter der Platine gegen Domhöhe.
 - **Einrasten:** erst das Raster, dann im Umkreis von 2,5 mm die Kanten der Nachbarn, bündig oder im Mindestabstand.
@@ -70,5 +87,7 @@ Kataloge. `geoeffnet.txt` merkt sich das offene Projekt.
 
 ```
 node scripts/parts/check-parts.mjs
+node scripts/parts/check-part-seats.mjs
 node scripts/check-studio-build-browser.mjs
+node scripts/check-studio-parts-on-model-browser.mjs
 ```

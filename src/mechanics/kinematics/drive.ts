@@ -268,7 +268,7 @@ export async function adoptGear(m:Mechanism,d:Drive,found:Mechanism,info:TaskInf
 }
 
 // ---------- collisions over the axis range ----------
-const hull=(frame:Frame,center:V,half:V):Hull=>({center:compose(frame,{position:center,rotation:[0,0,0,1]}).position,axes:[[1,0,0],[0,1,0],[0,0,1]].map(v=>rotate(frame.rotation,v as V)),half});
+export const hull=(frame:Frame,center:V,half:V):Hull=>({center:compose(frame,{position:center,rotation:[0,0,0,1]}).position,axes:[[1,0,0],[0,1,0],[0,0,1]].map(v=>rotate(frame.rotation,v as V)),half});
 export type Collision={a:string;b:string;at:number[]};
 /** Drive parts and motors against link parts at sampled values of the driven axis. `pose` solves the mechanism. */
 export async function sweepCollisions(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,pose:(axis:string,value:number)=>Promise<Record<string,Frame>>,samples=13){
@@ -286,8 +286,12 @@ export async function sweepCollisions(m:Mechanism,drives:Drive[],d:Drive,assets:
 /** Links the motor of `d` runs into at the given body frames (its carrying link aside): coarse part boxes first,
  * then the triangles of the parts they touch. Cheap enough to run while the motor is dragged. */
 export function motorClash(m:Mechanism,drives:Drive[],d:Drive,assets:Assets,frames:Record<string,Frame>){
- const mb=motorBox(m,d,frames,identity());if(!mb)return [];const motor=hull(mb.frame,[0,0,0],scale(mb.size,.5)),hit:string[]=[];
- for(const b of m.bodies){if(b.id===d.body||owned(drives,b.id)||b.display?.kind!=='mesh'||!frames[b.id])continue;const asset=assets(b.display.asset);if(!asset)continue;
+ const mb=motorBox(m,d,frames,identity());return mb?modelHits(m,drives,hull(mb.frame,[0,0,0],scale(mb.size,.5)),d.body,assets,frames):[];
+}
+/** Links a hull runs into at the given body frames (the link `own` aside). */
+export function modelHits(m:Mechanism,drives:Drive[],motor:Hull,own:string|undefined,assets:Assets,frames:Record<string,Frame>){
+ const hit:string[]=[];
+ for(const b of m.bodies){if(b.id===own||owned(drives,b.id)||b.display?.kind!=='mesh'||!frames[b.id])continue;const asset=assets(b.display.asset);if(!asset)continue;
   const local=compose(frames[b.id],inverse(b.frame)),touches=(x:Box)=>separation(motor,hull(compose(local,{position:x.min.map((n,i)=>(n+x.max[i])/2) as V,rotation:[0,0,0,1]}),[0,0,0],x.max.map((n,i)=>Math.max(.25,(n-x.min[i])/2)) as V))<-.5;
   if(b.display.parts.some(id=>{const p=asset.parts.find(x=>x.id===id);return !!p&&partBoxes(p.positions).some(touches)&&triangleBoxes(p.positions).some(touches);}))hit.push(b.id);}
  return hit;

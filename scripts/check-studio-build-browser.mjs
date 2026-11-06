@@ -33,8 +33,8 @@ try{let p=await open(browser);
  await p.click('[data-plate]');await p.waitForSelector('[data-add-hole]');await p.evaluate(()=>[...document.querySelectorAll('[data-item]')][0].click());await p.waitForSelector('[data-hole-d="0"]');
  await p.$eval('[data-hole-d="0"]',e=>{e.value='3.5';e.dispatchEvent(new Event('change'));});f=await settled(p,x=>x.doc.builds[0].items[0].holes?.[0]?.d===3.5);
  // The plate: fixed size, own hole, thickness; then the STL.
- await p.click('[data-plate]');await p.waitForSelector('[data-add-hole]');await p.select('[data-field="Größe"]','fixed');await settled(p,x=>x.doc.builds[0].plate.mode==='fixed');
- await p.$eval('[data-field="Dicke [mm]"]',e=>{e.value='4';e.dispatchEvent(new Event('change'));});await p.click('[data-add-hole]');f=await settled(p,x=>x.doc.builds[0].plate.holes.length===1&&x.doc.builds[0].plate.thickness===4);
+ await p.click('[data-plate]');await p.waitForSelector('[data-add-hole]');await p.select('[data-field="Größe"]','fixed');await settled(p,x=>x.doc.builds[0].plates[0].mode==='fixed');
+ await p.$eval('[data-field="Dicke [mm]"]',e=>{e.value='4';e.dispatchEvent(new Event('change'));});await p.click('[data-add-hole]');f=await settled(p,x=>x.doc.builds[0].plates[0].holes.length===1&&x.doc.builds[0].plates[0].thickness===4);
  const cdp=await p.createCDPSession();await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:files});await p.waitForSelector('[data-plate-stl]');await p.click('[data-plate-stl]');
  let stl;for(let i=0;i<150&&!stl;i++){stl=(await fs.readdir(files)).find(n=>n.endsWith('.stl'));if(!stl)await wait(200);}assert.ok(stl,'STL geladen');await wait(300);const body=await fs.readFile(path.join(files,stl));assert.ok(body.length>2000,`${body.length} Byte`);
  // Reload: same project, same place in it.
@@ -49,7 +49,7 @@ try{let p=await open(browser);
  await wait(500);await browser.close();
  // Closing the browser: same profile, the last open project.
  browser=await launch();p=await open(browser);await p.waitForSelector('[data-item]');assert.equal(await p.$eval('#project',s=>s.selectedOptions[0].textContent),'Mein Projekt');assert.equal(await p.$$eval('[data-item]',x=>x.length),2);
- f=await stored(p);assert.deepEqual(f.doc.builds[0].items[1].at,moved.at);assert.equal(f.doc.builds[0].plate.thickness,4);
+ f=await stored(p);assert.deepEqual(f.doc.builds[0].items[1].at,moved.at);assert.equal(f.doc.builds[0].plates[0].thickness,4);
  // A second tab on the same file looks, but cannot write.
  const q=await open(browser);await q.waitForFunction(()=>document.getElementById('save-state').textContent==='Nur Ansicht');
  // Rename, then delete: the other project opens.

@@ -106,11 +106,13 @@ export class KinematicsView{
  /** Places the items of one body (a motor being dragged) without touching the others. */
  moveBody(id:string,frame:Frame){for(const item of this.items)if(item.body===id){item.object.matrix.copy(toMatrix(compose(frame,item.local)));item.object.matrixWorldNeedsUpdate=true;}}
  /** Imported part under a ray, with the hit in the part's model coordinates (pose 0). */
- pick(ray:THREE.Raycaster){const hit=ray.intersectObjects(this.parts,false)[0];if(!hit)return undefined;const local=hit.point.clone().applyMatrix4(new THREE.Matrix4().copy(hit.object.matrixWorld).invert());return {...hit.object.userData.pick as {body:string;asset:string;part:string},local:local.toArray() as [number,number,number],world:hit.point.toArray() as [number,number,number]};}
+ pick(ray:THREE.Raycaster){const hit=ray.intersectObjects(this.parts,false)[0];if(!hit)return undefined;const local=hit.point.clone().applyMatrix4(new THREE.Matrix4().copy(hit.object.matrixWorld).invert());const n=(hit.face?.normal.clone()??new THREE.Vector3(0,0,1)).transformDirection(hit.object.matrixWorld);if(n.dot(ray.ray.direction)>0)n.negate();return {...hit.object.userData.pick as {body:string;asset:string;part:string},local:local.toArray() as [number,number,number],world:hit.point.toArray() as [number,number,number],normal:n.toArray() as [number,number,number],distance:hit.distance};}
+ /** The links' frames as shown. */
+ get frames(){return this.lastFrames;}
  /** Shows pose k (fractional values interpolate to the nearest pose). */
  setPose(k:number){
   const s=this.solution;if(!s)return;const pose=s.poses[Math.max(0,Math.min(s.poses.length-1,Math.round(k)))];
-  for(const item of this.items){const body=pose.bodies[item.body];if(!body)continue;item.object.matrix.copy(toMatrix(compose(body,item.local)));item.object.matrixWorldNeedsUpdate=true;}
+  this.lastFrames=pose.bodies;for(const item of this.items){const body=pose.bodies[item.body];if(!body)continue;item.object.matrix.copy(toMatrix(compose(body,item.local)));item.object.matrixWorldNeedsUpdate=true;}
  }
 }
 /** SVG chart of output over input with the current pose marked. */
