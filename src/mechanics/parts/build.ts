@@ -16,9 +16,12 @@ import {parseTrain} from './train.ts';
 type P2=[number,number];
 /** A place in space: `frame` on the link `body`, or in the world without one. */
 export type Free={frame:Frame;body?:string};
+/** How free the tool is to choose the place. On a plate: `zone` a rectangle (`center`, `size`), `auto` anywhere. On a
+ * model: `zone` a ball (`center`, `size[0]` its radius). `goal` decides among the places that fit. */
+export type Wish={mode:'zone'|'auto';center:number[];size:number[];goal:'middle'|'axis'};
 /** On a plate (`plate`): `at`, `angle`, `side` place it. Otherwise `free` does: its frame is the part frame.
  * `holes`: edits of the part's holes by index (other Ø, or left out). `plugsOff`: plugs nobody uses, by label. */
-export type BuildItem={id:string;part:string;at:P2;angle:number;side:'top'|'bottom';clearance:number;holder:{kind:string;params:Record<string,number>};holes?:Record<string,{d?:number;off?:boolean}>;plugsOff?:string[];plate?:string;free?:Free};
+export type BuildItem={id:string;part:string;at:P2;angle:number;side:'top'|'bottom';clearance:number;holder:{kind:string;params:Record<string,number>};holes?:Record<string,{d?:number;off?:boolean}>;plugsOff?:string[];plate?:string;free?:Free;wish?:Wish};
 export type PlateHole={id:string;at:P2;d:number};
 /** `auto`: the outline wraps the parts with `margin`; `fixed`: `size` around `center`. */
 export type Plate={mode:'auto'|'fixed';size:P2;center:P2;margin:number;thickness:number;corner:number;holes:PlateHole[];mount:{on:boolean;d:number;inset:number}};
@@ -40,6 +43,7 @@ const num=(x:unknown,lo:number,hi:number,what:string)=>{if(typeof x!=='number'||
 const pair=(x:unknown,lo:number,hi:number,what:string):P2=>{if(!Array.isArray(x)||x.length!==2)throw Error(`Aufbau: ${what} ungültig`);return [num(x[0],lo,hi,what),num(x[1],lo,hi,what)];};
 const text=(x:unknown,what:string)=>{if(typeof x!=='string'||!x.length||x.length>80)throw Error(`Aufbau: ${what} ungültig`);return x;};
 const parseFree=(f:Free|undefined):Free=>{const q=f?.frame;if(!q||!Array.isArray(q.position)||q.position.length!==3||!Array.isArray(q.rotation)||q.rotation.length!==4||![...q.position,...q.rotation].every(Number.isFinite))throw Error('Aufbau: Lage ungültig');return {frame:structuredClone(q),...(f!.body?{body:text(f!.body,'Glied')}:{})};};
+const parseWish=(w:Wish):Wish=>{if(w.mode!=='zone'&&w.mode!=='auto'||w.goal!=='middle'&&w.goal!=='axis'||!Array.isArray(w.center)||!Array.isArray(w.size)||![...w.center,...w.size].every(Number.isFinite))throw Error('Aufbau: Wunsch ungültig');return structuredClone(w);};
 function parsePlate(p:PlateNode):PlateNode{
  if(!p||p.mode!=='auto'&&p.mode!=='fixed'||!Array.isArray(p.holes)||p.holes.length>500)throw Error('Aufbau: Platte ungültig');
  return {id:text(p.id,'Platte'),free:parseFree(p.free),mode:p.mode,size:pair(p.size,10,2000,'Plattengröße'),center:pair(p.center,-5000,5000,'Plattenmitte'),margin:num(p.margin,0,200,'Rand'),thickness:num(p.thickness,.4,50,'Plattendicke'),corner:num(p.corner,0,100,'Eckenradius'),holes:p.holes.map(h=>({id:text(h.id,'Bohrung'),at:pair(h.at,-5000,5000,'Bohrung'),d:num(h.d,.2,200,'Bohrung')})),mount:{on:!!p.mount?.on,d:num(p.mount?.d,.2,50,'Eckbohrung'),inset:num(p.mount?.inset,0,100,'Eckbohrung')}};
@@ -50,7 +54,7 @@ export function parseBuild(value:unknown):Build{
  if(!b||typeof b!=='object'||!Array.isArray(b.plates)||b.plates.length>32||!Array.isArray(b.items)||b.items.length>200)throw Error('Ungültiger Aufbau');
  const own=Array.isArray(b.parts)?b.parts.map(x=>structuredClone(x)):[],plates=b.plates.map(parsePlate);if(new Set(plates.map(p=>p.id)).size!==plates.length)throw Error('Aufbau: Platte doppelt');
  const items=b.items.map(i=>{if(!partById(i.part,own))throw Error(`Aufbau: Teil ${i.part} fehlt im Katalog`);if(i.side!=='top'&&i.side!=='bottom')throw Error('Aufbau: Seite ungültig');if(i.plate?!plates.some(p=>p.id===i.plate):!i.free)throw Error('Aufbau: Teil ohne Lage');
-  return {id:text(i.id,'Teil'),part:i.part,at:pair(i.at,-5000,5000,'Position'),angle:num(i.angle,-720,720,'Drehung'),side:i.side,clearance:num(i.clearance,0,100,'Abstand'),holder:{kind:text(i.holder?.kind,'Halter'),params:structuredClone(i.holder?.params??{})},...(i.holes?{holes:structuredClone(i.holes)}:{}),...(i.plugsOff?{plugsOff:[...i.plugsOff]}:{}),...(i.plate?{plate:i.plate}:{free:parseFree(i.free)})};});
+  return {id:text(i.id,'Teil'),part:i.part,at:pair(i.at,-5000,5000,'Position'),angle:num(i.angle,-720,720,'Drehung'),side:i.side,clearance:num(i.clearance,0,100,'Abstand'),holder:{kind:text(i.holder?.kind,'Halter'),params:structuredClone(i.holder?.params??{})},...(i.holes?{holes:structuredClone(i.holes)}:{}),...(i.plugsOff?{plugsOff:[...i.plugsOff]}:{}),...(i.plate?{plate:i.plate}:{free:parseFree(i.free)}),...(i.wish?{wish:parseWish(i.wish)}:{})};});
  return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(b.train?{train:parseTrain(b.train)}:{})};
 }
 export const partOf=(b:{parts:Part[]},i:BuildItem)=>partById(i.part,b.parts)!;
@@ -117,6 +121,7 @@ export function issues(b:Sheet):Issue[]{const out:Issue[]=[],r=plateRect(b);
   if(b.plate.mode==='fixed'&&footprint(p,i).corners.some(c=>c[0]<r.x0-1e-6||c[0]>r.x1+1e-6||c[1]<r.y0-1e-6||c[1]>r.y1+1e-6))out.push({kind:'edge',items:[i.id],message:`${p.label} ragt über die Platte.`});
   if(p.body>0&&p.box.min[2]<0&&liftOf(i)<-p.box.min[2]-1e-6&&i.holder.kind!=='none')out.push({kind:'floor',items:[i.id],message:`${p.label}: unten stehen ${(-p.box.min[2]).toFixed(1)} mm über, Halter nur ${liftOf(i).toFixed(1)} mm hoch.`});
   out.push(...clipIssues(p,i));
+  if(i.wish?.mode==='zone'&&(Math.abs(i.at[0]-i.wish.center[0])>i.wish.size[0]/2+1e-6||Math.abs(i.at[1]-i.wish.center[1])>i.wish.size[1]/2+1e-6))out.push({kind:'holder',items:[i.id],message:`${p.label} findet in seinem Bereich keinen Platz.`});
   for(const o of b.items.slice(n+1)){const q=partOf(b,o);if(hits(b,i,o))out.push({kind:'body',items:[i.id,o.id],message:`${p.label} und ${q.label}: unter ${Math.max(i.clearance,o.clearance)} mm Abstand.`});}
   for(const o of b.items){if(o===i)continue;for(const c of plugged(b,i,o))out.push({kind:'plug',items:[i.id,o.id],message:`${partOf(b,o).label} steht vor dem Stecker ${c.label} von ${p.label}.`});}});
  return out;}

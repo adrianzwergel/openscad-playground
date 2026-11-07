@@ -6,6 +6,8 @@ import {parts,partById} from '../../src/mechanics/parts/catalog.ts';
 import {newBuild,newItem,newPlate,newPlateNode,modelBuild,parseBuild,sheet,issues,nearestFree,snapTo,plateRect,buildGeometry,itemHoles,footprint,overlap,plugRects,mountHoles,toPlate,shopping,onSurface,reframe,worldOf,holderPiece,partSeats} from '../../src/mechanics/parts/build.ts';
 import {compose,axisAngle,rotate} from '../../src/mechanics/kinematics/math.ts';
 import {solidScad} from '../../src/mechanics/parts/scad.ts';
+import {solveSheet,solveBuild,surfacePoints,axisLever} from '../../src/mechanics/parts/layout.ts';
+import {robotArm} from '../../src/mechanics/demos.ts';
 import {clipArm,clipLayout,generator} from '../../src/mechanics/parts/generators.ts';
 import {snapStrain} from '../../src/structure/features.ts';
 import {primDistance} from '../../src/structure/sdf.ts';
@@ -74,4 +76,16 @@ for(const [id,angle] of [['d1-mini',0],['arduinonano',90],['a4988',30],['esp32-d
 // A clip on a link: arms and supports become seats.
 {const part=partById('d1-mini'),t2=modelBuild('t','m'),c=newItem('c',part,[0,0]);c.free={frame:wall,body:'arm'};t2.items.push(c);const s=partSeats(t2);assert.deepEqual(s.map(x=>x.feature.kind),['snap','snap','standoff','standoff','standoff','standoff']);assert.ok(s[0].keep);
  const piece=buildGeometry(holderPiece(t2,c));assert.equal(piece.solids.length,1+2*2+4);}
+// Wishes on a plate: a fixed part stays, a zone is kept, an open part packs in; what cannot fit is named.
+{const s=flat(),fixed=newItem('f',pi,[0,0]),z=newItem('z',partById('rpi-pico'),[0,0]),o=newItem('o',partById('tp4056'),[0,0]);z.wish={mode:'zone',center:[0,60],size:[60,30],goal:'middle'};o.wish={mode:'auto',center:[],size:[],goal:'middle'};s.items.push(fixed,z,o);
+ const r=solveSheet(s);assert.deepEqual(r.failed,[]);assert.equal(r.placed.length,2);const at=id=>r.placed.find(x=>x.id===id);assert.ok(Math.abs(at('z').at[0])<=30&&Math.abs(at('z').at[1]-60)<=15);
+ for(const q of r.placed){const i=s.items.find(x=>x.id===q.id);i.at=q.at;i.angle=q.angle;}assert.deepEqual(fixed.at,[0,0]);assert.deepEqual(issues(s).filter(x=>x.kind==='body'||x.kind==='plug'),[]);
+ // A zone taken by a fixed part: the part turns to fit or says so.
+ const tight=flat();tight.plate={...tight.plate,mode:'fixed',size:[100,70],center:[0,0]};const a1=newItem('a',pi,[0,0]),a2=newItem('b',uno,[0,0]);a2.wish={mode:'auto',center:[],size:[],goal:'middle'};tight.items.push(a1,a2);assert.deepEqual(solveSheet(tight).failed,['b']);
+ // On a fixed plate an open part stays on it, both plates of a build are solved.
+ const room=flat();room.plate={...room.plate,mode:'fixed',size:[200,120],center:[0,0]};const c1=newItem('a',pi,[-50,0]),c2=newItem('b',uno,[0,0]);c2.wish={mode:'auto',center:[],size:[],goal:'middle'};room.items.push(c1,c2);const q=solveSheet(room).placed[0];c2.at=q.at;c2.angle=q.angle;assert.deepEqual(issues(room),[]);
+ const whole={...newBuild('w','W'),items:[{...c1,plate:'platte'},{...c2,plate:'platte',at:[0,0]}]};assert.deepEqual(solveBuild(whole),[]);assert.notDeepEqual(whole.items[1].at,[0,0]);assert.equal(parseBuild(JSON.parse(JSON.stringify(whole))).items[1].wish.mode,'auto');}
+// Wishes on a model: surface points of the forearm with their normals, the lever is shorter near the elbow.
+{const d=robotArm(),frames=Object.fromEntries(d.mechanism.bodies.map(x=>[x.id,x.frame])),assets=id=>id===d.asset.id?d.asset:undefined,pts=surfacePoints(d.mechanism,d.drives,assets,frames,[0,-15,495],60);assert.ok(pts.length>20);assert.ok(pts.every(x=>Math.hypot(x.point[0],x.point[1]+15,x.point[2]-495)<=60));assert.ok(pts.some(x=>x.body==='Unterarm'&&Math.abs(x.normal[1]+1)<1e-6));
+ const lever=z=>axisLever(d.mechanism,d.drives,frames,'Unterarm',[0,-15,z]);assert.ok(lever(430)<lever(560));near(axisLever(d.mechanism,d.drives,frames,'ground',[0,0,0]),0);assert.ok(lever(500)>0);}
 console.log(`Teilekatalog: ${parts.length} Teile, ${parts.filter(p=>p.checked).length} aus NopSCADlib; Platte ${(plateRect(m).x1-plateRect(m).x0).toFixed(1)} × ${(plateRect(m).y1-plateRect(m).y0).toFixed(1)} mm, ${n} Dreiecke.`);

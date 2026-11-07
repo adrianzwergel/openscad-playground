@@ -31,9 +31,18 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.$eval('[data-field="Y [mm]"]',e=>{e.value='-13';e.dispatchEvent(new Event('change'));});await p.waitForFunction(()=>/steckt in Unterarm/.test(document.getElementById('build-issues')?.textContent??''),{timeout:8000});
  await p.click('[data-sweep-parts]');await p.waitForFunction(()=>{const t=document.getElementById('build-sweep')?.textContent??'';return t&&!t.includes('wird geprüft');},{timeout:60000});assert.match(await p.$eval('#build-sweep',e=>e.textContent),/Unterarm/);
  // A plate from the store on the base, a part on the plate.
+ // Somewhere here, for the weight: a zone on the forearm finds the place with the shortest lever, free over the way.
+ await p.$eval('[data-field="Hängt an"]',e=>{e.value='Unterarm';e.dispatchEvent(new Event('change'));});await settled(p,x=>x.doc.builds[0].items[0].free.body==='Unterarm');await p.waitForSelector('[data-field="Y [mm]"]');await p.$eval('[data-field="Y [mm]"]',e=>{e.value='-19';e.dispatchEvent(new Event('change'));});await wait(300);
+ await p.select('[data-field="Platz"]','zone');f=await settled(p,x=>x.doc.builds[0].items[0].wish?.mode==='zone');await p.waitForSelector('[data-find-place]');assert.equal(await p.$('[data-field="Y [mm]"]'),null,'der Platz gehört jetzt dem Tool');const near=()=>p.$eval('#status',e=>e.textContent);
+ await p.$eval('[data-field="Radius [mm]"]',e=>{e.value='110';e.dispatchEvent(new Event('change'));});await p.waitForSelector('[data-find-place]');await p.select('[data-field="Ziel"]','axis');await wait(200);await p.waitForSelector('[data-find-place]');const z0=f.doc.builds[0].items[0].free.frame.position[2];
+ await p.click('[data-find-place]');await p.waitForFunction(()=>/Platz gefunden|Kein/.test(document.getElementById('status').textContent),{timeout:60000});const report=await near();assert.match(report,/Platz gefunden an/,report);console.log(report);f=await settled(p,x=>x.doc.builds[0].items[0].free.frame.position[2]<z0-20);assert.match(await p.$eval('#build-issues',e=>e.textContent),/Nichts/);
+ await p.select('[data-field="Platz"]','fixed');await settled(p,x=>!x.doc.builds[0].items[0].wish);await p.waitForSelector('[data-remove]');
  await p.click('[data-remove]');await settled(p,x=>!x.doc.builds[0].items.length);
  await dragPart(p,'[data-store-plate]',[80,80,20]);f=await settled(p,x=>x.doc.builds[0].plates.length===1);assert.equal(f.doc.builds[0].plates[0].free.body,'ground');
  await dragPart(p,'[data-part="arduinonano"]',[80,80,20]);f=await settled(p,x=>x.doc.builds[0].items.length===1);assert.equal(f.doc.builds[0].items[0].plate,f.doc.builds[0].plates[0].id);
+ // On a plate: an open part gives way to one placed by hand.
+ await p.waitForSelector('[data-field="Platz"]');await p.select('[data-field="Platz"]','auto');f=await settled(p,x=>x.doc.builds[0].items[0].wish?.mode==='auto');
+ await dragPart(p,'[data-part="tp4056"]',[80,80,20]);f=await settled(p,x=>x.doc.builds[0].items.length===2);const open=f.doc.builds[0].items.find(i=>i.wish),hand=f.doc.builds[0].items.find(i=>!i.wish);assert.ok(open&&hand);assert.match(await p.$eval('#build-issues',e=>e.textContent),/Nichts/);
  // Reload: mechanism and parts are back.
  await wait(500);await p.reload();await p.waitForSelector('[data-item]',{timeout:20000});assert.equal(await p.evaluate(()=>document.body.dataset.mode),'mechanism');assert.equal(await p.$$eval('[data-plate]',x=>x.length),1);
  assert.deepEqual(errors,[]);console.log('Studio Teile am Modell: am Unterarm abgelegt, fährt mit, Rückgängig, Halter-STL, Kollision und Fahrweg geprüft, Platte auf der Basis, Reload.');

@@ -11,7 +11,7 @@ unverändert; sie sollen später von hier aus angesprochen werden.
 | 1b | Freie Lage im Raum, Teile am Modell, Platte als Element | fertig |
 | 2 | Clip-Generator als weiterer Halter | fertig |
 | 3 | Zahnräder im Store, Übersetzung in das Mechanismus-Format | fertig (parallele Wellen, Planetenstufe als Baustein) |
-| 4 | Lage als Bereich oder Auto, das Tool sucht die Plätze | offen |
+| 4 | Lage als Bereich oder Auto, das Tool sucht die Plätze | fertig für Teile; Motoren der Antriebe offen |
 | 5 | Automatische Gehäuse, Getriebe-Vorschläge | offen |
 
 ## Katalog (`src/mechanics/parts/catalog.ts`)
@@ -76,6 +76,21 @@ mit ihm zusammen; der Store steht unter seinem Baum.
   freien Platz.
 - **Ausgabe:** `buildGeometry` ergibt Grundkörper des Strukturkerns, `scad.ts` macht daraus OpenSCAD. Der Render-Worker
   erzeugt das STL mit exakten Booleschen Operationen.
+
+## Plätze suchen (`src/mechanics/parts/layout.ts`)
+
+Ein Teil ohne `wish` ist fest. Mit `wish` gehört der Platz dem Tool:
+
+- **Auf der Platte:** `zone` ist ein Rechteck, `auto` lässt alles offen. `solveSheet` setzt feste Teile als gegeben, dann die
+  Bereiche, dann die offenen, jeweils die größten zuerst, und probiert zwei Drehungen. Ein Bereich will seine Mitte, ein
+  offenes Teil den kleinsten Umriss. Das läuft bei jeder Änderung an Teilen automatisch. Wer ein offenes Teil von Hand
+  zieht, macht es fest; ein Teil im Bereich nimmt den Bereich mit. Feste Teile haben Vorrang: Legt man eines auf einen
+  flexiblen Platz, weicht das flexible aus.
+- **Am Modell:** `zone` ist eine Kugel, die Suche läuft per Knopf. Kandidaten sind Punkte der Oberfläche in der Kugel, je
+  in zwei Drehungen. Das Ziel ordnet sie: mittig, oder kurzer Hebel (`axisLever`, Summe der Abstände zu den Drehachsen
+  zwischen Glied und Basis). Geprüft wird in dieser Reihenfolge über den Fahrweg, gestreut über die ganze Liste, denn die
+  besten Plätze liegen oft nebeneinander und scheitern zusammen. Die Masse der Teile geht nicht ein, der Hebel ist
+  also ein Abstandsmaß und keine Momentenrechnung.
 
 ## Getriebe (`src/mechanics/parts/train.ts`, `src/mechanics/studio-train.ts`)
 
