@@ -19,6 +19,7 @@ import {fitCylinder,fitEdge,fitTwoPoints} from './kinematics/axis-fit';
 import type {AxisFit} from './kinematics/axis-fit';
 import {solve} from './kinematics/solver';
 import {demos} from './demos';
+import type {Demo} from './demos';
 import {planBearings,bearingCatalog} from './kinematics/bearings';
 import type {BearingPlan,BearingSettings} from './kinematics/bearings';
 import JSZip from 'jszip';
@@ -346,7 +347,11 @@ export class MechanismEditor{
  }
  /** A demo: stored like an imported model, links, axes and motors ready; sliders work at once. */
  async loadDemo(key:keyof typeof demos='robot'){
-  const {asset,mechanism,drives,label,fabrication}=demos[key]();await storeAsset(asset);rememberAsset(asset);this.assets.set(asset.id,asset);
+  await this.addDemo(demos[key]());
+ }
+ /** A ready model (a demo, a compiled gear train) becomes a mechanism of the document and opens. */
+ async addDemo({asset,mechanism,drives,label,fabrication}:Demo){
+  await storeAsset(asset);rememberAsset(asset);this.assets.set(asset.id,asset);
   for(const d of drives)placeMotor(mechanism,d);
   const id='mech-'+crypto.randomUUID().slice(0,8);
   this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label,mechanism,drives,...(fabrication?{fabrication}:{})}];},`${label} geladen: Regler unter der 3D-Ansicht bewegen die Achsen; unter „Antriebe“ findet die Suche die Getriebe.`);

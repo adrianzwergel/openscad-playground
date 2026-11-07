@@ -19,6 +19,9 @@ import type {Assets,Drive} from './kinematics/drive';
 import {hull,modelHits} from './kinematics/drive';
 import {separation} from './graph/space';
 import type {GripOptions} from './studio-mechanism';
+import {TrainEditor} from './studio-train';
+import {newTrain} from './parts/train';
+import type {Demo} from './demos';
 
 /** A point on the model in the mechanism's coordinates. */
 export type Surface={point:V;normal:V;body:string;distance:number};
@@ -26,7 +29,8 @@ export type BuildHost={doc:()=>StudioDocument;change:(edit:()=>void,message:stri
  /** The pointer's ray in the view. */ray:(e:{clientX:number;clientY:number})=>THREE.Raycaster;orbit:(on:boolean)=>void;
  /** The open mechanism: frames of its links as shown, the surface under a ray, what a collision check needs. */frames:()=>Record<string,Frame>;surface:(ray:THREE.Raycaster)=>Surface|undefined;model:()=>{m:Mechanism;drives:Drive[];assets:Assets}|undefined;
  /** Link frames over every axis' way. */range:()=>Promise<{axis:string;value:number;frames:Record<string,Frame>}[]>;
- /** The gizmo on a handle (undefined: off it); whether it is held. */grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;};
+ /** The gizmo on a handle (undefined: off it); whether it is held. */grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;
+ /** A finished train or block becomes a mechanism. */adopt:(d:Demo)=>void;};
 type Drag={item?:BuildItem;plate?:PlateNode;isNew:boolean;offset:[number,number];moved:boolean;over:boolean;start:[number,number]};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
@@ -59,7 +63,9 @@ export class BuildEditor{
  private followers:{object:THREE.Object3D;free:Free}[]=[];
  private sweepText='';
  private custom={label:'Mein Teil',length:40,width:30,height:15,x:34,y:24,d:3};
- constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);}
+ private trains:TrainEditor;
+ constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt});this.trains.onChange=()=>this.refresh();}
+ private get isTrain(){return !!this.build()?.train;}
  /** A build on its own is open (a mechanism's parts come along with the mechanism). */
  get active(){return !!this.activeId&&!!this.build();}
  get attached(){return !!this.attachedTo;}
@@ -68,7 +74,7 @@ export class BuildEditor{
  private build(){const builds=this.host.doc().builds;return this.activeId?builds?.find(b=>b.id===this.activeId):this.attachedTo?builds?.find(b=>b.mechanism===this.attachedTo):undefined;}
  /** The build as seen while dragging: with the held part where it is held. */
  private shown():Build|undefined{const b=this.build(),d=this.drag;if(!d?.over)return b;const base=b??modelBuild('neu',this.attachedTo??'');return {...base,items:d.item?[...base.items.filter(i=>i.id!==d.item!.id),d.item]:base.items,plates:d.plate?[...base.plates.filter(p=>p.id!==d.plate!.id),d.plate]:base.plates};}
- enter(id:string){this.activeId=id;this.attachedTo=undefined;this.selected=undefined;this.plateId=this.build()?.plates[0]?.id;this.fitNext=true;}
+ enter(id:string){this.activeId=id;this.attachedTo=undefined;this.selected=undefined;this.trains.reset();this.plateId=this.build()?.plates[0]?.id;this.fitNext=true;}
  attach(id:string|undefined){if(this.attachedTo===id)return;this.attachedTo=id;this.selected=undefined;this.plateId=undefined;}
  exit(){this.activeId=undefined;this.attachedTo=undefined;this.selected=undefined;this.plateId=undefined;this.drag=undefined;this.host.grip(undefined);this.clear();}
  private clear(){this.followers=[];for(const o of [...this.group.children]){if(o===this.gizmo)continue;this.group.remove(o);o.traverse(c=>{if((c instanceof THREE.Mesh||c instanceof THREE.LineLoop)&&!c.userData.shared)c.geometry.dispose();});}}
@@ -76,6 +82,7 @@ export class BuildEditor{
  // ---------- view ----------
  refresh(){
   this.clear();const b=this.shown();if(!b){this.gizmoOff();return;}
+  if(b.train){this.gizmoOff();this.trains.draw(this.group);if(this.fitNext&&b.train.wheels.length){this.fitNext=false;this.host.fit();}return;}
   const frames=this.host.frames(),found=this.allIssues(b),bad=new Set(found.flatMap(x=>x.items));
   for(const n of b.plates){const g=new THREE.Group();g.userData.plate=n.id;place(g,worldOf(n.free,frames));this.followers.push({object:g,free:n.free});this.drawSheet(g,sheet(b,n.id),n,bad);this.group.add(g);}
   for(const i of b.items){if(!i.free)continue;const p=partOf(b,i),g=new THREE.Group();place(g,worldOf(i.free,frames));this.followers.push({object:g,free:i.free});g.add(this.partObject(p,i));this.group.add(g);
@@ -126,9 +133,10 @@ export class BuildEditor{
   const floor=ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),0),new THREE.Vector3());return floor?{surface:{point:floor.toArray() as V,normal:[0,0,1] as V,body:'',distance:0}}:undefined;
  }
  private itemAt(ray:THREE.Raycaster){this.group.updateWorldMatrix(true,true);let o:THREE.Object3D|null|undefined=ray.intersectObjects(this.group.children,true)[0]?.object;while(o&&!o.userData.item)o=o.parent;return o?.userData.item as string|undefined;}
- hover(ray:THREE.Raycaster){return !!this.itemAt(ray);}
+ hover(ray:THREE.Raycaster){return this.isTrain?this.trains.hover(ray,this.group):!!this.itemAt(ray);}
  /** True if the press belongs to a part. A press beside it in a mechanism goes on to the mechanism. */
  pointerDown(e:PointerEvent,ray:THREE.Raycaster){
+  if(this.isTrain){this.trains.pointerDown(e,ray,this.group);return true;}
   const b=this.build(),id=this.itemAt(ray),i=b?.items.find(x=>x.id===id),was=this.selected;this.selected=id;if(id)this.plateId=undefined;else if(this.attached)this.plateId=undefined;
   if(!i){if(this.attached&&!was)return false;this.host.leave();return !this.attached;}
   this.renderProperties();this.refresh();
@@ -164,7 +172,7 @@ export class BuildEditor{
  /** The build that takes a new thing: a mechanism's own is made with its first part. */
  private ensure(){let x=this.build();if(!x){const d=this.host.doc();x=modelBuild('teile-'+crypto.randomUUID().slice(0,8),this.attachedTo!);d.builds=[...(d.builds??[]),x];}return x;}
  /** Keys of the view: R turns the selection, Entf removes it. */
- key(e:KeyboardEvent){if(!this.selected)return false;if(e.key==='r'||e.key==='R'){this.turn(e.shiftKey?-90:90);return true;}if(e.key==='Delete'){this.removeItem();return true;}return false;}
+ key(e:KeyboardEvent){if(this.isTrain)return this.trains.key(e);if(!this.selected)return false;if(e.key==='r'||e.key==='R'){this.turn(e.shiftKey?-90:90);return true;}if(e.key==='Delete'){this.removeItem();return true;}return false;}
  private turn(by:number){const id=this.selected!;this.host.change(()=>{const i=this.build()!.items.find(x=>x.id===id);if(!i)return;i.angle=(i.angle+by+360)%360;if(i.free)i.free.frame=compose(i.free.frame,{position:[0,0,0],rotation:axisAngle([0,0,1],by)});},'Teil gedreht');}
  private removeItem(){const id=this.selected!;this.selected=undefined;this.host.change(()=>{const x=this.build()!;x.items=x.items.filter(i=>i.id!==id);},'Teil entfernt');}
 
@@ -194,6 +202,8 @@ export class BuildEditor{
  renderList(root:HTMLElement){
   root.append(el('div',{className:'tree-group',textContent:'Aufbauten'}));
   for(const b of this.host.doc().builds??[]){if(b.mechanism)continue;const open=el('button',{textContent:`▦ ${b.label}`});open.dataset.build=b.id;open.setAttribute('aria-selected',String(this.activeId===b.id));open.onclick=()=>{this.enter(b.id);this.host.leave();};root.append(el('div',{className:'tree-row'},open));}
+  const gear=el('button',{textContent:'＋ Neues Getriebe',className:'primary'});gear.dataset.newTrain='true';gear.onclick=()=>{const id='getriebe-'+crypto.randomUUID().slice(0,8),n=(this.host.doc().builds?.filter(b=>b.train).length??0)+1;this.host.change(()=>{const d=this.host.doc();d.builds=[...(d.builds??[]),{...newBuild(id,`Getriebe ${n}`),plates:[],train:newTrain()}];},'Getriebe angelegt: Zahnräder aus dem Store in die Ansicht ziehen.');this.enter(id);this.host.leave();};
+  root.append(gear);
   const add=el('button',{textContent:'＋ Neuer Aufbau (Bodenplatte)',className:'primary'});add.dataset.newBuild='true';add.onclick=()=>{const id='aufbau-'+crypto.randomUUID().slice(0,8),n=(this.host.doc().builds?.filter(b=>!b.mechanism).length??0)+1;this.host.change(()=>{const d=this.host.doc();d.builds=[...(d.builds??[]),newBuild(id,`Aufbau ${n}`)];},'Aufbau angelegt: Teile aus dem Store auf die Platte ziehen.');this.enter(id);this.host.leave();};
   root.append(add);
  }
@@ -202,6 +212,7 @@ export class BuildEditor{
  }
  /** Plates, parts and the store: on its own, or below the mechanism's tree. */
  renderParts(root:HTMLElement){
+  if(this.isTrain){this.trains.renderTree(root);return;}
   const b=this.build();if(this.attached)root.append(el('div',{className:'tree-group',textContent:'Teile am Modell'}));
   const pick=(item?:string,plate?:string)=>{this.selected=item;this.plateId=plate;this.refresh();this.host.leave();};
   for(const n of b?.plates??[]){const row=el('button',{textContent:'▭ Bodenplatte'});row.dataset.plate=n.id;row.setAttribute('aria-selected',String(!this.selected&&this.plateId===n.id));row.onclick=()=>pick(undefined,n.id);root.append(el('div',{className:'tree-row'},row));}
@@ -226,6 +237,7 @@ export class BuildEditor{
  // ---------- properties ----------
  renderProperties(){
   const root=document.getElementById('properties')!,b=this.build();if(!this.holdsProperties)return;root.replaceChildren();if(!b)return;
+  if(b.train){this.trains.renderProperties(root);return;}
   const edit=(message:string,fn:(x:Build)=>void)=>this.host.change(()=>fn(this.build()!),message);
   const number:NumberField=(label,value,write,step='0.5')=>{const input=el('input',{type:'number',step,value:String(Math.round(value*1000)/1000)});input.setAttribute('aria-label',label);input.dataset.field=label;input.onchange=()=>{const n=Number(input.value);if(Number.isFinite(n))write(n);};return el('label',{},label,input);};
   const select:SelectField=(label,value,options,write)=>{const s=el('select');s.dataset.field=label;for(const [v,t] of options)s.add(new Option(t,v));s.value=value;s.onchange=()=>write(s.value);return el('label',{},label,s);};

@@ -10,6 +10,8 @@ import type {Prim} from '../../structure/sdf.ts';
 import type {Frame,V} from '../kinematics/math.ts';
 import {compose,identity,inverse,cross,scale,unit,quaternionFromBasis,axisAngle} from '../kinematics/math.ts';
 import type {Seat} from '../kinematics/bearings.ts';
+import type {Train} from './train.ts';
+import {parseTrain} from './train.ts';
 
 type P2=[number,number];
 /** A place in space: `frame` on the link `body`, or in the world without one. */
@@ -22,7 +24,7 @@ export type PlateHole={id:string;at:P2;d:number};
 export type Plate={mode:'auto'|'fixed';size:P2;center:P2;margin:number;thickness:number;corner:number;holes:PlateHole[];mount:{on:boolean;d:number;inset:number}};
 export type PlateNode=Plate&{id:string;free:Free};
 /** `mechanism`: the mechanism it belongs to; without one it stands alone. */
-export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];parts:Part[];grid:number;mechanism?:string};
+export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];parts:Part[];grid:number;mechanism?:string;/** A gear train instead of plates and parts. */train?:Train};
 /** One plate with what sits on it: all the planar logic below works on this. */
 export type Sheet={plate:Plate;items:BuildItem[];parts:Part[];grid:number};
 export type Rect={corners:P2[]};
@@ -49,7 +51,7 @@ export function parseBuild(value:unknown):Build{
  const own=Array.isArray(b.parts)?b.parts.map(x=>structuredClone(x)):[],plates=b.plates.map(parsePlate);if(new Set(plates.map(p=>p.id)).size!==plates.length)throw Error('Aufbau: Platte doppelt');
  const items=b.items.map(i=>{if(!partById(i.part,own))throw Error(`Aufbau: Teil ${i.part} fehlt im Katalog`);if(i.side!=='top'&&i.side!=='bottom')throw Error('Aufbau: Seite ungültig');if(i.plate?!plates.some(p=>p.id===i.plate):!i.free)throw Error('Aufbau: Teil ohne Lage');
   return {id:text(i.id,'Teil'),part:i.part,at:pair(i.at,-5000,5000,'Position'),angle:num(i.angle,-720,720,'Drehung'),side:i.side,clearance:num(i.clearance,0,100,'Abstand'),holder:{kind:text(i.holder?.kind,'Halter'),params:structuredClone(i.holder?.params??{})},...(i.holes?{holes:structuredClone(i.holes)}:{}),...(i.plugsOff?{plugsOff:[...i.plugsOff]}:{}),...(i.plate?{plate:i.plate}:{free:parseFree(i.free)})};});
- return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{})};
+ return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(b.train?{train:parseTrain(b.train)}:{})};
 }
 export const partOf=(b:{parts:Part[]},i:BuildItem)=>partById(i.part,b.parts)!;
 export const newItem=(id:string,part:Part,at:P2):BuildItem=>({id,part:part.id,at,angle:0,side:part.body>0?'top':'bottom',clearance:2,holder:defaultHolder(part)});

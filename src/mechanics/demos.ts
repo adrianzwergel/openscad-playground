@@ -145,4 +145,4 @@ export function planetGearbox(o:{id:string;label:string;sun:string;planet:string
 /** The same with four LEGO z16: sun and three planets, ring gear z48, 1 : 4. */
 export const planetGearbox16=()=>planetGearbox({id:'demo-planetengetriebe-z16',label:'Demo Planetengetriebe 4 × z16',sun:'4019',planet:'4019'});
 export const demos={robot:robotArm,cnc:cncPortal,sled:slopeSled,hand:handGearbox,planet:()=>planetGearbox(),planet16:planetGearbox16};
-export {inverse};
+export {inverse,build as modelAsset,box,cylinder,along};

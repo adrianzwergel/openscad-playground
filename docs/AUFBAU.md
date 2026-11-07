@@ -10,7 +10,7 @@ unverändert; sie sollen später von hier aus angesprochen werden.
 | 1 | Katalog, Platzieren, Bodenplatte, Projektdateien | fertig |
 | 1b | Freie Lage im Raum, Teile am Modell, Platte als Element | fertig |
 | 2 | Clip-Generator als weiterer Halter | fertig |
-| 3 | Zahnräder im Store, Übersetzung in das Mechanismus-Format | offen |
+| 3 | Zahnräder im Store, Übersetzung in das Mechanismus-Format | fertig (parallele Wellen, Planetenstufe als Baustein) |
 | 4 | Lage als Bereich oder Auto, das Tool sucht die Plätze | offen |
 | 5 | Automatische Gehäuse, Getriebe-Vorschläge | offen |
 
@@ -77,6 +77,23 @@ mit ihm zusammen; der Store steht unter seinem Baum.
 - **Ausgabe:** `buildGeometry` ergibt Grundkörper des Strukturkerns, `scad.ts` macht daraus OpenSCAD. Der Render-Worker
   erzeugt das STL mit exakten Booleschen Operationen.
 
+## Getriebe (`src/mechanics/parts/train.ts`, `src/mechanics/studio-train.ts`)
+
+Ein Getriebe ist ein `Build` mit `train`: Wellen in einer Ebene (`at`), Räder darauf (`z` längs der Welle), dazu Eingang,
+Ausgang und Antrieb. Was kämmt, wird nicht gespeichert, sondern aus der Lage berechnet: gleiches Modul, Räder liegen auf
+gleicher Höhe, Achsabstand gleich der Summe der Teilkreisradien. Daraus folgt die Übersetzung.
+
+- **Einrasten:** `snapWheel` setzt ein Rad nahe einer Welle auf diese Welle, sonst auf den Kreis im Achsabstand des
+  nächsten Rads, sonst aufs Raster. Alt schaltet das ab.
+- **Prüfung:** Räder, die sich berühren, ohne zu kämmen; ein Kreis aus Rädern, der sich sperrt; Wellen ohne Verbindung.
+  LEGO und gedruckte Räder lassen sich noch nicht mischen, die Wellen sind verschieden.
+- **Mechanismus:** `compileTrain` erzeugt Grundplatte, Abtriebsachse, Körper, Gelenke und Kontakte wie die Getriebe-Demos,
+  die Ebene steht aufrecht, die Wellen laufen längs y. Der Zug gehört dem Antrieb `H1`. Das Ergebnis ist ein Mechanismus
+  wie jeder andere; das Getriebe bleibt erhalten, ein erneuter Knopfdruck legt einen weiteren an.
+- **Planetenstufe:** ein Baustein über `planetGearbox`, Sonne und Planeten sind wählbar. Von Hand lässt sie sich noch nicht
+  bauen, weil Steg und Hohlrad im Getriebe-Modell fehlen.
+- **Noch nicht:** Kegelräder, Schnecken, Riemen und nicht parallele Wellen. Die Zahnlage der Räder wird nicht abgeglichen.
+
 ## Projektdateien (`src/mechanics/project-store.ts`)
 
 Jedes Projekt ist eine JSON-Datei im privaten Dateisystem des Browsers (OPFS) unter `/projekte`, geschrieben atomar
@@ -98,4 +115,6 @@ node scripts/parts/check-parts.mjs
 node scripts/parts/check-part-seats.mjs
 node scripts/check-studio-build-browser.mjs
 node scripts/check-studio-parts-on-model-browser.mjs
+node scripts/parts/check-train.mjs
+node scripts/check-studio-train-browser.mjs
 ```

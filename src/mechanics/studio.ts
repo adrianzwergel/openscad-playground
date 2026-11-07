@@ -50,7 +50,7 @@ const mechRoot=new THREE.Group();scene.add(mechRoot);mechRoot.add(mech.view.grou
 // Build mode: a plate and parts from the store; z-up like the mechanisms. One mode at a time.
 const build=new BuildEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{if(build.active&&mech.active)mech.exit();motion.close();draw();},fit:()=>document.getElementById('fit')!.click(),canvas:()=>renderer.domElement,ray:e=>hits(e as MouseEvent),orbit:on=>{orbit.enabled=on;},
  frames:()=>mech.active?mech.framesNow():{},surface:ray=>mech.active?mech.surfaceAt(ray):undefined,model:()=>mech.active?mech.clashContext():undefined,range:()=>mech.posesOverRange(),
- grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.buildGizmo)transform.detach();},dragging:()=>transform.dragging});
+ grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.buildGizmo)transform.detach();},dragging:()=>transform.dragging,adopt:d=>{build.exit();void mech.addDemo(d);}});
 mechRoot.add(build.group);
 // The gizmo on a mechanism handle: mode, steps (Alt held: none) and axes as the handle asks.
 let steps:{step:number;angle:number}={step:0,angle:0},free=false;
