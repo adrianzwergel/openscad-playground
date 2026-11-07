@@ -1,7 +1,7 @@
 // A build: parts and plates in space, each hanging on a link of a mechanism or standing free. Parts on a plate live in
 // that plate's coordinates (x, y in mm, its top at z = 0), the rest has a frame of its own. Stored in the project file;
 // everything else (a plate's outline in auto mode, holes, domes, collisions) follows from it.
-import {partById} from './catalog.ts';
+import {partById,massOf} from './catalog.ts';
 import type {Part} from './catalog.ts';
 import {generator,defaultHolder,clipLayout,clipArm} from './generators.ts';
 import {snapStrain} from '../../structure/features.ts';
@@ -21,7 +21,7 @@ export type Free={frame:Frame;body?:string};
 export type Wish={mode:'zone'|'auto';center:number[];size:number[];goal:'middle'|'axis'};
 /** On a plate (`plate`): `at`, `angle`, `side` place it. Otherwise `free` does: its frame is the part frame.
  * `holes`: edits of the part's holes by index (other Ø, or left out). `plugsOff`: plugs nobody uses, by label. */
-export type BuildItem={id:string;part:string;at:P2;angle:number;side:'top'|'bottom';clearance:number;holder:{kind:string;params:Record<string,number>};holes?:Record<string,{d?:number;off?:boolean}>;plugsOff?:string[];plate?:string;free?:Free;wish?:Wish};
+export type BuildItem={id:string;part:string;at:P2;angle:number;side:'top'|'bottom';clearance:number;holder:{kind:string;params:Record<string,number>};holes?:Record<string,{d?:number;off?:boolean}>;plugsOff?:string[];plate?:string;free?:Free;wish?:Wish;/** Real mass (g), where the estimate is not good enough. */mass?:number};
 export type PlateHole={id:string;at:P2;d:number};
 /** `auto`: the outline wraps the parts with `margin`; `fixed`: `size` around `center`. */
 export type Plate={mode:'auto'|'fixed';size:P2;center:P2;margin:number;thickness:number;corner:number;holes:PlateHole[];mount:{on:boolean;d:number;inset:number}};
@@ -54,7 +54,7 @@ export function parseBuild(value:unknown):Build{
  if(!b||typeof b!=='object'||!Array.isArray(b.plates)||b.plates.length>32||!Array.isArray(b.items)||b.items.length>200)throw Error('Ungültiger Aufbau');
  const own=Array.isArray(b.parts)?b.parts.map(x=>structuredClone(x)):[],plates=b.plates.map(parsePlate);if(new Set(plates.map(p=>p.id)).size!==plates.length)throw Error('Aufbau: Platte doppelt');
  const items=b.items.map(i=>{if(!partById(i.part,own))throw Error(`Aufbau: Teil ${i.part} fehlt im Katalog`);if(i.side!=='top'&&i.side!=='bottom')throw Error('Aufbau: Seite ungültig');if(i.plate?!plates.some(p=>p.id===i.plate):!i.free)throw Error('Aufbau: Teil ohne Lage');
-  return {id:text(i.id,'Teil'),part:i.part,at:pair(i.at,-5000,5000,'Position'),angle:num(i.angle,-720,720,'Drehung'),side:i.side,clearance:num(i.clearance,0,100,'Abstand'),holder:{kind:text(i.holder?.kind,'Halter'),params:structuredClone(i.holder?.params??{})},...(i.holes?{holes:structuredClone(i.holes)}:{}),...(i.plugsOff?{plugsOff:[...i.plugsOff]}:{}),...(i.plate?{plate:i.plate}:{free:parseFree(i.free)}),...(i.wish?{wish:parseWish(i.wish)}:{})};});
+  return {id:text(i.id,'Teil'),part:i.part,at:pair(i.at,-5000,5000,'Position'),angle:num(i.angle,-720,720,'Drehung'),side:i.side,clearance:num(i.clearance,0,100,'Abstand'),holder:{kind:text(i.holder?.kind,'Halter'),params:structuredClone(i.holder?.params??{})},...(i.holes?{holes:structuredClone(i.holes)}:{}),...(i.plugsOff?{plugsOff:[...i.plugsOff]}:{}),...(i.plate?{plate:i.plate}:{free:parseFree(i.free)}),...(i.wish?{wish:parseWish(i.wish)}:{}),...(i.mass!==undefined?{mass:num(i.mass,0,1e6,'Masse')}:{})};});
  return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(b.train?{train:parseTrain(b.train)}:{})};
 }
 export const partOf=(b:{parts:Part[]},i:BuildItem)=>partById(i.part,b.parts)!;
@@ -150,6 +150,7 @@ export function partBox(p:Part,world:Frame){return {frame:world,center:p.box.min
 export function plateBox(b:Build,n:PlateNode,world:Frame){const r=plateRect(sheet(b,n.id));return {frame:world,center:[(r.x0+r.x1)/2,(r.y0+r.y1)/2,-n.thickness/2] as V,half:[(r.x1-r.x0)/2,(r.y1-r.y0)/2,n.thickness/2] as V};}
 /** A free part's holder as a piece of its own: a small plate that follows the holes, the same holder on it. */
 export function holderPiece(b:Build,i:BuildItem):Sheet{const plate={...newPlate(),margin:4,mount:{on:false,d:3.4,inset:5}},item:BuildItem={...i,at:[0,0],angle:0,side:partOf(b,i).body>0?'top':'bottom'};delete item.free;return {plate,items:[item],parts:b.parts,grid:0};}
+export const itemMass=(b:{parts:Part[]},i:BuildItem)=>i.mass??massOf(partOf(b,i));
 /** Where a part stands in the room, free or on its plate. */
 export function standing(b:Build,i:BuildItem,frames:Record<string,Frame>):Frame{if(i.free)return worldOf(i.free,frames);const n=b.plates.find(p=>p.id===i.plate)!,p=partOf(b,i),z=i.side==='top'?liftOf(i):-n.thickness-liftOf(i);return compose(compose(worldOf(n.free,frames),{position:[i.at[0],i.at[1],z],rotation:axisAngle([0,0,1],i.angle)}),{position:[0,0,0],rotation:flipped(p,i)?[1,0,0,0]:[0,0,0,1]});}
 /** The seats of one part: a dome per hole or the clip's arms and supports, reaching away from the part. */

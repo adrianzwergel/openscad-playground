@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import {partById} from '../../src/mechanics/parts/catalog.ts';
 import {newItem,newBuild,newPlateNode,partSeats,standing} from '../../src/mechanics/parts/build.ts';
-import {generateNet,netAnchors,netRoom,unheld} from '../../src/mechanics/parts/net.ts';
+import {generateNet,netAnchors,netRoom,unheld,designLoad,tipAngle,partsCentre} from '../../src/mechanics/parts/net.ts';
+import {massOf,torqueOf} from '../../src/mechanics/parts/catalog.ts';
 import {primDistance} from '../../src/structure/sdf.ts';
 import {axisAngle} from '../../src/mechanics/kinematics/math.ts';
 const free=(id,part,position,rotation=[0,0,0,1])=>({...newItem(id,partById(part),[0,0]),free:{frame:{position,rotation}}});
@@ -24,4 +25,12 @@ let low=Infinity;for(let k=2;k<v.length;k+=3)low=Math.min(low,v[k]);assert.ok(lo
 // Plates count too; a part without holder is named.
 const c={...newBuild('c','C'),plates:[newPlateNode('p',{position:[0,0,60],rotation:[0,0,0,1]})]};c.items.push({...newItem('a',partById('rpi4'),[0,0]),plate:'p'});assert.equal(partSeats(c,'x').length,4);assert.equal(netAnchors(c).anchors.filter(a=>a.role==='load').length,4);assert.deepEqual(standing(c,c.items[0],{}).position,[0,0,60+c.items[0].holder.params.height]);
 const lose={...b,items:[{...free('z','hc-sr04',[0,0,50]),holder:{kind:'none',params:{}}}]};assert.deepEqual(unheld(lose).map(i=>i.id),['z']);assert.throws(()=>netAnchors(lose),/keinen Halter|Kein Teil/);
+// Masses, loads: a motor weighs and pulls more than a board; a stated mass replaces the estimate.
+{const near2=(x,lo,hi,w)=>assert.ok(x>=lo&&x<=hi,`${w}: ${x.toFixed(0)}`);near2(massOf(partById('rpi4')),25,60,'Pi 4');near2(massOf(partById('nema17-40')),150,450,'NEMA 17');near2(massOf(partById('arduinouno3')),12,35,'Uno');assert.equal(torqueOf(partById('nema17-40')),.45);assert.equal(torqueOf(partById('rpi4')),0);
+ const c2={...newBuild('m','M'),plates:[]},pi=free('a','rpi4',[0,0,50]),motor=free('b','nema17-40',[0,0,50]);c2.items.push(pi,motor);assert.ok(designLoad(c2,motor)>designLoad(c2,pi)+15);const heavy={...pi,mass:1000};assert.ok(designLoad(c2,heavy)>35);
+ // Tipping: a square under the centre tips at atan(side/2 / height); outside it, the angle is negative.
+ assert.ok(Math.abs(tipAngle([0,0,100],[[-100,-100],[100,-100],[100,100],[-100,100]],0)-45)<1e-6);assert.ok(tipAngle([150,0,100],[[-100,-100],[100,-100],[100,100],[-100,100]],0)<0);
+ // A high heavy part far out: the feet go where it needs them.
+ const tall={...newBuild('t','T'),plates:[]};tall.items.push(free('a','arduinonano',[0,0,20]),{...free('b','nema17-40',[140,0,160]),mass:400});const {anchors:an,floor:fl}=netAnchors(tall),{centre}=partsCentre(tall),feet=an.filter(a=>a.role==='support').map(a=>a.frame.position.slice(0,2));assert.ok(tipAngle(centre,feet,fl)>=15,`${tipAngle(centre,feet,fl)}`);
+ const rt=await generateNet(tall);const st=rt.report.checks.find(c=>c.id==='stand');assert.ok(st&&st.state!=='fail',JSON.stringify(st));console.log(st.message);}
 console.log(`Baum-Netz als Träger: 14 Haltepunkte, ${r.report.mass.toFixed(0)} g, ${r.report.struts} Streben, Auslastung ${(r.report.utilisation*100).toFixed(0)} %, Durchbiegung ${r.report.deflection.toFixed(2)} mm, ${s} s.`);

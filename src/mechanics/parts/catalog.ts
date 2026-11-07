@@ -30,6 +30,11 @@ const typed:Part[]=[
  {...boxPart({id:'sg90',label:'SG90 Mikroservo',group:'Motoren',size:[32.5,12.2],thickness:2.5,height:6,below:17,holes:[{at:[-13.85,0],d:2},{at:[13.85,0],d:2}],note:'Laschenmaß von Hand, bitte nachmessen.'}),mount:'flange',body:-1,pilot:23},
 ];
 export const parts:Part[]=[...imported,...typed];
+/** A part's mass in grams, estimated from its hull (the sources give none): a board is mostly air, a motor mostly iron.
+ * An estimate: the item can state the real one. */
+export function massOf(p:Part){const hull=p.group==='Motoren'&&p.size[0]>30?p.size[0]*p.size[1]*p.size[2]:(p.box.max[0]-p.box.min[0])*(p.box.max[1]-p.box.min[1])*(p.box.max[2]-p.box.min[2]),v=hull/1000,d=p.group==='Motoren'?(p.size[0]>30?4:1.2):p.group==='Lüfter'?.3:.4;return Math.max(1,v*d);}
+/** Holding torque of a stepper by frame size (Nm), for the couple on its screws; 0 for everything else. */
+export function torqueOf(p:Part){if(p.group!=='Motoren'||!p.shaft)return 0;return p.size[0]>50?1.3:p.size[0]>40?.45:.18;}
 export const partGroups=['Controller','Motoren','Module','Sensoren','Anzeigen','Schalter','Lüfter','Eigene Teile'];
 export const partById=(id:string,own:Part[]=[])=>parts.find(p=>p.id===id)??own.find(p=>p.id===id);
 export const catalogSource={source:nopscadlib.source,commit:nopscadlib.commit,license:nopscadlib.license};

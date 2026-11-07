@@ -5,12 +5,15 @@ import {generateStructure} from '../../structure/generate.ts';
 import type {Anchor,StructureResult,StructureSettings} from '../../structure/generate.ts';
 import {PrimIndex} from '../../structure/sdf.ts';
 import type {Prim} from '../../structure/sdf.ts';
-import {partOf,partSeats,standing,plateRect,sheet,plugRects,worldOf} from './build.ts';
+import {partOf,partSeats,standing,plateRect,sheet,plugRects,worldOf,itemMass} from './build.ts';
+import {torqueOf} from './catalog.ts';
 import type {Build,BuildItem} from './build.ts';
 import type {Frame,V} from '../kinematics/math.ts';
-import {compose} from '../kinematics/math.ts';
+import {compose,rotate} from '../kinematics/math.ts';
 
 const LIFT=1,GAP=1.5,PLUG=.5;
+/** The stance is laid out to tip no earlier than this (degrees). */
+const TIP=15;
 /** Design load per part (N), shared by its holding points: electronics weigh grams, this is a hand plugging in a cable. */
 export const DEFAULT_LOAD=10;
 /** Parts without anything to hold them: they would float. */
@@ -20,14 +23,22 @@ const room=(frame:Frame,lo:V,hi:V,grow:number):Prim=>({kind:'box',frame:compose(
 export function netRoom(b:Build):Prim[]{const out:Prim[]=[];
  for(const i of b.items){const p=partOf(b,i),f=standing(b,i,{}),under=GAP-.2;
   // The domes come from below the mounted face: on that side the room ends just under the part.
-  out.push(p.body>0?room(f,[p.box.min[0],p.box.min[1],p.box.min[2]+under],p.box.max,GAP):room(f,p.box.min,[p.box.max[0],p.box.max[1],p.box.max[2]-under],GAP));
+  // A flanged part: its body behind the face; in front only boss and shaft, between the screws.
+  if(p.body>0)out.push(room(f,[p.box.min[0],p.box.min[1],p.box.min[2]+under],p.box.max,GAP));else{const r=(p.pilot??10)/2;out.push(room(f,p.box.min,[p.box.max[0],p.box.max[1],-under],GAP),room(f,[-r,-r,0],[r,r,p.box.max[2]],.5));}
   const flat:BuildItem={...i,at:[0,0],angle:0,side:p.body>0?'top':'bottom'};for(const c of plugRects(p,flat)){const x=c.rect.corners.map(q=>q[0]),y=c.rect.corners.map(q=>q[1]);out.push(room(f,[Math.min(...x),Math.min(...y),0],[Math.max(...x),Math.max(...y),c.height+2],PLUG));}}
  for(const n of b.plates){const r=plateRect(sheet(b,n.id));out.push(room(worldOf(n.free,{}),[r.x0,r.y0,-n.thickness],[r.x1,r.y1,0],GAP));}
  return out;}
-/** Anchors of all holders, and four feet under them on the floor below the lowest part. */
+/** The force a part's holders must take (N): what a hand does, three times its weight for knocks, and a motor's torque
+ * as a couple over its screw circle. */
+export function designLoad(b:Build,i:BuildItem,base=DEFAULT_LOAD){const p=partOf(b,i),t=torqueOf(p),r=p.holes.length?Math.max(...p.holes.map(h=>Math.hypot(h.at[0],h.at[1]))):0;return base+3*9.81*itemMass(b,i)/1000+(t&&r?t/(2*r/1000):0);}
+/** Centre of gravity of the parts: [x, y, z], mass in g. */
+export function partsCentre(b:Build){let m=0;const c:V=[0,0,0];for(const i of b.items){const p=partOf(b,i),g=itemMass(b,i),q=compose(standing(b,i,{}),{position:p.box.min.map((v,k)=>(v+p.box.max[k])/2) as V,rotation:[0,0,0,1]}).position;m+=g;c[0]+=q[0]*g;c[1]+=q[1]*g;c[2]+=q[2]*g;}return {centre:m?c.map(v=>v/m) as V:c,mass:m};}
+/** The angle a stance tips over at: the least, over its sides, of the angle from the centre of gravity to that side. */
+export function tipAngle(centre:V,feet:[number,number][],floor:number){const n=feet.length,h=Math.max(1e-3,centre[2]-floor);let best=Infinity;for(let k=0;k<n;k++){const [ax,ay]=feet[k],[bx,by]=feet[(k+1)%n],l=Math.hypot(bx-ax,by-ay)||1,inside=((bx-ax)*(centre[1]-ay)-(by-ay)*(centre[0]-ax))/l;best=Math.min(best,inside);}return Math.atan2(best,h)*180/Math.PI;}
+/** Anchors of all holders, and four feet under them on the floor below the lowest part, wide enough not to tip. */
 export function netAnchors(b:Build,load=DEFAULT_LOAD){
- const seats=partSeats(b,'netz'),share=(line:string)=>load/seats.filter(s=>s.line===line).length,anchors:Anchor[]=seats.map(s=>({id:s.id,frame:s.frame,feature:s.feature,role:'load',load:share(s.line)}));if(!anchors.length)throw Error('Kein Teil hat einen Halter: Dome oder Clip wählen.');
- const pts=anchors.map(a=>a.frame.position),rooms=netRoom(b),floor=Math.min(...pts.map(p=>p[2]))-14,x=pts.map(p=>p[0]),y=pts.map(p=>p[1]),cx=(Math.min(...x)+Math.max(...x))/2,cy=(Math.min(...y)+Math.max(...y))/2,w=Math.max(30,(Math.max(...x)-Math.min(...x))/2),h=Math.max(30,(Math.max(...y)-Math.min(...y))/2);
+ const seats=partSeats(b,'netz'),byLine=new Map(b.items.map(i=>[i.id,designLoad(b,i,load)])),share=(line:string)=>(byLine.get(line)??load)/seats.filter(s=>s.line===line).length,anchors:Anchor[]=seats.map(s=>({id:s.id,frame:s.frame,feature:s.feature,role:'load',load:share(s.line)}));if(!anchors.length)throw Error('Kein Teil hat einen Halter: Dome oder Clip wählen.');
+ const pts=anchors.map(a=>a.frame.position),rooms=netRoom(b),floor=Math.min(...pts.map(p=>p[2]))-14,{centre}=partsCentre(b),reach=Math.max(0,centre[2]-floor)*Math.tan(TIP*Math.PI/180)+8,x=[...pts.map(p=>p[0]),centre[0]-reach,centre[0]+reach],y=[...pts.map(p=>p[1]),centre[1]-reach,centre[1]+reach],cx=(Math.min(...x)+Math.max(...x))/2,cy=(Math.min(...y)+Math.max(...y))/2,w=Math.max(30,(Math.max(...x)-Math.min(...x))/2),h=Math.max(30,(Math.max(...y)-Math.min(...y))/2);
  ([[-1,-1],[1,-1],[1,1],[-1,1]] as const).forEach(([a,c],k)=>anchors.push({id:`fuss${k+1}`,frame:{position:[cx+a*w,cy+c*h,floor],rotation:[1,0,0,0]},feature:{kind:'pad',width:30,depth:30,thickness:5,holes:[[-8,0],[8,0]],hole:4.5,top:true},role:'support'}));
  return {anchors,rooms,floor};}
 export type NetSettings={bracing:number;load:number};
@@ -35,5 +46,10 @@ export type NetSettings={bracing:number;load:number};
 export async function generateNet(b:Build,s:Partial<NetSettings>={},progress?:(stage:string,f:number)=>void):Promise<StructureResult>{
  const o={bracing:1,load:DEFAULT_LOAD,...s},{anchors,rooms,floor}=netAnchors(b,o.load),index=new PrimIndex(15,40);for(const r of rooms)index.add(r);
  const settings:Partial<StructureSettings>={bracing:o.bracing,load:o.load};
- return generateStructure({id:b.id,anchors,clearance:(p:V)=>Math.min(index.distance(p),p[2]-floor-LIFT),settings},progress);
+ const r=await generateStructure({id:b.id,anchors,clearance:(p:V)=>Math.min(index.distance(p),p[2]-floor-LIFT),settings},progress);
+ // Standing: parts and structure together, on the feet as built.
+ const parts=partsCentre(b),v=r.mesh.vertices,n=v.length/3;let sx=0,sy=0,sz=0;for(let k=0;k<v.length;k+=3){sx+=v[k];sy+=v[k+1];sz+=v[k+2];}const all=parts.mass+r.report.mass,centre:V=[(parts.centre[0]*parts.mass+sx/n*r.report.mass)/all,(parts.centre[1]*parts.mass+sy/n*r.report.mass)/all,(parts.centre[2]*parts.mass+sz/n*r.report.mass)/all];
+ const feet=anchors.filter(a=>a.role==='support').map(a=>[a.frame.position[0],a.frame.position[1]] as [number,number]),tip=feet.length>=3?tipAngle(centre,feet,floor):undefined;void rotate;
+ r.report.checks.push(tip===undefined?{id:'stand',state:'pass',message:'Fest verschraubt.'}:{id:'stand',state:tip<5?'fail':tip<TIP-1?'warn':'pass',message:`Kippt ab ${tip.toFixed(0)}° (Schwerpunkt ${(centre[2]-floor).toFixed(0)} mm hoch, ${all.toFixed(0)} g mit Teilen).`});
+ return r;
 }

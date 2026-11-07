@@ -12,7 +12,8 @@ import {newBuild,modelBuild,newItem,newPlateNode,partOf,sheet,footprint,plugRect
 import type {Build,BuildItem,Free,Issue,PlateNode,Sheet} from './parts/build';
 import {solidScad} from './parts/scad';
 import {solveBuild,surfacePoints,axisLever} from './parts/layout';
-import {unheld,DEFAULT_LOAD} from './parts/net';
+import {unheld,DEFAULT_LOAD,designLoad} from './parts/net';
+import {massOf} from './parts/catalog';
 import type {Prim} from '../structure/sdf';
 import type {Frame,V} from './kinematics/math';
 import {compose,axisAngle} from './kinematics/math';
@@ -277,6 +278,7 @@ export class BuildEditor{
   else root.append(number('X [mm]',i.at[0],n=>set('Teil verschoben',x=>{x.at[0]=n;}),'1'),number('Y [mm]',i.at[1],n=>set('Teil verschoben',x=>{x.at[1]=n;}),'1'),number('Drehung [°]',i.angle,n=>set('Teil gedreht',x=>{x.angle=n;}),'15'));
   if(i.plate)root.append(select('Seite',i.side,[['top','Oberseite'],['bottom','Unterseite']],v=>set('Seite geändert',x=>{x.side=v as BuildItem['side'];})));
   root.append(number('Mindestabstand [mm]',i.clearance,n=>set('Abstand geändert',x=>{x.clearance=Math.max(0,n);})));
+  root.append(number(`Masse [g]${i.mass===undefined?' (geschätzt)':''}`,i.mass??massOf(p),n=>set('Masse geändert',x=>{x.mass=Math.max(0,n);}),'1'));
   const g=generator(i.holder.kind);
   root.append(heading('Halter'),select('Art',i.holder.kind,generators.filter(x=>x.accepts(p)).map(x=>[x.id,x.label]),v=>set('Halter geändert',x=>{x.holder={kind:v,params:generator(v)!.defaults(p)};})));
   for(const q of g?.params??[])root.append(number(q.label,i.holder.params[q.key]??0,n=>set(`${q.label} geändert`,x=>{x.holder.params[q.key]=Math.max(q.min??0,n);}),String(q.step??.5)));
@@ -307,7 +309,8 @@ export class BuildEditor{
  private netPanel(root:HTMLElement,b:Build,number:NumberField,select:SelectField){
   const n=this.net,stale=!!n.positions&&n.key!==this.netKey(b),loose=unheld(b);
   root.append(heading('Baum-Netz als Träger'),el('p',{className:'muted',textContent:'Hält alle Teile und Platten an ihren Haltepunkten, wo sie im Raum stehen, auf vier Füßen darunter. Die Streben weichen Teilen und Steckern aus.'}),
-   select('Struktur',String(n.bracing),[['0','Baum'],['1','leichtes Netz'],['2','dichtes Netz']],v=>{n.bracing=Number(v);}),number('Last je Teil [N]',n.load,v=>{n.load=Math.max(.5,v);}));
+   select('Struktur',String(n.bracing),[['0','Baum'],['1','leichtes Netz'],['2','dichtes Netz']],v=>{n.bracing=Number(v);}),number('Handlast je Teil [N]',n.load,v=>{n.load=Math.max(.5,v);}));
+  if(b.items.length)root.append(el('p',{className:'muted',textContent:`Auslegung: ${b.items.map(i=>`${partOf(b,i).label} ${designLoad(b,i,n.load).toFixed(0)} N`).join(' · ')}`}));
   for(const i of loose)root.append(el('p',{className:'state-warn',textContent:`${partOf(b,i).label} hat keinen Halter und bleibt lose.`}));
   const go=el('button',{textContent:n.state==='running'?'Wird erzeugt …':'🕸 Struktur erzeugen',className:'primary'});go.dataset.netMake='true';go.disabled=n.state==='running'||!b.items.length;go.onclick=()=>this.makeNet();root.append(go);
   const text=stale?'Der Aufbau hat sich geändert: Struktur neu erzeugen.':n.text;if(text)root.append(el('p',{id:'net-report',className:n.state==='error'?'state-fail':stale||n.state==='running'?'muted':'state-pass',textContent:text}));
@@ -316,7 +319,7 @@ export class BuildEditor{
  private makeNet(){
   const b=this.build(),n=this.net;if(!b)return;n.worker?.terminate();n.state='running';n.text='Struktur wird erzeugt …';n.positions=undefined;n.stl=undefined;const key=this.netKey(b),w=new Worker('./mechanics-structure-worker.js');n.worker=w;
   w.onmessage=({data})=>{if(n.worker!==w)return;if(data.type==='progress'){const t=document.getElementById('net-report');n.text=`${data.stage} …`;if(t)t.textContent=n.text;return;}w.terminate();n.worker=undefined;
-   if(data.type==='net'){const fails=(data.checks as {state:string;message:string}[]).filter(c=>c.state==='fail');n.state=fails.length?'error':'done';n.positions=data.positions;n.stl=data.stl;n.key=key;n.text=fails.length?fails.map(c=>c.message).join(' · '):`${data.report.struts} Streben · ${data.report.mass.toFixed(0)} g · Auslastung ${(data.report.utilisation*100).toFixed(0)} % · Durchbiegung ${data.report.deflection.toFixed(2)} mm · Druck ${data.report.print.label}`;this.host.status('Baum-Netz erzeugt.');}
+   if(data.type==='net'){const fails=(data.checks as {state:string;message:string}[]).filter(c=>c.state==='fail');n.state=fails.length?'error':'done';n.positions=data.positions;n.stl=data.stl;n.key=key;const stand=(data.checks as {id:string;message:string}[]).find(c=>c.id==='stand')?.message??'';n.text=fails.length?fails.map(c=>c.message).join(' · '):`${data.report.struts} Streben · ${data.report.mass.toFixed(0)} g · Auslastung ${(data.report.utilisation*100).toFixed(0)} % · Durchbiegung ${data.report.deflection.toFixed(2)} mm · Druck ${data.report.print.label} · ${stand}`;this.host.status('Baum-Netz erzeugt.');}
    else{n.state='error';n.text=String(data.message??'Struktur nicht erzeugt.');this.host.status(n.text);}
    this.refresh();this.renderProperties();};
   w.postMessage({kind:'net',build:b,settings:{bracing:n.bracing,load:n.load}});this.renderProperties();
