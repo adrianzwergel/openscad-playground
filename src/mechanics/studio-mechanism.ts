@@ -38,7 +38,7 @@ type Item='mechanism'|'model'|'axis-new'|'drive-new'|'bearings'|'structure'|`dri
 export type GripOptions={mode:'translate'|'rotate';step:number;angle:number;space:'local'|'world'};
 /** `grip`: attaches the gizmo to a handle (undefined: takes it off a motor handle); `dragging`: the gizmo is held;
  * `free`: steps and grid are off (Alt held). */
-export type EditorHost={/** Takes the properties panel over (a part from the store is selected). */sideProperties?:()=>boolean;/** Seats of what else is mounted on the links. */extraSeats?:()=>Seat[];doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;free:()=>boolean};
+export type EditorHost={/** Takes the properties panel over (a part from the store is selected). */sideProperties?:()=>boolean;/** A page of the mechanism was chosen: nothing from the store stays selected. */deselect?:()=>void;/** Seats of what else is mounted on the links. */extraSeats?:()=>Seat[];doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;free:()=>boolean};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
 const deg=180/Math.PI;
@@ -312,7 +312,7 @@ export class MechanismEditor{
    root.append(el('div',{className:'tree-row'},open));
    if(this.activeId!==m.id)continue;
    const model=m.mechanism.bodies.some(b=>b.display?.kind==='mesh');
-   const sub=(label:string,item:Item)=>{const b=el('button',{textContent:label,className:'tree-sub'});b.setAttribute('aria-selected',String(this.item===item));b.onclick=()=>{this.item=item;this.renderProperties();this.drawHandles();this.host.leave();};root.append(el('div',{className:'tree-row'},b));};
+   const sub=(label:string,item:Item)=>{const b=el('button',{textContent:label,className:'tree-sub'});b.setAttribute('aria-selected',String(this.item===item));b.onclick=()=>{this.host.deselect?.();this.item=item;this.renderProperties();this.drawHandles();this.host.leave();};root.append(el('div',{className:'tree-row'},b));};
    const group=(text:string)=>root.append(el('div',{className:'tree-subgroup',textContent:text}));
    const drives=m.drives??[];
    if(model){sub('  🧩 Modell & Glieder','model');group('Achsen');for(const j of m.mechanism.joints)if(!j.id.startsWith('halt-')&&!owned(drives,j.id))sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);sub('  ＋ Achse anlegen','axis-new');
@@ -608,17 +608,18 @@ export class MechanismEditor{
   this.structureJob?.worker.terminate();this.structures.clear();this.view.clearOverlay('structure');
   const fab=this.fabrication(),assets:Record<string,{parts:{id:string;positions:Float32Array}[]}>={};
   for(const b of m.bodies)if(b.display?.kind==='mesh'){const a=this.assets.get(b.display.asset);if(a)assets[a.id]={parts:a.parts.map(p=>({id:p.id,positions:p.positions}))};}
+  const extra=this.host.extraSeats?.()??[],held=(x:{anchors?:{id:string}[]})=>x.anchors?.filter(a=>extra.some(s=>s.id===a.id)).length??0;let printed=0;
   const w=new Worker('./mechanics-structure-worker.js'),job={worker:w,state:'running' as 'running'|'done'|'error',text:'Lager werden geplant …',key:''};this.structureJob=job;
   const st=fab.structure??{},settings={load:Number(st.load??20),drives:{factor:Number(st.driveLoad??.5)},structure:{material:{rMin:Number(st.rMin??3)},bracing:Number(st.bracing??1),resolution:Number(st.resolution??.8)}};
   const render=()=>{const p=document.getElementById('structure-progress');if(p){p.textContent=job.text;p.dataset.state=job.state;}if(this.item==='structure')this.renderProperties();};
   w.onmessage=({data})=>{if(this.structureJob!==job)return;
    if(data.type==='plan'){this.showBearings(data.plan);job.text='Lager geplant. Strukturen werden erzeugt (Spitze zuerst) …';render();}
    if(data.type==='progress'){job.text=`${data.link}: ${data.stage} …`;const p=document.getElementById('structure-progress');if(p)p.textContent=job.text;}
-   if(data.type==='link'){this.structures.set(data.link,{positions:data.positions,stl:data.stl,report:data.report,checks:data.checks,error:data.error,skipped:data.skipped});
+   if(data.type==='link'){printed+=held(data);this.structures.set(data.link,{positions:data.positions,stl:data.stl,report:data.report,checks:data.checks,error:data.error,skipped:data.skipped});
     this.view.setOverlay('structure',[...this.structures.entries()].filter(([,x])=>x.positions).map(([link,x])=>({body:link,positions:x.positions!,color:linkColor(m.bodies.findIndex(b=>b.id===link),false)})));render();}
-   if(data.type==='done'){w.terminate();job.state='done';const fails=[...this.structures.values()].filter(x=>x.error||x.checks.some(c=>c.state==='fail')).length;job.text=fails?`${fails} Glied(er) mit Fehlern.`:`Fertig: ${[...this.structures.values()].filter(x=>x.positions).length} Glied(er) erzeugt und geprüft.`;this.view.hideModel=true;this.view.clearOverlay('none');render();}
+   if(data.type==='done'){w.terminate();job.state='done';const fails=[...this.structures.values()].filter(x=>x.error||x.checks.some(c=>c.state==='fail')).length;job.text=(fails?`${fails} Glied(er) mit Fehlern.`:`Fertig: ${[...this.structures.values()].filter(x=>x.positions).length} Glied(er) erzeugt und geprüft.`)+(extra.length?` ${printed} von ${extra.length} Haltepunkten der Teile eingebunden.`:'');this.view.hideModel=true;this.view.clearOverlay('none');render();}
    if(data.type==='error'){w.terminate();job.state='error';job.text='Fehlgeschlagen: '+data.message;render();}};
-  w.postMessage({mechanism:m,drives:this.drives(),assets,bearings:fab.bearings??{},settings});
+  w.postMessage({mechanism:m,drives:this.drives(),assets,bearings:fab.bearings??{},settings,seats:extra});
   render();
  }
 

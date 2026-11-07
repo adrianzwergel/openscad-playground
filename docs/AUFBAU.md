@@ -158,6 +158,7 @@ node scripts/parts/check-parts.mjs
 node scripts/parts/check-part-seats.mjs
 node scripts/check-studio-build-browser.mjs
 node scripts/check-studio-parts-on-model-browser.mjs
+node scripts/check-studio-parts-structure-browser.mjs
 node scripts/parts/check-train.mjs
 node scripts/check-studio-train-browser.mjs
 node scripts/check-studio-motor-place-browser.mjs

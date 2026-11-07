@@ -101,6 +101,7 @@ export class BuildEditor{
   this.syncGizmo();
   if(this.fitNext){this.fitNext=false;this.host.fit();}
  }
+ deselect(){this.selected=undefined;this.plateId=undefined;}
  /** Test entry: where the first thing that hangs on a link stands. */
  followerAt(){const f=this.followers.find(x=>x.free.body);return f?.object.position.toArray();}
  /** Moves what hangs on links with them: the frames change with every slider step. */

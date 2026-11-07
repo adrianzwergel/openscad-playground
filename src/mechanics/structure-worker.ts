@@ -20,7 +20,8 @@ self.onmessage=async({data})=>{
   if(data.kind==='net'){const r=await generateNet(data.build,data.settings??{},(stage,f)=>self.postMessage({type:'progress',stage,f})),positions=soup(r.mesh),stl=stlBinary(orientForPrint(r.mesh,r.report.print.up),data.build.label);self.postMessage({type:'net',positions,stl,report:{...r.report,checks:undefined},checks:r.report.checks},{transfer:[positions.buffer,stl.buffer]});return;}
   const m:Mechanism=structuredClone(data.mechanism),drives:Drive[]=data.drives??[],parts:Record<string,{parts:Part[]}>=data.assets??{};
   const assets=(id:string)=>parts[id];
-  const plan=planBearings(m,drives,assets,data.bearings??{});applyBearings(m,plan);
+  // What else is mounted on the links (parts from the store) joins the plan: the structures print it in.
+  const plan=planBearings(m,drives,assets,data.bearings??{});plan.seats.push(...(data.seats??[]));applyBearings(m,plan);
   self.postMessage({type:'plan',plan});
   // Meshing and clearance spread over field workers (one per core but one).
   const n=Math.max(1,Math.min(16,(navigator.hardwareConcurrency||4)-1)),workers=Array.from({length:n},()=>new Worker('./mechanics-field-worker.js'));
