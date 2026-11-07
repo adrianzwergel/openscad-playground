@@ -28,7 +28,8 @@ import {motorClash,driveCatalog,driveSpec,placeMotor,removeGear,removeDrive,held
 import {quaternionFromBasis,cross as crossV,unit} from './kinematics/math';
 import type {Seat} from './kinematics/bearings';
 import {KinematicsView,linkColor} from './kinematics-view';
-import {motorGrid,snapMotor,gridPlane} from './kinematics/motor-grid';
+import {motorGrid,snapMotor,gridPlane,motorPlaces} from './kinematics/motor-grid';
+import {axisLever} from './parts/layout';
 import type {MotorGrid,Snapped} from './kinematics/motor-grid';
 import type {MotionSolution} from './kinematics-view';
 
@@ -68,6 +69,8 @@ export class MechanismEditor{
  private gridCache?:{key:string;grid?:MotorGrid};private snapped?:Snapped;
  /** Grid lines in the 3D view (not pickable: a group among the handles). */
  private guides=new THREE.Group();
+ /** The motor place search: ball, goal, the drive it runs for. */
+ private place={radius:80,goal:'middle' as 'middle'|'axis'};private placing?:string;
  /** The drive whose motor is being dragged (until the drag ends). */
  private dragged?:string;
  /** Step 6/7: the bearing plan (cached per document state) and generated structures per link. */
@@ -420,6 +423,22 @@ export class MechanismEditor{
    w.postMessage({request:task.request,options:task.options,rail:task.info.rail});
   }catch(e){this.host.status('Suche nicht möglich: '+(e instanceof Error?e.message:e));}
   this.renderProperties();}
+ /** One silent search for a motor at a trial place: true at the first train found. */
+ private probe(m:Mechanism,drives:Drive[],d:Drive){return new Promise<boolean>(resolve=>{void (async()=>{
+  try{const values=this.values(m),ref=await this.poseAt(m,values),task=driveTask(m,drives,d,a=>this.assets.get(a),ref.poses[0].bodies,values,{catalog:this.searchCatalog().catalog}),w=new Worker('./mechanics-drive-worker.js'),end=(v:boolean)=>{clearTimeout(limit);w.terminate();resolve(v);},limit=setTimeout(()=>end(false),20000);w.onmessage=({data})=>{if(data.type==='solution')end(true);if(data.type==='done'||data.type==='error')end(false);};w.postMessage({request:task.request,options:task.options,rail:task.info.rail});}catch{resolve(false);}})();});}
+ /** Tries the grid's free places in the ball, best by the goal first, and moves the motor to the first with a train. */
+ private async findMotorPlace(id:string){
+  const e=this.entry(),m=e?.mechanism,d=e?.drives?.find(x=>x.id===id),grid=d&&this.grid(d);if(!e||!m||!d||!grid)return;
+  const frames=this.framesNow(),carrier=frames[d.body]??this.bodyFrame(d.body),mine=structuredClone(m),team=structuredClone(e.drives!),trial=team.find(x=>x.id===id)!;removeGear(mine,trial);
+  const room=(f:Frame)=>{trial.frame=f;placeMotor(mine,trial);return !motorClash(mine,team,trial,this.assetsOf(mine),{...frames,...(frames[d.id]?{[d.id]:compose(carrier,f)}:{})}).length;};
+  const places=motorPlaces(grid,d.frame,{center:d.frame.position,radius:this.place.radius}).filter(s=>room(s.frame)).map(s=>{const world=compose(carrier,s.frame).position;return {...s,score:this.place.goal==='axis'?axisLever(mine,team,frames,d.body,world):Math.hypot(s.frame.position[0]-d.frame.position[0],s.frame.position[1]-d.frame.position[1],s.frame.position[2]-d.frame.position[2])};}).sort((a,b)=>a.score-b.score);
+  if(!places.length){this.host.status('Im Radius gibt es keinen freien Platz, den der Katalog erreicht.');return;}
+  this.placing=id;this.renderProperties();const every=Math.max(1,Math.floor(places.length/6));
+  try{for(const s of places.filter((_,k)=>k%every===0).slice(0,7)){const t=document.getElementById('drive-progress');if(t)t.textContent=`Motorplatz: ${s.family.label} wird geprüft …`;trial.frame=s.frame;placeMotor(mine,trial);if(!await this.probe(mine,team,trial))continue;
+    this.placing=undefined;this.editDrive(id,`Motorplatz gefunden: ${s.family.label}, ${s.distance.toFixed(1)} mm von der Achse.`,(x,y)=>{removeGear(y,x);x.frame=s.frame;placeMotor(y,x);});void this.findGear(id);return;}
+   this.host.status('Kein Platz im Radius, an dem die Suche ein Getriebe findet.');}
+  finally{this.placing=undefined;this.renderProperties();}
+ }
  /** Why the tried trains were turned down, in words (the search's rejection counts). */
  private rejectionText(r?:Record<string,number>){const words:Record<string,string>={closure:'gingen nicht auf',space:'stießen an Teile des Modells oder aneinander',rail:'hätten die Schiene hinter die Bahn gelegt',reach:'reichten nicht bis zur Achse',domain:'waren geometrisch ungültig',seed:'ließen sich nicht ansetzen'};
   const parts=Object.entries(r??{}).filter(([k,n])=>words[k]&&n>0).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${n} ${words[k]}`);return parts.length?` (geprüfte Getriebe: ${parts.join(', ')})`:'';}
@@ -503,6 +522,10 @@ export class MechanismEditor{
   const progress=el('p',{className:'muted',id:'drive-progress',textContent:s?.text??(d.gear?'':'Die Suche läuft im Glied, auf dem der Motor sitzt; die Teile des Modells sind Sperrzonen.')});progress.dataset.drive=id;if(s)progress.dataset.state=s.state;
   const results=el('div',{id:'drive-results',className:'drive-results'});
   out.push(el('h2',{textContent:'Getriebe'}),find,progress,results);
+  // The place itself: the tool tries the catalog grid's places in a ball around the motor until a train is found.
+  if(this.grid(d)?.families.length){const radius=ui.number('Radius um den Motor [mm]',this.place.radius,n=>{this.place.radius=Math.max(5,n);},'10');radius.querySelector('input')!.dataset.placeRadius='true';
+   const goal=ui.select('Ziel',this.place.goal,[['middle','möglichst nah am Motor'],['axis','kurzer Hebel zu den Achsen (Gewicht)']],v=>{this.place.goal=v as 'middle'|'axis';});
+   const go=el('button',{textContent:this.placing?'Platz wird gesucht …':'✨ Motorplatz suchen'});go.dataset.findMotorPlace=id;go.disabled=!!this.placing;go.onclick=()=>void this.findMotorPlace(id);out.push(el('h2',{textContent:'Motorplatz'}),radius,goal,go);}
   // Found trains stay listed (until one is adopted), also when coming back to this page.
   if(s)queueMicrotask(()=>this.renderSearch());
   if(d.gear){

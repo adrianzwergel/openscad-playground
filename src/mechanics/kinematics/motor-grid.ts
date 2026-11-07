@@ -94,6 +94,14 @@ export function snapMotor(grid:MotorGrid,frame:Frame,o:{only?:string;magnet?:num
  const n0=cross(a,s),n=scale(n0,1/norm(n0)),off=dot(rel,n),hit=nearestFamily(families,Math.abs(off),o.magnet)!,signed=(off<0?-1:1)*hit.distance;
  return {frame:{position:add(frame.position,scale(n,signed-off)),rotation},family:hit.family,distance:hit.distance};
 }
+/** The places of a ball the grid offers for this motor: around the axis at the flange's height and two more, every
+ * `turns`-th of a circle, on each family, each place once. */
+export function motorPlaces(grid:MotorGrid,flange:Frame,o:{center:V;radius:number;turns?:number}){
+ const plane=gridPlane(grid,flange.position),turns=o.turns??36,seen=new Set<string>(),out:Snapped[]=[];
+ for(const f of grid.families){const radii=f.lo===f.hi?[f.lo]:Array.from({length:5},(_,k)=>f.lo+(f.hi-f.lo)*k/4);
+  for(const lift of [0,-o.radius/2,o.radius/2])for(const r of radii)for(let k=0;k<turns;k++){const t=2*Math.PI*k/turns,trial=compose(plane,{position:[r*Math.cos(t),r*Math.sin(t),lift],rotation:[0,0,0,1]}).position,s=snapMotor(grid,{...flange,position:trial},{only:f.key});if(!s)continue;const p=s.frame.position,key=p.map(n=>Math.round(n)).join();if(seen.has(key)||Math.hypot(p[0]-o.center[0],p[1]-o.center[1],p[2]-o.center[2])>o.radius)continue;seen.add(key);out.push(s);}}
+ return out;
+}
 const perpendicular=(v:V):V=>{const p=cross(v,Math.abs(v[0])<.9?[1,0,0]:[0,1,0]);return scale(p,1/norm(p));};
 const normalise=(q:number[])=>{const l=Math.hypot(...q);return q.map(x=>x/l) as Frame['rotation'];};
 /** The axis frame at the motor's height (for drawing the grid around it): z along the axis. */

@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import {demos} from '../../src/mechanics/demos.ts';
 import {driveTask,placeMotor,removeGear,modelAxes} from '../../src/mechanics/kinematics/drive.ts';
-import {motorGrid,snapMotor} from '../../src/mechanics/kinematics/motor-grid.ts';
+import {motorGrid,snapMotor,motorPlaces} from '../../src/mechanics/kinematics/motor-grid.ts';
 import {route} from '../../src/mechanics/kinematics/search/route.ts';
 import {solve} from '../../src/mechanics/kinematics/solver.ts';
 import {compose,rotate,add,scale,dot,norm,cross,axisAngle} from '../../src/mechanics/kinematics/math.ts';
@@ -51,4 +51,6 @@ assert.ok(found,'Suche findet am Rasterplatz das einstufige Getriebe z20 → z40
 {const g=motorGrid(m,d,{catalog:{excludedRules:['bevel-mesh','worm-mesh','lego-bevel-90','lego-worm'],lockedParts:[]}});assert.ok(g.families.every(f=>f.kind==='parallel'),'ohne Kegel und Schnecke nur parallele Familien');}
 // Linear axes and paths: no grid.
 {const c=demos.cnc(),cm=structuredClone(c.mechanism);for(const x of c.drives)placeMotor(cm,x);const lin=c.drives.find(x=>cm.joints.find(j=>j.id===x.axis).joint.kind!=='revolute');assert.equal(motorGrid(cm,lin),undefined,'Linearachse ohne Raster');}
+// Places in a ball: all on the grid and in the ball, each once.
+{const center=d.frame.position,places=motorPlaces(grid,d.frame,{center,radius:90});assert.ok(places.length>5,`${places.length} Plätze`);for(const s of places){assert.ok(Math.hypot(s.frame.position[0]-center[0],s.frame.position[1]-center[1],s.frame.position[2]-center[2])<=90);assert.deepEqual(snapMotor(grid,s.frame,{only:s.family.key}).frame.position.map(n=>Math.round(n*100)),s.frame.position.map(n=>Math.round(n*100)));}assert.equal(new Set(places.map(s=>s.frame.position.map(n=>Math.round(n)).join())).size,places.length);assert.equal(motorPlaces(grid,d.frame,{center:[9e3,0,0],radius:10}).length,0);}
 console.log(`Motorraster: ${grid.families.length} Familien in ${ms.toFixed(0)} ms, z20 → z40 auf 60 mm, Kegelräder quer durch die Achse, Suche findet das Getriebe am Rasterplatz (${tried}. Lage), Katalog wirkt.`);

@@ -11,7 +11,7 @@ unverändert; sie sollen später von hier aus angesprochen werden.
 | 1b | Freie Lage im Raum, Teile am Modell, Platte als Element | fertig |
 | 2 | Clip-Generator als weiterer Halter | fertig |
 | 3 | Zahnräder im Store, Übersetzung in das Mechanismus-Format | fertig (parallele Wellen, Planetenstufe als Baustein) |
-| 4 | Lage als Bereich oder Auto, das Tool sucht die Plätze | fertig für Teile; Motoren der Antriebe offen |
+| 4 | Lage als Bereich oder Auto, das Tool sucht die Plätze, auch für Motoren | fertig |
 | 5 | Automatische Gehäuse, Getriebe-Vorschläge | offen |
 
 ## Katalog (`src/mechanics/parts/catalog.ts`)
@@ -92,6 +92,11 @@ Ein Teil ohne `wish` ist fest. Mit `wish` gehört der Platz dem Tool:
   besten Plätze liegen oft nebeneinander und scheitern zusammen. Die Masse der Teile geht nicht ein, der Hebel ist
   also ein Abstandsmaß und keine Momentenrechnung.
 
+**Motorplatz:** Auf der Antriebsseite sucht `findMotorPlace` in einer Kugel um den Motor. `motorPlaces` nimmt die Plätze des
+Katalograsters, die Kollisionsprüfung siebt, das Ziel ordnet (nah am Motor, oder kurzer Hebel). Dann läuft die Getriebesuche
+an bis zu sieben über die Liste gestreuten Plätzen, je bis 20 s, bis eine ein Getriebe findet; dort landet der Motor, die
+normale Suche listet die Getriebe zum Übernehmen.
+
 ## Getriebe (`src/mechanics/parts/train.ts`, `src/mechanics/studio-train.ts`)
 
 Ein Getriebe ist ein `Build` mit `train`: Wellen in einer Ebene (`at`), Räder darauf (`z` längs der Welle), dazu Eingang,
@@ -132,4 +137,5 @@ node scripts/check-studio-build-browser.mjs
 node scripts/check-studio-parts-on-model-browser.mjs
 node scripts/parts/check-train.mjs
 node scripts/check-studio-train-browser.mjs
+node scripts/check-studio-motor-place-browser.mjs
 ```
