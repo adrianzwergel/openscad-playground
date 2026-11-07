@@ -11,6 +11,8 @@ import {generators,generator} from './parts/generators';
 import {newBuild,modelBuild,newItem,newPlateNode,partOf,sheet,footprint,plugRects,issues,snapTo,nearestFree,plateRect,plateOutline,plateHoles,holderGeometry,flipped,liftOf,shopping,standing,buildGeometry,snap,worldOf,reframe,onSurface,partBox,plateBox,holderPiece} from './parts/build';
 import type {Build,BuildItem,Free,Issue,PlateNode,Sheet} from './parts/build';
 import {solidScad} from './parts/scad';
+import JSZip from 'jszip';
+import {caseParts,caseBlockers,defaultCase} from './parts/case';
 import {solveBuild,surfacePoints,axisLever} from './parts/layout';
 import {unheld,DEFAULT_LOAD,designLoad} from './parts/net';
 import {massOf} from './parts/catalog';
@@ -64,7 +66,7 @@ export class BuildEditor{
  private attachedTo?:string;private selected?:string;private plateId?:string;private drag?:Drag;private filter='';private loaded=new Map<string,THREE.BufferGeometry>();private fitNext=false;
  /** Things that hang on a link, to follow it while the mechanism moves. */
  private followers:{object:THREE.Object3D;free:Free}[]=[];
- private sweepText='';
+ private sweepText='';private showCase=false;
  /** The tree-and-net carrier of the open build: choices, the running job, the last result and what it was made from. */
  private net={bracing:1,load:DEFAULT_LOAD,state:'' as ''|'running'|'done'|'error',text:'',key:'',positions:undefined as Float32Array|undefined,stl:undefined as Uint8Array|undefined,worker:undefined as Worker|undefined};
  private netKey(b:Build){return JSON.stringify([b.items,b.plates,b.parts.length]);}
@@ -116,6 +118,7 @@ export class BuildEditor{
   const solids:Prim[]=[];for(const i of b.items){const g=holderGeometry(b,i);solids.push(...g.solids);for(const p of g.holes)if(p.kind==='cylinder'&&p.z0<-t&&p.z1>0&&inside(p.frame.position[0],p.frame.position[1],p.r))round(p.frame.position[0],p.frame.position[1],p.r);}
   const plate=new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth:t,bevelEnabled:false,curveSegments:32}),new THREE.MeshStandardMaterial({color:0x8d9aa5,metalness:.1,roughness:.7}));plate.position.z=-t;root.add(plate);
   for(const s of solids){const m=primMesh(s);if(m)root.add(m);}
+  if(this.showCase&&b.items.length&&!caseBlockers(b).length){const c=caseParts(b,b.plate.housing);for(const s of [...c.base.solids.slice(1,5),...c.lid.solids.slice(0,1)]){const m=primMesh(s);if(m){(m.material as THREE.MeshStandardMaterial).transparent=true;(m.material as THREE.MeshStandardMaterial).opacity=.22;(m.material as THREE.MeshStandardMaterial).depthWrite=false;root.add(m);}}}
   for(const i of b.items){const p=partOf(b,i),holder=this.partObject(p,i);
    holder.position.set(i.at[0],i.at[1],i.side==='top'?liftOf(i):-t-liftOf(i));holder.rotation.set(flipped(p,i)?Math.PI:0,0,0);holder.rotateOnWorldAxis(new THREE.Vector3(0,0,1),i.angle*Math.PI/180);root.add(holder);
    const z=(i.side==='top'?.15:-t-.15),line=(pts:[number,number][],color:number)=>{const l=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts.map(([x,y])=>new THREE.Vector3(x,y,z))),new THREE.LineBasicMaterial({color}));root.add(l);};
@@ -163,7 +166,7 @@ export class BuildEditor{
   d.over=!d.isNew||document.elementFromPoint(e.clientX,e.clientY)===this.host.canvas();if(!d.over){this.refresh();return;}
   if(d.plate){const s=this.locate(e,{...b,plates:b.plates.filter(p=>p.id!==d.plate!.id)});if(s&&'surface' in s)d.plate.free=reframe({frame:onSurface({...parts[0],body:1},s.surface!.point,s.surface!.normal,d.plate.thickness)},s.surface!.body||undefined,this.host.frames());this.refresh();return;}
   const s=this.locate(e,b),i=d.item!;if(!s)return;
-  if('plate' in s&&s.plate){const wish:[number,number]=[s.at[0]+d.offset[0],s.at[1]+d.offset[1]],on=i.plate===s.plate;i.plate=s.plate;delete i.free;if(!on&&i.holder.kind==='none')i.holder=newItem('',partOf(b,i),[0,0]).holder;const flat=sheet({...b,items:b.items.filter(x=>x.id!==i.id)},s.plate);i.at=e.altKey?wish:snapTo(flat,i,wish);}
+  if('plate' in s&&s.plate){if(partOf(b,i).mount==='support')return;const wish:[number,number]=[s.at[0]+d.offset[0],s.at[1]+d.offset[1]],on=i.plate===s.plate;i.plate=s.plate;delete i.free;if(!on&&i.holder.kind==='none')i.holder=newItem('',partOf(b,i),[0,0]).holder;const flat=sheet({...b,items:b.items.filter(x=>x.id!==i.id)},s.plate);i.at=e.altKey?wish:snapTo(flat,i,wish);}
   else if('surface' in s){const p=partOf(b,i),f=s.surface!;delete i.plate;i.free=reframe({frame:onSurface(p,f.point,f.normal,liftOf(i),i.angle)},f.body||undefined,this.host.frames());}
   this.refresh();
  }
@@ -240,7 +243,7 @@ export class BuildEditor{
  private fillStore(list:HTMLElement){
   list.replaceChildren();const q=this.filter.toLowerCase(),b=this.build(),all=[...parts,...(b?.parts??[])].filter(p=>!q||`${p.label} ${p.group}`.toLowerCase().includes(q));
   if(!q||'bodenplatte'.includes(q)){const row=el('div',{className:'part-card',title:'Ein Element wie jedes andere: auf eine Fläche ziehen, Teile darauf setzen.'},el('strong',{textContent:'Bodenplatte'}),el('small',{textContent:'Größe und Bohrungen einstellbar'}));row.dataset.storePlate='true';row.onpointerdown=e=>{e.preventDefault();this.startPlate(e);};list.append(row);}
-  for(const group of partGroups){const items=all.filter(p=>p.group===group);if(!items.length)continue;const box=el('details',{open:!!q||!this.attached&&(group==='Controller'||group==='Motoren')},el('summary',{textContent:`${group} (${items.length})`}));
+  for(const group of partGroups){const items=all.filter(p=>p.group===group);if(!items.length||group==='Befestigung'&&this.attached)continue;const box=el('details',{open:!!q||!this.attached&&(group==='Controller'||group==='Motoren')},el('summary',{textContent:`${group} (${items.length})`}));
    for(const p of items){const size=p.box.max.map((v,k)=>v-p.box.min[k]),row=el('div',{className:'part-card',title:p.note??`Quelle: ${p.source}`},el('strong',{textContent:`${p.checked?'':'⚠ '}${p.label}`}),el('small',{textContent:`${mm(size[0])} × ${mm(size[1])} × ${mm(size[2])} mm · ${p.holes.length} Löcher`}));row.dataset.part=p.id;row.onpointerdown=e=>{e.preventDefault();this.startNew(p,e);};box.append(row);}
    list.append(box);}
  }
@@ -303,12 +306,16 @@ export class BuildEditor{
   const add=el('button',{textContent:'＋ Bohrung'});add.dataset.addHole='true';add.onclick=()=>plate('Bohrung hinzugefügt',x=>{x.holes.push({id:'b-'+crypto.randomUUID().slice(0,8),at:[(r.x0+r.x1)/2,(r.y0+r.y1)/2],d:4});});
   const stl=el('button',{textContent:'⬇ Platte als STL',className:'primary'});stl.dataset.plateStl='true';stl.onclick=()=>this.exportSheet(flat,b.label);
   if(b.items.some(i=>i.plate===n.id&&i.wish)){const go=el('button',{textContent:'✨ Plätze neu suchen'});go.dataset.solve='true';go.onclick=()=>edit('Plätze gesucht',x=>{solveBuild(x);});root.append(go);}
+  const h=p.housing??defaultCase,housing=(key:keyof typeof defaultCase,v:number)=>plate('Gehäuse geändert',x=>{x.housing={...(x.housing??defaultCase),[key]:v};}),blocked=caseBlockers(flat);
+  root.append(heading('Gehäuse'),number('Wand [mm]',h.wall,v=>housing('wall',Math.max(.8,v)),'0.2'),number('Deckel [mm]',h.lid,v=>housing('lid',Math.max(.8,v)),'0.2'),number('Luft über den Teilen [mm]',h.top,v=>housing('top',Math.max(0,v))),number('Passung Deckel [mm]',h.fit,v=>housing('fit',Math.max(0,v)),'0.05'));
+  if(blocked.length)root.append(el('p',{className:'state-warn',textContent:`${partOf(flat,blocked[0]).label} passt nicht hinein: Motoren und Teile unter der Platte bleiben draußen.`}));
+  const show=el('input',{type:'checkbox',checked:this.showCase});show.dataset.caseShow='true';show.onchange=()=>{this.showCase=show.checked;this.refresh();};const zip=el('button',{textContent:'📦 Gehäuse als ZIP',className:'primary'});zip.dataset.caseZip='true';zip.disabled=!!blocked.length||!flat.items.length;zip.onclick=()=>void this.exportCase(flat,b.label);root.append(el('label',{className:'check'},show,'In der Ansicht zeigen'),zip);
   const drop=el('button',{textContent:'Platte entfernen',className:'danger'});drop.dataset.removePlate='true';drop.onclick=()=>{this.plateId=undefined;edit('Platte entfernt',x=>{x.items=x.items.filter(i=>i.plate!==n.id);x.plates=x.plates.filter(y=>y.id!==n.id);});};root.append(add,stl,drop);
  }
  /** The structure as the carrier: holders become anchors, feet stand under the build. */
  private netPanel(root:HTMLElement,b:Build,number:NumberField,select:SelectField){
   const n=this.net,stale=!!n.positions&&n.key!==this.netKey(b),loose=unheld(b);
-  root.append(heading('Baum-Netz als Träger'),el('p',{className:'muted',textContent:'Hält alle Teile und Platten an ihren Haltepunkten, wo sie im Raum stehen, auf vier Füßen darunter. Die Streben weichen Teilen und Steckern aus.'}),
+  root.append(heading('Baum-Netz als Träger'),el('p',{className:'muted',textContent:'Hält alle Teile und Platten an ihren Haltepunkten, wo sie im Raum stehen. Die Streben weichen Teilen und Steckern aus. Ohne Punkte aus „Befestigung“ im Store entstehen vier Füße darunter.'}),
    select('Struktur',String(n.bracing),[['0','Baum'],['1','leichtes Netz'],['2','dichtes Netz']],v=>{n.bracing=Number(v);}),number('Handlast je Teil [N]',n.load,v=>{n.load=Math.max(.5,v);}));
   if(b.items.length)root.append(el('p',{className:'muted',textContent:`Auslegung: ${b.items.map(i=>`${partOf(b,i).label} ${designLoad(b,i,n.load).toFixed(0)} N`).join(' · ')}`}));
   for(const i of loose)root.append(el('p',{className:'state-warn',textContent:`${partOf(b,i).label} hat keinen Halter und bleibt lose.`}));
@@ -326,7 +333,7 @@ export class BuildEditor{
  }
  /** Fixed, a zone, or open; on a model a zone with a goal. Asking for a place on a plate takes effect at once. */
  private placeFields(root:HTMLElement,b:Build,i:BuildItem,p:Part,number:NumberField,select:SelectField,set:(m:string,f:(x:BuildItem)=>void)=>void){
-  const onPlate=!!i.plate,mode=i.wish?.mode??'fixed',solved=(message:string,fn:(x:BuildItem)=>void)=>this.host.change(()=>{const x=this.build()!,y=x.items.find(z=>z.id===i.id);if(y)fn(y);solveBuild(x);},message);
+  const onPlate=!!i.plate,mode=i.wish?.mode??'fixed',solved=(message:string,fn:(x:BuildItem)=>void)=>{let failed:string[]=[];this.host.change(()=>{const x=this.build()!,y=x.items.find(z=>z.id===i.id);if(y)fn(y);failed=solveBuild(x);},message);if(failed.length){const now=this.build()!;this.host.status(`Kein Platz für ${failed.map(id=>{const q=now.items.find(z=>z.id===id);return q?partOf(now,q).label:id;}).join(', ')}: größere Platte oder größerer Bereich.`);}};
   if(!onPlate&&!this.attached)return;
   root.append(select('Platz',mode,onPlate?[['fixed','🔒 Fest'],['zone','↔ Bereich: ungefähr hier'],['auto','✨ Auto: egal wo']]:[['fixed','🔒 Fest'],['zone','↔ Bereich: ungefähr hier']],v=>{if(v==='fixed')solved('Platz fest',x=>{delete x.wish;});else if(v==='auto')solved('Platz automatisch',x=>{x.wish={mode:'auto',center:[],size:[],goal:'middle'};});else if(onPlate)solved('Bereich gesetzt',x=>{x.wish={mode:'zone',center:[...x.at],size:[60,60],goal:'middle'};});else set('Bereich gesetzt',x=>{x.wish={mode:'zone',center:[...worldOf(x.free!,this.host.frames()).position],size:[80],goal:'middle'};});}));
   const w=i.wish;if(!w||w.mode!=='zone')return;
@@ -345,6 +352,13 @@ export class BuildEditor{
   for(const c of found.filter((_,k)=>k%every===0)){const free=reframe({frame:c.frame},c.body,frames),test={...b,items:b.items.map(x=>x.id===id?{...x,free}:x)};if(range.some(r=>this.spaceIssues(test,r.frames).some(x=>x.items.includes(id))))continue;
    this.host.change(()=>{const y=this.build()!.items.find(x=>x.id===id);if(y)y.free=free;},`Platz gefunden an ${c.body}: ${c.lever.toFixed(0)} mm Hebel zu den Achsen.`);return;}
   this.host.status(found.length?'Kein Platz im Bereich, der über den ganzen Fahrweg frei bleibt.':'Kein freier Platz auf dem Modell in diesem Bereich.');
+ }
+ /** Base and lid as a ZIP of STLs, with what it takes to put it together. */
+ private async exportCase(s:Sheet,name:string){
+  try{this.host.status('Gehäuse wird erzeugt …');const c=caseParts(s,s.plate.housing),render=(g:{solids:Prim[];holes:Prim[]})=>new Promise<Uint8Array>((resolve,reject)=>{const w=new Worker('./mechanics-render-worker.js');w.onmessage=({data})=>{w.terminate();if(data.error)reject(Error(data.error));else resolve(data.stl);};w.postMessage({source:solidScad(g)});}),[base,lid]=[await render(c.base),await render(c.lid)],z=new JSZip(),safe=name.replace(/[^\wäöüÄÖÜß-]+/g,'_');
+   z.file(`${safe}-unterteil.stl`,base);z.file(`${safe}-deckel.stl`,lid);z.file('hinweise.txt',[`${name}: ${c.outer.map(n=>n.toFixed(0)).join(' × ')} mm.`,`Öffnungen: ${c.openings.map(o=>o.label).join(', ')||'keine'}.`,`Der Deckel schnappt mit zwei Haken ein, Dehnung im Haken ${(c.strain*100).toFixed(1)} %. Unterteil mit der Bodenplatte nach unten drucken, den Deckel auf dem Kopf; die Haken stehen dann senkrecht.`,...shopping(s).map(l=>`${l.count} × ${l.label}`)].join('\n'));
+   const url=URL.createObjectURL(await z.generateAsync({type:'blob'})),a=el('a',{href:url,download:`${safe}-gehaeuse.zip`});a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);this.host.status(`Gehäuse erzeugt: ${c.outer.map(n=>n.toFixed(0)).join(' × ')} mm, ${c.openings.length} Öffnungen.`);}
+  catch(e){this.host.status(`Gehäuse: ${e instanceof Error?e.message:e}`);}
  }
  /** Exact booleans in the render worker: what the printer gets is OpenSCAD's result, not the preview. */
  private exportSheet(s:Sheet,name:string){

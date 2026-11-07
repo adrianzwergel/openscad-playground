@@ -24,7 +24,7 @@ export type Wish={mode:'zone'|'auto';center:number[];size:number[];goal:'middle'
 export type BuildItem={id:string;part:string;at:P2;angle:number;side:'top'|'bottom';clearance:number;holder:{kind:string;params:Record<string,number>};holes?:Record<string,{d?:number;off?:boolean}>;plugsOff?:string[];plate?:string;free?:Free;wish?:Wish;/** Real mass (g), where the estimate is not good enough. */mass?:number};
 export type PlateHole={id:string;at:P2;d:number};
 /** `auto`: the outline wraps the parts with `margin`; `fixed`: `size` around `center`. */
-export type Plate={mode:'auto'|'fixed';size:P2;center:P2;margin:number;thickness:number;corner:number;holes:PlateHole[];mount:{on:boolean;d:number;inset:number}};
+export type Plate={mode:'auto'|'fixed';size:P2;center:P2;margin:number;thickness:number;corner:number;holes:PlateHole[];mount:{on:boolean;d:number;inset:number};/** The housing's numbers, where they differ from the defaults. */housing?:{wall:number;lid:number;top:number;fit:number}};
 export type PlateNode=Plate&{id:string;free:Free};
 /** `mechanism`: the mechanism it belongs to; without one it stands alone. */
 export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];parts:Part[];grid:number;mechanism?:string;/** A gear train instead of plates and parts. */train?:Train};
@@ -46,7 +46,7 @@ const parseFree=(f:Free|undefined):Free=>{const q=f?.frame;if(!q||!Array.isArray
 const parseWish=(w:Wish):Wish=>{if(w.mode!=='zone'&&w.mode!=='auto'||w.goal!=='middle'&&w.goal!=='axis'||!Array.isArray(w.center)||!Array.isArray(w.size)||![...w.center,...w.size].every(Number.isFinite))throw Error('Aufbau: Wunsch ungültig');return structuredClone(w);};
 function parsePlate(p:PlateNode):PlateNode{
  if(!p||p.mode!=='auto'&&p.mode!=='fixed'||!Array.isArray(p.holes)||p.holes.length>500)throw Error('Aufbau: Platte ungültig');
- return {id:text(p.id,'Platte'),free:parseFree(p.free),mode:p.mode,size:pair(p.size,10,2000,'Plattengröße'),center:pair(p.center,-5000,5000,'Plattenmitte'),margin:num(p.margin,0,200,'Rand'),thickness:num(p.thickness,.4,50,'Plattendicke'),corner:num(p.corner,0,100,'Eckenradius'),holes:p.holes.map(h=>({id:text(h.id,'Bohrung'),at:pair(h.at,-5000,5000,'Bohrung'),d:num(h.d,.2,200,'Bohrung')})),mount:{on:!!p.mount?.on,d:num(p.mount?.d,.2,50,'Eckbohrung'),inset:num(p.mount?.inset,0,100,'Eckbohrung')}};
+ return {id:text(p.id,'Platte'),free:parseFree(p.free),mode:p.mode,size:pair(p.size,10,2000,'Plattengröße'),center:pair(p.center,-5000,5000,'Plattenmitte'),margin:num(p.margin,0,200,'Rand'),thickness:num(p.thickness,.4,50,'Plattendicke'),corner:num(p.corner,0,100,'Eckenradius'),holes:p.holes.map(h=>({id:text(h.id,'Bohrung'),at:pair(h.at,-5000,5000,'Bohrung'),d:num(h.d,.2,200,'Bohrung')})),mount:{on:!!p.mount?.on,d:num(p.mount?.d,.2,50,'Eckbohrung'),inset:num(p.mount?.inset,0,100,'Eckbohrung')},...(p.housing?{housing:{wall:num(p.housing.wall,.4,20,'Wand'),lid:num(p.housing.lid,.4,20,'Deckel'),top:num(p.housing.top,0,200,'Luft oben'),fit:num(p.housing.fit,0,2,'Passung')}}:{})};
 }
 /** Checks a stored build; hand-made parts travel with it. Builds of one plate from before become plate `platte`. */
 export function parseBuild(value:unknown):Build{

@@ -12,7 +12,7 @@ unverändert; sie sollen später von hier aus angesprochen werden.
 | 2 | Clip-Generator als weiterer Halter | fertig |
 | 3 | Zahnräder im Store, Übersetzung in das Mechanismus-Format | fertig (parallele Wellen, Planetenstufe als Baustein) |
 | 4 | Lage als Bereich oder Auto, das Tool sucht die Plätze, auch für Motoren | fertig |
-| 5 | Automatische Gehäuse, Getriebe-Vorschläge | offen |
+| 5 | Automatische Gehäuse | fertig; Getriebe-Vorschläge aus dem Bestand offen |
 
 ## Katalog (`src/mechanics/parts/catalog.ts`)
 
@@ -85,8 +85,20 @@ Die Halter der Teile sind dieselben Sitze wie an einem Glied (`partSeats`), das 
   unter ihren Eckbohrungen. Teile auf einer Platte hält die Platte. Die Schritte Lager und Struktur nehmen sie mit.
 - **Eigenständig:** `generateNet` macht aus allen Sitzen Anker, setzt vier Füße unter den Aufbau und hält die Streben aus
   den Hüllen der Teile, den Steckerwegen und den Platten heraus. Das läuft im Struktur-Worker (`kind: 'net'`).
-- **Last:** je Teil, verteilt auf seine Haltepunkte, Standard 10 N: Elektronik wiegt Gramm, ausgelegt wird auf eine Hand, die
-  ein Kabel einsteckt. An Gliedern zählt ein Teil als halbe Ankerlast, ebenso verteilt. Die Masse der Teile geht nicht ein.
+- **Last:** `designLoad` je Teil, verteilt auf seine Haltepunkte: Handlast (Standard 10 N), dreimal das Gewicht, bei Motoren das
+  Haltemoment als Kräftepaar über dem Schraubkreis. Massen schätzt `massOf` aus der Hülle; am Teil lässt sich die echte
+  eintragen. An Gliedern zählt ein Teil pauschal als halbe Ankerlast.
+- **Stand:** Die Füße rücken so weit um den Schwerpunkt der Teile, dass der Aufbau frühestens bei 15° kippt. Nach dem Erzeugen
+  rechnet `tipAngle` mit Teilen und Struktur nach und meldet den Winkel. Geprüft wird die Standfläche, kein Rutschen.
+- **Befestigung:** Fuß, Schraubpunkt und Wandhalter sind Elemente im Store (`mount: 'support'`), frei platzierbar, auch an eine
+  Wand gedreht. Sobald einer im Aufbau ist, entfallen die automatischen Füße und die Tischebene.
+
+## Gehäuse (`src/mechanics/parts/case.ts`)
+
+`caseParts` macht aus einer Platte mit ihren Teilen Unterteil und Deckel. Die Platte ist der Boden, die Halter bleiben. Die
+Wände folgen dem Umriss, jede Steckerbahn, die eine Wand kreuzt, wird dort zum Fenster. Der Deckel hat einen Rand nach innen und
+zwei `snap`-Haken an dem Wandpaar mit weniger Öffnungen, sie weichen den Fenstern aus. Motoren und Teile unter der Platte
+passen nicht hinein und werden genannt. Ausgabe über OpenSCAD wie bei der Platte.
 
 ## Plätze suchen (`src/mechanics/parts/layout.ts`)
 
@@ -151,4 +163,6 @@ node scripts/check-studio-train-browser.mjs
 node scripts/check-studio-motor-place-browser.mjs
 node scripts/parts/check-net.mjs
 node scripts/check-studio-net-browser.mjs
+node scripts/parts/check-case.mjs
+node scripts/check-studio-case-browser.mjs
 ```
