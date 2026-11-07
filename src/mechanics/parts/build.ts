@@ -150,12 +150,24 @@ export function partBox(p:Part,world:Frame){return {frame:world,center:p.box.min
 export function plateBox(b:Build,n:PlateNode,world:Frame){const r=plateRect(sheet(b,n.id));return {frame:world,center:[(r.x0+r.x1)/2,(r.y0+r.y1)/2,-n.thickness/2] as V,half:[(r.x1-r.x0)/2,(r.y1-r.y0)/2,n.thickness/2] as V};}
 /** A free part's holder as a piece of its own: a small plate that follows the holes, the same holder on it. */
 export function holderPiece(b:Build,i:BuildItem):Sheet{const plate={...newPlate(),margin:4,mount:{on:false,d:3.4,inset:5}},item:BuildItem={...i,at:[0,0],angle:0,side:partOf(b,i).body>0?'top':'bottom'};delete item.free;return {plate,items:[item],parts:b.parts,grid:0};}
-/** Where the free parts on a link want to be printed into it: one seat per hole, the part's room kept free. */
-export function partSeats(b:Build):Seat[]{const out:Seat[]=[];
- for(const i of b.items){if(!i.free?.body||i.holder.kind==='none')continue;const p=partOf(b,i),f=i.free.frame,link=i.free.body;
-  if(i.holder.kind==='clip'){const h=i.holder.params,c=clipLayout(p,h),arm=clipArm(c.t,h),seat=(id:string,frame:Frame,feature:Seat['feature'],room=false):Seat=>({id:`${i.id}/${id}`,link,line:i.id,kind:'mount',part:p.id,frame:compose(f,frame),feature,...(room?{keep:{frame:f,r:Math.hypot(p.size[0],p.size[1])/2+1,z0:.5,z1:Math.max(p.box.max[2],1)+1}}:{})});
-   c.arms.forEach((a,k)=>out.push(seat(`arm${k+1}`,{position:[a.at[0],a.at[1],-h.height],rotation:axisAngle([0,0,1],Math.atan2(a.inward[1],a.inward[0])*180/Math.PI)},arm,k===0)));
-   [...c.posts,...c.stops].forEach((x,k)=>out.push(seat(`stuetze${k+1}`,{position:[x.at[0],x.at[1],x.feature.height-h.height],rotation:[0,0,0,1]},x.feature)));continue;}
-  const turn:Frame={position:[0,0,0],rotation:p.body>0?[0,0,0,1]:[1,0,0,0]},h=Math.max(1,liftOf(i)||5),keep=Math.hypot(p.box.max[0]-p.box.min[0],p.box.max[1]-p.box.min[1])/2+1;
-  p.holes.forEach((x,k)=>{if(i.holes?.[k]?.off)return;const d=i.holes?.[k]?.d??x.d;out.push({id:`${i.id}/loch${k+1}`,link:i.free!.body!,line:i.id,kind:'mount',part:p.id,frame:compose(compose(f,{position:[x.at[0],x.at[1],0],rotation:[0,0,0,1]}),turn),feature:{kind:'standoff',height:h,outer:Math.max(5,d+3.2),hole:i.holder.params.pilot??d-.4},...(k===0?{keep:{frame:compose(f,turn),r:keep,z0:.5,z1:Math.max(p.box.max[2],-p.box.min[2])+1}}:{})});});}
+/** Where a part stands in the room, free or on its plate. */
+export function standing(b:Build,i:BuildItem,frames:Record<string,Frame>):Frame{if(i.free)return worldOf(i.free,frames);const n=b.plates.find(p=>p.id===i.plate)!,p=partOf(b,i),z=i.side==='top'?liftOf(i):-n.thickness-liftOf(i);return compose(compose(worldOf(n.free,frames),{position:[i.at[0],i.at[1],z],rotation:axisAngle([0,0,1],i.angle)}),{position:[0,0,0],rotation:flipped(p,i)?[1,0,0,0]:[0,0,0,1]});}
+/** The seats of one part: a dome per hole or the clip's arms and supports, reaching away from the part. */
+function itemSeats(b:Build,i:BuildItem,f:Frame,link:string):Seat[]{
+ const p=partOf(b,i),out:Seat[]=[],seat=(id:string,frame:Frame,feature:Seat['feature'],keep?:Seat['keep']):Seat=>({id:`${i.id}/${id}`,link,line:i.id,kind:'mount',part:p.id,frame,feature,...(keep?{keep}:{})});
+ if(i.holder.kind==='none')return out;
+ if(i.holder.kind==='clip'){const h=i.holder.params,c=clipLayout(p,h),arm=clipArm(c.t,h),room={frame:f,r:Math.hypot(p.size[0],p.size[1])/2+1,z0:.5,z1:Math.max(p.box.max[2],1)+1};
+  c.arms.forEach((a,k)=>out.push(seat(`arm${k+1}`,compose(f,{position:[a.at[0],a.at[1],-h.height],rotation:axisAngle([0,0,1],Math.atan2(a.inward[1],a.inward[0])*180/Math.PI)}),arm,k===0?room:undefined)));
+  [...c.posts,...c.stops].forEach((x,k)=>out.push(seat(`stuetze${k+1}`,compose(f,{position:[x.at[0],x.at[1],x.feature.height-h.height],rotation:[0,0,0,1]}),x.feature)));return out;}
+ const turn:Frame={position:[0,0,0],rotation:p.body>0?[0,0,0,1]:[1,0,0,0]},h=Math.max(1,liftOf(i)||5),keep=Math.hypot(p.box.max[0]-p.box.min[0],p.box.max[1]-p.box.min[1])/2+1;
+ p.holes.forEach((x,k)=>{if(i.holes?.[k]?.off)return;const d=i.holes?.[k]?.d??x.d;out.push(seat(`loch${k+1}`,compose(compose(f,{position:[x.at[0],x.at[1],0],rotation:[0,0,0,1]}),turn),{kind:'standoff',height:h,outer:Math.max(5,d+3.2),hole:i.holder.params.pilot??d-.4},k===0?{frame:compose(f,turn),r:keep,z0:.5,z1:Math.max(p.box.max[2],-p.box.min[2])+1}:undefined));});
  return out;}
+/** A plate carried by a structure: four domes under its corner holes. */
+function plateSeats(b:Build,n:PlateNode,link:string):Seat[]{const flat=sheet(b,n.id),r=plateRect(flat),m=n.mount.inset,d=n.mount.d;return ([[r.x0+m,r.y0+m],[r.x1-m,r.y0+m],[r.x1-m,r.y1-m],[r.x0+m,r.y1-m]] as P2[]).map((at,k)=>({id:`${n.id}/ecke${k+1}`,link,line:n.id,kind:'mount',frame:compose(n.free.frame,{position:[at[0],at[1],-n.thickness],rotation:[0,0,0,1]}),feature:{kind:'standoff',height:6,outer:d+3.6,hole:d-.8},...(k===0?{keep:{frame:n.free.frame,r:Math.hypot(r.x1-r.x0,r.y1-r.y0)/2+1,z0:-n.thickness,z1:30}}:{})}));}
+/** Where the parts and plates want to be printed into what carries them: one seat per holding point, their room kept
+ * free. Parts on a plate are held by the plate; what hangs on no link goes to `ground`. */
+export function partSeats(b:Build,ground='ground'):Seat[]{
+ // A link's anchors carry its design load each; a part carries a fraction of it, shared by its holding points.
+ const light=(list:Seat[])=>list.map(s=>({...s,load:SEAT_LOAD/list.length}));
+ return [...b.items.flatMap(i=>i.free?light(itemSeats(b,i,i.free.frame,i.free.body??ground)):[]),...b.plates.flatMap(n=>light(plateSeats(b,n,n.free.body??ground)))];}
+const SEAT_LOAD=.5;

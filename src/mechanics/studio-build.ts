@@ -8,10 +8,11 @@ import type {StudioDocument} from './studio-model';
 import {parts,partGroups,boxPart} from './parts/catalog';
 import type {Part} from './parts/catalog';
 import {generators,generator} from './parts/generators';
-import {newBuild,modelBuild,newItem,newPlateNode,partOf,sheet,footprint,plugRects,issues,snapTo,nearestFree,plateRect,plateOutline,plateHoles,holderGeometry,flipped,liftOf,shopping,buildGeometry,snap,worldOf,reframe,onSurface,partBox,plateBox,holderPiece} from './parts/build';
+import {newBuild,modelBuild,newItem,newPlateNode,partOf,sheet,footprint,plugRects,issues,snapTo,nearestFree,plateRect,plateOutline,plateHoles,holderGeometry,flipped,liftOf,shopping,standing,buildGeometry,snap,worldOf,reframe,onSurface,partBox,plateBox,holderPiece} from './parts/build';
 import type {Build,BuildItem,Free,Issue,PlateNode,Sheet} from './parts/build';
 import {solidScad} from './parts/scad';
 import {solveBuild,surfacePoints,axisLever} from './parts/layout';
+import {unheld,DEFAULT_LOAD} from './parts/net';
 import type {Prim} from '../structure/sdf';
 import type {Frame,V} from './kinematics/math';
 import {compose,axisAngle} from './kinematics/math';
@@ -63,6 +64,9 @@ export class BuildEditor{
  /** Things that hang on a link, to follow it while the mechanism moves. */
  private followers:{object:THREE.Object3D;free:Free}[]=[];
  private sweepText='';
+ /** The tree-and-net carrier of the open build: choices, the running job, the last result and what it was made from. */
+ private net={bracing:1,load:DEFAULT_LOAD,state:'' as ''|'running'|'done'|'error',text:'',key:'',positions:undefined as Float32Array|undefined,stl:undefined as Uint8Array|undefined,worker:undefined as Worker|undefined};
+ private netKey(b:Build){return JSON.stringify([b.items,b.plates,b.parts.length]);}
  private custom={label:'Mein Teil',length:40,width:30,height:15,x:34,y:24,d:3};
  private trains:TrainEditor;
  constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt});this.trains.onChange=()=>this.refresh();}
@@ -75,7 +79,7 @@ export class BuildEditor{
  private build(){const builds=this.host.doc().builds;return this.activeId?builds?.find(b=>b.id===this.activeId):this.attachedTo?builds?.find(b=>b.mechanism===this.attachedTo):undefined;}
  /** The build as seen while dragging: with the held part where it is held. */
  private shown():Build|undefined{const b=this.build(),d=this.drag;if(!d?.over)return b;const base=b??modelBuild('neu',this.attachedTo??'');return {...base,items:d.item?[...base.items.filter(i=>i.id!==d.item!.id),d.item]:base.items,plates:d.plate?[...base.plates.filter(p=>p.id!==d.plate!.id),d.plate]:base.plates};}
- enter(id:string){this.activeId=id;this.attachedTo=undefined;this.selected=undefined;this.trains.reset();this.plateId=this.build()?.plates[0]?.id;this.fitNext=true;}
+ enter(id:string){this.net.worker?.terminate();this.net={...this.net,state:'',text:'',key:'',positions:undefined,stl:undefined,worker:undefined};this.activeId=id;this.attachedTo=undefined;this.selected=undefined;this.trains.reset();this.plateId=this.build()?.plates[0]?.id;const b=this.build();this.fitNext=!!b&&(b.items.length>0||b.plates.length>0||!!b.train?.wheels.length);}
  attach(id:string|undefined){if(this.attachedTo===id)return;this.attachedTo=id;this.selected=undefined;this.plateId=undefined;}
  exit(){this.activeId=undefined;this.attachedTo=undefined;this.selected=undefined;this.plateId=undefined;this.drag=undefined;this.host.grip(undefined);this.clear();}
  private clear(){this.followers=[];for(const o of [...this.group.children]){if(o===this.gizmo)continue;this.group.remove(o);o.traverse(c=>{if((c instanceof THREE.Mesh||c instanceof THREE.LineLoop)&&!c.userData.shared)c.geometry.dispose();});}}
@@ -90,6 +94,7 @@ export class BuildEditor{
    if(p.body>0&&i.holder.kind!=='none'){const seat=holderPiece(b,i),under=new THREE.Group();under.position.z=-liftOf(i);for(const s of holderGeometry(seat,seat.items[0]).solids){const m=primMesh(s);if(m)under.add(m);}g.add(under);}
    const q=partBox(p,{position:[0,0,0],rotation:[0,0,0,1]}),box=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(...q.half.map(v=>2*v) as [number,number,number])),new THREE.LineBasicMaterial({color:bad.has(i.id)?0xff5a55:i.id===this.selected?0xffffff:0x63cbb3}));box.position.set(...q.center);g.add(box);}
   const zone=b.items.find(i=>i.id===this.selected&&i.free&&i.wish)?.wish;if(zone){const m=new THREE.Mesh(new THREE.SphereGeometry(zone.size[0],24,16),new THREE.MeshBasicMaterial({color:0x7fb6ff,wireframe:true,transparent:true,opacity:.25}));m.position.set(...zone.center as [number,number,number]);this.group.add(m);}
+  if(this.active&&this.net.positions&&this.net.key===this.netKey(b)){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(this.net.positions,3));g.computeVertexNormals();const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0xc58a4a,roughness:.6,side:THREE.DoubleSide}));m.userData.net=true;this.group.add(m);}
   this.syncGizmo();
   if(this.fitNext){this.fitNext=false;this.host.fit();}
  }
@@ -181,12 +186,10 @@ export class BuildEditor{
  private removeItem(){const id=this.selected!;this.selected=undefined;this.host.change(()=>{const x=this.build()!;x.items=x.items.filter(i=>i.id!==id);},'Teil entfernt');}
 
  // ---------- checks in space ----------
- /** Where a part stands, free or on its plate. */
- private standing(b:Build,i:BuildItem,frames:Record<string,Frame>):Frame{if(i.free)return worldOf(i.free,frames);const n=b.plates.find(p=>p.id===i.plate)!,p=partOf(b,i),z=i.side==='top'?liftOf(i):-n.thickness-liftOf(i);return compose(compose(worldOf(n.free,frames),{position:[i.at[0],i.at[1],z],rotation:axisAngle([0,0,1],i.angle)}),{position:[0,0,0],rotation:flipped(p,i)?[1,0,0,0]:[0,0,0,1]});}
  private ownerOf(b:Build,i:BuildItem){return i.free?i.free.body:b.plates.find(p=>p.id===i.plate)?.free.body;}
  /** Parts against each other and the model at the given frames. */
  private spaceIssues(b:Build,frames:Record<string,Frame>):Issue[]{
-  const out:Issue[]=[],ctx=this.attachedTo?this.host.model():undefined,placed=b.items.map(i=>{const p=partOf(b,i),q=partBox(p,this.standing(b,i,frames));return {i,p,h:hull(q.frame,q.center,q.half)};});
+  const out:Issue[]=[],ctx=this.attachedTo?this.host.model():undefined,placed=b.items.map(i=>{const p=partOf(b,i),q=partBox(p,standing(b,i,frames));return {i,p,h:hull(q.frame,q.center,q.half)};});
   placed.forEach((a,n)=>{
    for(const c of placed.slice(n+1)){if(a.i.plate&&a.i.plate===c.i.plate)continue;const gap=Math.max(a.i.clearance,c.i.clearance);if(separation(a.h,c.h)<gap)out.push({kind:'body',items:[a.i.id,c.i.id],message:`${a.p.label} und ${c.p.label}: unter ${gap} mm Abstand.`});}
    for(const n2 of b.plates){if(a.i.plate===n2.id)continue;const q=plateBox(b,n2,worldOf(n2.free,frames));if(separation(a.h,hull(q.frame,q.center,q.half))<0)out.push({kind:'body',items:[a.i.id],message:`${a.p.label} steckt in einer Bodenplatte.`});}
@@ -208,6 +211,8 @@ export class BuildEditor{
   for(const b of this.host.doc().builds??[]){if(b.mechanism)continue;const open=el('button',{textContent:`▦ ${b.label}`});open.dataset.build=b.id;open.setAttribute('aria-selected',String(this.activeId===b.id));open.onclick=()=>{this.enter(b.id);this.host.leave();};root.append(el('div',{className:'tree-row'},open));}
   const gear=el('button',{textContent:'＋ Neues Getriebe',className:'primary'});gear.dataset.newTrain='true';gear.onclick=()=>{const id='getriebe-'+crypto.randomUUID().slice(0,8),n=(this.host.doc().builds?.filter(b=>b.train).length??0)+1;this.host.change(()=>{const d=this.host.doc();d.builds=[...(d.builds??[]),{...newBuild(id,`Getriebe ${n}`),plates:[],train:newTrain()}];},'Getriebe angelegt: Zahnräder aus dem Store in die Ansicht ziehen.');this.enter(id);this.host.leave();};
   root.append(gear);
+  const open=el('button',{textContent:'＋ Neuer Aufbau (frei im Raum)',className:'primary'});open.dataset.newFree='true';open.onclick=()=>{const id='aufbau-'+crypto.randomUUID().slice(0,8),n=(this.host.doc().builds?.filter(b=>!b.mechanism).length??0)+1;this.host.change(()=>{const d=this.host.doc();d.builds=[...(d.builds??[]),{...newBuild(id,`Aufbau ${n}`),plates:[]}];},'Aufbau angelegt: Teile in den Raum ziehen, mit dem Griff anheben, dann die Struktur erzeugen.');this.enter(id);this.host.leave();};
+  root.append(open);
   const add=el('button',{textContent:'＋ Neuer Aufbau (Bodenplatte)',className:'primary'});add.dataset.newBuild='true';add.onclick=()=>{const id='aufbau-'+crypto.randomUUID().slice(0,8),n=(this.host.doc().builds?.filter(b=>!b.mechanism).length??0)+1;this.host.change(()=>{const d=this.host.doc();d.builds=[...(d.builds??[]),newBuild(id,`Aufbau ${n}`)];},'Aufbau angelegt: Teile aus dem Store auf die Platte ziehen.');this.enter(id);this.host.leave();};
   root.append(add);
  }
@@ -219,6 +224,7 @@ export class BuildEditor{
   if(this.isTrain){this.trains.renderTree(root);return;}
   const b=this.build();if(this.attached)root.append(el('div',{className:'tree-group',textContent:'Teile am Modell'}));
   const pick=(item?:string,plate?:string)=>{this.selected=item;this.plateId=plate;this.refresh();this.host.leave();};
+  if(this.active){const row=el('button',{textContent:'🕸 Übersicht & Baum-Netz'});row.dataset.overview='true';row.setAttribute('aria-selected',String(!this.selected&&!this.plateId));row.onclick=()=>pick();root.append(el('div',{className:'tree-row'},row));}
   for(const n of b?.plates??[]){const row=el('button',{textContent:'▭ Bodenplatte'});row.dataset.plate=n.id;row.setAttribute('aria-selected',String(!this.selected&&this.plateId===n.id));row.onclick=()=>pick(undefined,n.id);root.append(el('div',{className:'tree-row'},row));}
   for(const i of b?.items??[]){const row=el('button',{textContent:`  ${partOf(b!,i).label}${i.free?.body?` → ${i.free.body}`:''}`,className:'tree-sub'});row.dataset.item=i.id;row.setAttribute('aria-selected',String(this.selected===i.id));row.onclick=()=>pick(i.id);root.append(el('div',{className:'tree-row'},row));}
   root.append(el('div',{className:'tree-group',textContent:'Teile-Store'}));
@@ -248,6 +254,7 @@ export class BuildEditor{
   const i=b.items.find(x=>x.id===this.selected),n=b.plates.find(p=>p.id===this.plateId);
   if(this.active&&!i){const name=el('input',{type:'text',value:b.label});name.setAttribute('aria-label','Name des Aufbaus');name.onchange=()=>{const v=name.value.trim();if(v)edit('Aufbau umbenannt',x=>{x.label=v;});};root.append(el('label',{},'Name',name));}
   if(i)this.itemPage(root,b,i,number,select,edit);else if(n)this.platePage(root,b,n,number,select,edit);
+  if(this.active&&!i)this.netPanel(root,b,number,select);
   const list=shopping(b);if(list.length&&!i){root.append(heading('Stückliste'));for(const l of list)root.append(el('p',{className:'muted',textContent:`${l.count} × ${l.label}`}));}
   root.append(heading('Prüfung'),this.report(this.allIssues(b)));
   if(this.attached){const go=el('button',{textContent:'Über den Fahrweg prüfen'});go.dataset.sweepParts='true';go.onclick=()=>void this.sweep();root.append(go);if(this.sweepText)root.append(el('p',{id:'build-sweep',className:this.sweepText.startsWith('✓')?'state-pass':'state-warn',textContent:this.sweepText}));}
@@ -296,6 +303,24 @@ export class BuildEditor{
   if(b.items.some(i=>i.plate===n.id&&i.wish)){const go=el('button',{textContent:'✨ Plätze neu suchen'});go.dataset.solve='true';go.onclick=()=>edit('Plätze gesucht',x=>{solveBuild(x);});root.append(go);}
   const drop=el('button',{textContent:'Platte entfernen',className:'danger'});drop.dataset.removePlate='true';drop.onclick=()=>{this.plateId=undefined;edit('Platte entfernt',x=>{x.items=x.items.filter(i=>i.plate!==n.id);x.plates=x.plates.filter(y=>y.id!==n.id);});};root.append(add,stl,drop);
  }
+ /** The structure as the carrier: holders become anchors, feet stand under the build. */
+ private netPanel(root:HTMLElement,b:Build,number:NumberField,select:SelectField){
+  const n=this.net,stale=!!n.positions&&n.key!==this.netKey(b),loose=unheld(b);
+  root.append(heading('Baum-Netz als Träger'),el('p',{className:'muted',textContent:'Hält alle Teile und Platten an ihren Haltepunkten, wo sie im Raum stehen, auf vier Füßen darunter. Die Streben weichen Teilen und Steckern aus.'}),
+   select('Struktur',String(n.bracing),[['0','Baum'],['1','leichtes Netz'],['2','dichtes Netz']],v=>{n.bracing=Number(v);}),number('Last je Teil [N]',n.load,v=>{n.load=Math.max(.5,v);}));
+  for(const i of loose)root.append(el('p',{className:'state-warn',textContent:`${partOf(b,i).label} hat keinen Halter und bleibt lose.`}));
+  const go=el('button',{textContent:n.state==='running'?'Wird erzeugt …':'🕸 Struktur erzeugen',className:'primary'});go.dataset.netMake='true';go.disabled=n.state==='running'||!b.items.length;go.onclick=()=>this.makeNet();root.append(go);
+  const text=stale?'Der Aufbau hat sich geändert: Struktur neu erzeugen.':n.text;if(text)root.append(el('p',{id:'net-report',className:n.state==='error'?'state-fail':stale||n.state==='running'?'muted':'state-pass',textContent:text}));
+  if(n.stl&&!stale){const stl=el('button',{textContent:'⬇ Struktur als STL'});stl.dataset.netStl='true';stl.onclick=()=>{const url=URL.createObjectURL(new Blob([n.stl! as BlobPart],{type:'model/stl'})),a=el('a',{href:url,download:`${b.label.replace(/[^\wäöüÄÖÜß-]+/g,'_')}-struktur.stl`});a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};root.append(stl);}
+ }
+ private makeNet(){
+  const b=this.build(),n=this.net;if(!b)return;n.worker?.terminate();n.state='running';n.text='Struktur wird erzeugt …';n.positions=undefined;n.stl=undefined;const key=this.netKey(b),w=new Worker('./mechanics-structure-worker.js');n.worker=w;
+  w.onmessage=({data})=>{if(n.worker!==w)return;if(data.type==='progress'){const t=document.getElementById('net-report');n.text=`${data.stage} …`;if(t)t.textContent=n.text;return;}w.terminate();n.worker=undefined;
+   if(data.type==='net'){const fails=(data.checks as {state:string;message:string}[]).filter(c=>c.state==='fail');n.state=fails.length?'error':'done';n.positions=data.positions;n.stl=data.stl;n.key=key;n.text=fails.length?fails.map(c=>c.message).join(' · '):`${data.report.struts} Streben · ${data.report.mass.toFixed(0)} g · Auslastung ${(data.report.utilisation*100).toFixed(0)} % · Durchbiegung ${data.report.deflection.toFixed(2)} mm · Druck ${data.report.print.label}`;this.host.status('Baum-Netz erzeugt.');}
+   else{n.state='error';n.text=String(data.message??'Struktur nicht erzeugt.');this.host.status(n.text);}
+   this.refresh();this.renderProperties();};
+  w.postMessage({kind:'net',build:b,settings:{bracing:n.bracing,load:n.load}});this.renderProperties();
+ }
  /** Fixed, a zone, or open; on a model a zone with a goal. Asking for a place on a plate takes effect at once. */
  private placeFields(root:HTMLElement,b:Build,i:BuildItem,p:Part,number:NumberField,select:SelectField,set:(m:string,f:(x:BuildItem)=>void)=>void){
   const onPlate=!!i.plate,mode=i.wish?.mode??'fixed',solved=(message:string,fn:(x:BuildItem)=>void)=>this.host.change(()=>{const x=this.build()!,y=x.items.find(z=>z.id===i.id);if(y)fn(y);solveBuild(x);},message);
@@ -309,7 +334,7 @@ export class BuildEditor{
  /** A place on the model in the ball: lying on a surface, free of the rest, in every pose, the best by the goal. */
  private async findPlace(id:string,p:Part){
   const b=this.build(),i=b?.items.find(x=>x.id===id),ctx=this.host.model(),w=i?.wish;if(!b||!i||!ctx||!w)return;this.host.status('Platz wird gesucht …');await new Promise(r=>setTimeout(r));
-  const frames=this.host.frames(),points=surfacePoints(ctx.m,ctx.drives,ctx.assets,frames,w.center as V,w.size[0],6),others=b.items.filter(x=>x.id!==id).map(x=>{const q=partBox(partOf(b,x),this.standing(b,x,frames));return {gap:Math.max(i.clearance,x.clearance),h:hull(q.frame,q.center,q.half)};}),found:{frame:Frame;body:string;score:number;lever:number}[]=[];
+  const frames=this.host.frames(),points=surfacePoints(ctx.m,ctx.drives,ctx.assets,frames,w.center as V,w.size[0],6),others=b.items.filter(x=>x.id!==id).map(x=>{const q=partBox(partOf(b,x),standing(b,x,frames));return {gap:Math.max(i.clearance,x.clearance),h:hull(q.frame,q.center,q.half)};}),found:{frame:Frame;body:string;score:number;lever:number}[]=[];
   for(const s of points)for(const angle of [0,90]){const frame=onSurface(p,s.point,s.normal,liftOf(i),angle),q=partBox(p,frame),h=hull(q.frame,q.center,q.half);if(others.some(o=>separation(h,o.h)<o.gap)||modelHits(ctx.m,ctx.drives,h,s.body,ctx.assets,frames).length)continue;const lever=axisLever(ctx.m,ctx.drives,frames,s.body,s.point);found.push({frame,body:s.body,lever,score:w.goal==='axis'?lever:Math.hypot(s.point[0]-w.center[0],s.point[1]-w.center[1],s.point[2]-w.center[2])});}
   found.sort((x,y)=>x.score-y.score);const range=await this.host.range();
   // The best places often sit side by side and fail together: spread the tries over the whole list, in order.

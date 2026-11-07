@@ -7,6 +7,7 @@ import {linkStructures} from './kinematics/link-structure';
 import {soup,stlBinary} from '../structure/mesh';
 import {orientForPrint,printOrientation} from '../structure/print';
 import {generateShell} from '../structure/shell';
+import {generateNet} from './parts/net';
 import {fieldPool} from './kinematics/field-jobs';
 import type {Mechanism} from './kinematics/model';
 import type {Drive} from './kinematics/drive';
@@ -16,6 +17,7 @@ self.onmessage=async({data})=>{
  try{
   if(data.kind==='shell'){const r=generateShell(data.board,data.settings??{}),parts=r.parts.map(p=>{const print=printOrientation(p.mesh);return {id:p.id,mass:p.mass,closed:p.closed,print:{label:print.label,overhang:print.overhang/print.area},stl:stlBinary(orientForPrint(p.mesh,print.up),`${r.board.label} ${p.id}`)};});
    self.postMessage({type:'shell',board:r.board.label,parts,latch:r.layout.latch},{transfer:parts.map(p=>p.stl.buffer)});return;}
+  if(data.kind==='net'){const r=await generateNet(data.build,data.settings??{},(stage,f)=>self.postMessage({type:'progress',stage,f})),positions=soup(r.mesh),stl=stlBinary(orientForPrint(r.mesh,r.report.print.up),data.build.label);self.postMessage({type:'net',positions,stl,report:{...r.report,checks:undefined},checks:r.report.checks},{transfer:[positions.buffer,stl.buffer]});return;}
   const m:Mechanism=structuredClone(data.mechanism),drives:Drive[]=data.drives??[],parts:Record<string,{parts:Part[]}>=data.assets??{};
   const assets=(id:string)=>parts[id];
   const plan=planBearings(m,drives,assets,data.bearings??{});applyBearings(m,plan);

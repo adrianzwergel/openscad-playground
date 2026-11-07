@@ -59,7 +59,7 @@ const two=modelBuild('t','arm-mech');two.plates.push(newPlateNode('p1',wall,'gro
 assert.deepEqual(sheet(two,'p1').items.map(i=>i.id),['u']);assert.deepEqual(parseBuild(JSON.parse(JSON.stringify(two))),two);
 // A free part: holder as a piece of its own, and seats on its link, one per hole, reaching away from the part.
 const piece=buildGeometry(holderPiece(two,two.items[2]));assert.equal(piece.solids.length,5);assert.equal(piece.holes.length,4);
-const seats=partSeats(two);assert.equal(seats.length,4);assert.ok(seats.every(s=>s.link==='arm'&&s.feature.kind==='standoff'));assert.ok(seats.some(s=>s.keep));near(seats[0].feature.height,two.items[2].holder.params.height);
+const seats=partSeats(two).filter(s=>s.link==='arm');assert.equal(seats.length,4);assert.ok(seats.every(s=>s.feature.kind==='standoff'));assert.equal(partSeats(two).filter(s=>s.link==='ground').length,8,'Platten auf ihren Ecken');assert.ok(seats.some(s=>s.keep));near(seats[0].feature.height,two.items[2].holder.params.height);
 // Clip: boards without holes get one by default; the board fits between the arms, on the supports, under the hooks.
 const render=g=>{const c=OpenSCADs.pop();c.FS.writeFile('/c.scad',solidScad(g));assert.equal(c.callMain(['/c.scad','--backend=manifold','--export-format','binstl','-o','/c.stl']),0);return c.FS.readFile('/c.stl');};
 const OpenSCADs=[await OpenSCAD({wasmBinary:fs.readFileSync('src/wasm/openscad.wasm'),noInitialRun:true,print:()=>{},printErr:()=>{}})];
@@ -74,7 +74,7 @@ for(const [id,angle] of [['d1-mini',0],['arduinonano',90],['a4988',30],['esp32-d
 {const part=partById('d1-mini'),s=flat(),c=newItem('c',part,[0,0]);s.items.push(c);c.holder.params={...c.holder.params,height:2,thickness:2.5};assert.ok(issues(s).some(x=>x.kind==='holder'&&/dehnt/.test(x.message)));c.holder.params={...generator('clip').defaults(part),lip:.4};assert.ok(issues(s).some(x=>/greift nur/.test(x.message)));
  const side={...part,id:'seitlich',plugs:[{label:'USB',at:[0,part.size[1]/2-1],dir:90,width:10,height:4}]},s2={plate:newPlate(),items:[],parts:[side],grid:1},d=newItem('d',side,[0,0]);d.holder={kind:'clip',params:generator('clip').defaults(side)};s2.items.push(d);assert.ok(issues(s2).some(x=>/Federarm steht/.test(x.message)));d.holder.params.shift=11;assert.ok(!issues(s2).some(x=>/Federarm steht/.test(x.message)));}
 // A clip on a link: arms and supports become seats.
-{const part=partById('d1-mini'),t2=modelBuild('t','m'),c=newItem('c',part,[0,0]);c.free={frame:wall,body:'arm'};t2.items.push(c);const s=partSeats(t2);assert.deepEqual(s.map(x=>x.feature.kind),['snap','snap','standoff','standoff','standoff','standoff']);assert.ok(s[0].keep);
+{const part=partById('d1-mini'),t2=modelBuild('t','m'),c=newItem('c',part,[0,0]);c.free={frame:wall,body:'arm'};t2.items.push(c);const s=partSeats(t2).filter(x=>x.link==='arm');assert.deepEqual(s.map(x=>x.feature.kind),['snap','snap','standoff','standoff','standoff','standoff']);assert.ok(s[0].keep);
  const piece=buildGeometry(holderPiece(t2,c));assert.equal(piece.solids.length,1+2*2+4);}
 // Wishes on a plate: a fixed part stays, a zone is kept, an open part packs in; what cannot fit is named.
 {const s=flat(),fixed=newItem('f',pi,[0,0]),z=newItem('z',partById('rpi-pico'),[0,0]),o=newItem('o',partById('tp4056'),[0,0]);z.wish={mode:'zone',center:[0,60],size:[60,30],goal:'middle'};o.wish={mode:'auto',center:[],size:[],goal:'middle'};s.items.push(fixed,z,o);

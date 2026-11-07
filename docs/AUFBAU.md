@@ -77,6 +77,17 @@ mit ihm zusammen; der Store steht unter seinem Baum.
 - **Ausgabe:** `buildGeometry` ergibt Grundkörper des Strukturkerns, `scad.ts` macht daraus OpenSCAD. Der Render-Worker
   erzeugt das STL mit exakten Booleschen Operationen.
 
+## Baum-Netz als Träger (`src/mechanics/parts/net.ts`)
+
+Die Halter der Teile sind dieselben Sitze wie an einem Glied (`partSeats`), das ist die Verbindung zum Strukturgenerator:
+
+- **Am Modell:** Jeder Sitz hängt an seinem Glied; was an keinem hängt, geht an die Basis. Bodenplatten stehen auf vier Domen
+  unter ihren Eckbohrungen. Teile auf einer Platte hält die Platte. Die Schritte Lager und Struktur nehmen sie mit.
+- **Eigenständig:** `generateNet` macht aus allen Sitzen Anker, setzt vier Füße unter den Aufbau und hält die Streben aus
+  den Hüllen der Teile, den Steckerwegen und den Platten heraus. Das läuft im Struktur-Worker (`kind: 'net'`).
+- **Last:** je Teil, verteilt auf seine Haltepunkte, Standard 10 N: Elektronik wiegt Gramm, ausgelegt wird auf eine Hand, die
+  ein Kabel einsteckt. An Gliedern zählt ein Teil als halbe Ankerlast, ebenso verteilt. Die Masse der Teile geht nicht ein.
+
 ## Plätze suchen (`src/mechanics/parts/layout.ts`)
 
 Ein Teil ohne `wish` ist fest. Mit `wish` gehört der Platz dem Tool:
@@ -138,4 +149,6 @@ node scripts/check-studio-parts-on-model-browser.mjs
 node scripts/parts/check-train.mjs
 node scripts/check-studio-train-browser.mjs
 node scripts/check-studio-motor-place-browser.mjs
+node scripts/parts/check-net.mjs
+node scripts/check-studio-net-browser.mjs
 ```
