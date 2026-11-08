@@ -135,3 +135,7 @@ ul.bom{margin:4px 0;padding-left:18px;color:#c8d6df;font-size:12px}
 .hole-row{display:flex;align-items:center;gap:5px;margin:3px 0;font-size:12px}.hole-row span{flex:1}.hole-row input[type=number]{width:62px;flex:1;min-width:0}
 .state-pass{color:#63cbb3;font-size:12px}.state-fail{color:#ff8a85;font-size:12px}.state-warn{color:#e5b65f;font-size:12px}label.check{display:flex;gap:6px;align-items:center;font-size:12px}
 
+/* One library: groups look alike, the model card is a button, what does not fit the project is greyed out. */
+details.store-group{margin-top:4px}details.store-group>summary{cursor:pointer;font-size:12px;color:#adbdc7;padding:3px 0}
+button.part-card{display:block;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit}button.part-card:disabled{opacity:.5;cursor:not-allowed}button.part-card:disabled:hover{border-color:#34434e}
+.part-store details>p.muted,details.store-group>p.muted{font-size:11px;margin:2px 0 4px}

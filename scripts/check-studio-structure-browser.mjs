@@ -40,7 +40,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  if(demo==='hand')assert.ok(rows.some(r=>r.link==='Abtrieb'&&r.state==='skip'&&/Nichts zu drucken/.test(r.text)),JSON.stringify(rows));
  // Strong and stiff enough under the design loads: no hint on utilisation or deflection.
  assert.ok(rows.every(r=>!/Größte (Auslastung|Verformung)/.test(r.text)),JSON.stringify(rows.map(r=>r.text)));
- const todo=await p.$$eval('#todo li',l=>l.map(x=>x.dataset.state+' '+x.textContent));assert.ok(todo.length===5&&todo.every(t=>t.startsWith('done')),JSON.stringify(todo));
+ const todo=await p.$$eval('#todo li',l=>l.map(x=>x.dataset.state+' '+x.textContent));assert.ok(todo.length===(process.env.PART?6:5)&&todo.every(t=>t.startsWith('done')),JSON.stringify(todo));
  // Sliders still move the arm with its structures.
  const first=await p.$eval('#axes input[type=range]',r=>r.dataset.axis);
  await p.evaluate(a=>{const s=document.querySelector(`#axes input[data-axis="${a}"]`);s.value=String(Number(s.max)*.5);s.dispatchEvent(new Event('input'));},first);

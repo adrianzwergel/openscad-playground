@@ -1,12 +1,12 @@
 // Studio: the housing of a plate. A Raspberry Pi 4 on the plate: the view shows the case, the numbers can be changed, the
 // ZIP holds base, lid and notes. A motor on the plate keeps the button locked and says why.
-import puppeteer from 'puppeteer';import {goTo,phase,menu,example,start} from './studio-ui.mjs';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';import JSZip from 'jszip';
+import puppeteer from 'puppeteer';import {goTo,phase,menu,example,start,newProject} from './studio-ui.mjs';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';import JSZip from 'jszip';
 const dir=await fs.mkdtemp(path.join(os.tmpdir(),'studio-case-')),files=path.join(dir,'dl');await fs.mkdir(files);
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,userDataDir:path.join(dir,'profil'),args:['--enable-unsafe-swiftshader']});
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const place=async(p,id)=>{await p.evaluate(i=>{const row=document.querySelector(`[data-part="${i}"]`);row.closest('details').open=true;row.scrollIntoView({block:'center'});},id);const r=await p.$eval(`[data-part="${id}"]`,e=>{const b=e.getBoundingClientRect();return [b.x+b.width/2,b.y+b.height/2];});await p.mouse.click(...r);await wait(300);};
-try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});await p.goto('http://localhost:4001/studio');await p.waitForSelector('[data-new-build]');
- await p.click('[data-new-build]');await p.waitForSelector('[data-part="rpi4"]');await place(p,'rpi4');await phase(p,3);await p.waitForSelector('[data-case-zip]:not([disabled])');
+try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});await p.goto('http://localhost:4001/studio');await p.waitForSelector('canvas');
+ await newProject(p,true);await p.waitForSelector('[data-part="rpi4"]');await place(p,'rpi4');await phase(p,3);await p.waitForSelector('[data-case-zip]:not([disabled])');
  await p.$eval('[data-field="Wand [mm]"]',e=>{e.value='3';e.dispatchEvent(new Event('change'));});await p.waitForSelector('[data-case-show]');await p.click('[data-case-show]');await wait(300);
  const cdp=await p.createCDPSession();await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:files});await p.click('[data-case-zip]');
  let name;for(let i=0;i<200&&!name;i++){name=(await fs.readdir(files)).find(n=>n.endsWith('.zip'));if(!name)await wait(200);}assert.ok(name,'ZIP');await wait(300);

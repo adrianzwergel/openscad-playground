@@ -13,7 +13,6 @@ import type {GripOptions} from './studio-mechanism';
 import {BuildEditor} from './studio-build';
 import {partSeats,newBuild,newItem} from './parts/build';
 import {partById} from './parts/catalog';
-import {newTrain} from './parts/train';
 import type {Seat} from './kinematics/bearings';
 import {ProjectStore} from './project-store';
 import type {ProjectView} from './project-store';
@@ -23,24 +22,34 @@ import {demos} from './demos';
 import {templates} from './kinematics/templates';
 
 type Phase=1|2|3;
-type Scene={kind:'mechanism'|'build'|'train';id:string;label:string};
+type Scene={kind:'mechanism'|'build';id:string;label:string};
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
-const fresh=():StudioDocument=>({version:1,assemblies:[],routes:[]});
+/** A new project: empty, with the parts list every project has. */
+const fresh=():StudioDocument=>({version:1,assemblies:[],routes:[],builds:[emptyBuild()]});
+function emptyBuild(){return {...newBuild('teile-'+crypto.randomUUID().slice(0,8),'Teile'),plates:[]};}
+const isEmpty=(b:{items:unknown[];plates:unknown[];train?:{wheels:unknown[]}})=>!b.items.length&&!b.plates.length&&!b.train?.wheels.length;
+/** One device: once the project has its mechanism, the parts belong to it (an empty list goes); without one there is
+ * always a list to place into. */
+function unify(d:StudioDocument){
+ const ms=d.mechanisms??[],ids=new Set(ms.map(m=>m.id));for(const b of d.builds??[])if(b.mechanism&&!ids.has(b.mechanism))delete b.mechanism;
+ if(ms.length){d.builds=(d.builds??[]).filter(b=>b.mechanism||!isEmpty(b));if(ms.length===1&&!d.builds.some(b=>b.mechanism)){const lone=d.builds.find(b=>!b.mechanism);if(lone)lone.mechanism=ms[0].id;}}
+ else if(!d.builds?.length)d.builds=[emptyBuild()];
+ return d;}
 const phaseNames:Record<Phase,string>={1:'① Aufbauen',2:'② Bewegen',3:'③ Fertigen'};
 
 // ---------- the open project file ----------
 // Read before anything else is set up, so the first drawing already shows it. The old single save slot moves into a
 // first project once.
 const store=await ProjectStore.open();
-let doc=fresh(),loadError='',project={id:'',name:'',readOnly:false},openView:ProjectView|undefined;
+let firstRun=false,doc=fresh(),loadError='',project={id:'',name:'',readOnly:false},openView:ProjectView|undefined;
 const newProjectId=()=>'p-'+crypto.randomUUID().slice(0,8);
 {const list=await store.list(),wanted=await store.active().catch(()=>undefined),id=list.find(p=>p.id===wanted)?.id??list[0]?.id;let ready=false;
- if(id)try{const f=await store.read(id);doc=parseStudio(f.doc);project={id,name:f.name,readOnly:false};openView=f.view;ready=true;}catch(e){loadError=`Projektdatei konnte nicht gelesen werden: ${e}. Die Datei bleibt unverändert.`;}
- if(!ready){try{const saved=localStorage.getItem('mechanics-studio');if(saved&&!list.length)doc=importStudio(saved);}catch(e){loadError=`Gespeichertes Projekt konnte nicht geladen werden: ${e}. Speicher wurde nicht verändert.`;}
-  project={id:newProjectId(),name:list.length?`Projekt ${list.length+1}`:'Mein Projekt',readOnly:false};await store.write(project.id,{format:'studio-project-1',name:project.name,updated:new Date().toISOString(),doc:parseStudio(doc)});}
+ if(id)try{const f=await store.read(id);doc=parseStudio(unify(parseStudio(f.doc)));project={id,name:f.name,readOnly:false};openView=f.view;ready=true;}catch(e){loadError=`Projektdatei konnte nicht gelesen werden: ${e}. Die Datei bleibt unverändert.`;}
+ if(!ready){try{const saved=localStorage.getItem('mechanics-studio');if(saved&&!list.length)doc=unify(importStudio(saved));}catch(e){loadError=`Gespeichertes Projekt konnte nicht geladen werden: ${e}. Speicher wurde nicht verändert.`;}
+  project={id:newProjectId(),name:list.length?`Projekt ${list.length+1}`:'Mein Projekt',readOnly:false};if(!list.length)firstRun=true;await store.write(project.id,{format:'studio-project-1',name:project.name,updated:new Date().toISOString(),doc:parseStudio(doc)});}
  project.readOnly=!await store.claim(project.id);await store.setActive(project.id);}
-let history=new StudioHistory(),dragBefore:StudioDocument|undefined,phase:Phase=1,sceneKey='',startOpen=false;
+let history=new StudioHistory(),dragBefore:StudioDocument|undefined,phase:Phase=1,sceneKey='',startOpen=firstRun;
 /** A mechanism is being made (a demo, a compiled train, an imported model): the scene follows it once it exists. */
 let followMechanism=false;
 
@@ -60,7 +69,7 @@ const mech:MechanismEditor=new MechanismEditor({doc:()=>doc,change:(edit,message
 const build:BuildEditor=new BuildEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>fit(),canvas:()=>renderer.domElement,ray:e=>hits(e as MouseEvent),orbit:on=>{orbit.enabled=on;},
  frames:()=>mech.active?mech.framesNow():{},surface:ray=>mech.active?mech.surfaceAt(ray):undefined,model:()=>mech.active?mech.clashContext():undefined,range:()=>mech.posesOverRange(),
  grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.buildGizmo)transform.detach();},dragging:()=>transform.dragging,
- adopt:d=>void adoptModel(d.label,()=>mech.addDemo(d),2),phase:()=>phase});
+ adopt:(d,consume)=>void adoptModel(()=>mech.addDemo(d,consume?x=>{for(const b of x.builds??[])if(!b.mechanism)delete b.train;}:undefined),2),phase:()=>phase,loadModel:()=>modelFile.click()});
 mechRoot.add(mech.view.group,mech.handles,motion.view.group,build.group);
 // The gizmo on a handle: mode, steps (Alt held: none) and axes as the handle asks.
 let steps:{step:number;angle:number}={step:0,angle:0},free=false;
@@ -87,7 +96,7 @@ renderer.setAnimationLoop(()=>{build.follow();catchUp();$('gizmo-tools').hidden=
 
 // ---------- changes and history ----------
 function syncHistory(){($('undo') as HTMLButtonElement).disabled=!history.canUndo;($('redo') as HTMLButtonElement).disabled=!history.canRedo;}
-function change(edit:()=>void,message:string){const before=structuredClone(doc);try{motion.close();edit();doc=parseStudio(doc);history.record(before,doc);draw();status.textContent=message;}catch(e){doc=before;draw();status.textContent=String(e);}}
+function change(edit:()=>void,message:string){const before=structuredClone(doc);try{motion.close();edit();doc=parseStudio(unify(doc));history.record(before,doc);draw();status.textContent=message;}catch(e){doc=before;draw();status.textContent=String(e);}}
 transform.addEventListener('mouseDown',()=>{dragBefore=structuredClone(doc);motion.close();});
 transform.addEventListener('objectChange',()=>{const o=transform.object;if(!o||!dragBefore)return;if(o.userData.buildGizmo){build.onDrag();return;}if(mech.active)mech.onDrag(o);});
 function finishDrag(cancel=false){if(!dragBefore)return;const before=dragBefore;dragBefore=undefined;let failed=false;try{if(cancel)doc=before;else{doc=parseStudio(doc);history.record(before,doc);}}catch(e){doc=before;failed=true;status.textContent=String(e);}draw();if(mech.active)mech.dragEnd(cancel||failed);}
@@ -98,14 +107,14 @@ window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e
 
 // ---------- scenes and phases ----------
 /** What a project can show: its mechanisms, and builds and gear trains that stand alone. */
-function scenes():Scene[]{return [...(doc.mechanisms??[]).map(m=>({kind:'mechanism' as const,id:m.id,label:m.label})),...(doc.builds??[]).filter(b=>!b.mechanism).map(b=>({kind:b.train?'train' as const:'build' as const,id:b.id,label:b.label}))];}
+function scenes():Scene[]{return [...(doc.mechanisms??[]).map(m=>({kind:'mechanism' as const,id:m.id,label:m.label})),...(doc.builds??[]).filter(b=>!b.mechanism).map(b=>({kind:'build' as const,id:b.id,label:b.label}))];}
 const keyOf=(s:Scene)=>`${s.kind}:${s.id}`;
 function current():Scene|undefined{const all=scenes();return all.find(s=>keyOf(s)===sceneKey)??all[0];}
-/** Phases a scene has: a build has nothing to move, a gear train is made in its mechanism. */
-const phasesOf=(s:Scene):Phase[]=>s.kind==='mechanism'?[1,2,3]:s.kind==='build'?[1,3]:[1,2];
+/** Every project has all three phases; what a phase has nothing for says so in the tree. */
+const phasesOf=(_s:Scene):Phase[]=>[1,2,3];
 function enterScene(s:Scene){if(s.kind==='mechanism'){if(build.activeId)build.exit();if(mech.activeId!==s.id)mech.enter(s.id);}else{if(mech.activeId)mech.exit();if(build.activeId!==s.id)build.enter(s.id);}}
 function setPhase(p:Phase){const s=current();if(!s)return;phase=phasesOf(s).includes(p)?p:phasesOf(s)[0];build.deselect();
- if(s.kind==='mechanism'){enterScene(s);mech.open(mech.defaultPage(phase));return;}if(s.kind==='build'){const b=doc.builds?.find(x=>x.id===s.id);if(phase===3&&b?.plates[0])build.selectPlate(b.plates[0].id);else build.overview();}draw();}
+ if(s.kind==='mechanism'){enterScene(s);mech.open(mech.defaultPage(phase));return;}const b=doc.builds?.find(x=>x.id===s.id);if(phase===3&&b?.plates[0]&&!b.items.some(i=>i.free))build.selectPlate(b.plates[0].id);else if(phase===2&&b?.train?.wheels.length)build.openTrain();else build.overview();draw();}
 function openScene(s:Scene,p?:Phase){sceneKey=keyOf(s);startOpen=false;enterScene(s);setPhase(p??1);}
 for(const b of document.querySelectorAll<HTMLButtonElement>('#phases [data-phase]'))b.onclick=()=>setPhase(Number(b.dataset.phase) as Phase);
 
@@ -118,26 +127,26 @@ function drawView(){
  enterScene(s);if(!phasesOf(s).includes(phase))phase=phasesOf(s)[0];document.body.dataset.scene=s.kind;document.body.dataset.phase=String(phase);
  mech.view.group.visible=s.kind==='mechanism'&&!motion.active;build.attach(s.kind==='mechanism'?s.id:undefined);build.group.visible=true;
  if(s.kind==='mechanism'){mech.refresh();mech.renderAxes($('axes'));}build.refresh();
- $('view-hint').textContent=s.kind==='mechanism'?(phase===1?'Teile aus der Bibliothek auf das Modell ziehen · Modellteile anklicken, um sie einem Glied zuzuweisen':'Linke Maus dreht · rechte Maus verschiebt · Mausrad zoomt · Regler unten bewegen die Achsen'):s.kind==='train'?'Zahnräder aus der Bibliothek ziehen: Sie rasten im Achsabstand ein · Alt: ohne Einrasten':'Teile aus der Bibliothek ziehen · R dreht · Entf löscht · Alt: ohne Einrasten';
+ $('view-hint').textContent=phase===1?`Aus der Bibliothek in die Ansicht ziehen · Zahnräder rasten im Achsabstand ein · R dreht · Entf löscht · Alt: ohne Einrasten${s.kind==='mechanism'?' · Modellteile anklicken, um sie einem Glied zuzuweisen':''}`:`Linke Maus dreht · rechte Maus verschiebt · Mausrad zoomt${s.kind==='mechanism'?' · Regler unten bewegen die Achsen':''}`;
  renderHeader(s);renderLeft(s);renderRight(s);syncHistory();
 }
 function renderHeader(s:Scene|undefined){
  $('project-name').textContent=project.name;document.title=`${project.name} · Mechanics Studio`;
- for(const b of document.querySelectorAll<HTMLButtonElement>('#phases [data-phase]')){const p=Number(b.dataset.phase) as Phase,has=!!s&&!startOpen&&phasesOf(s).includes(p);b.disabled=!has;b.setAttribute('aria-pressed',String(has&&p===phase));b.title=has?'':s?.kind==='build'?'Ein Aufbau ohne Modell bewegt sich nicht.':s?.kind==='train'?'Das Getriebe wird gefertigt, sobald es ein Mechanismus ist.':'';}
+ for(const b of document.querySelectorAll<HTMLButtonElement>('#phases [data-phase]')){const p=Number(b.dataset.phase) as Phase,has=!!s&&!startOpen&&phasesOf(s).includes(p);b.disabled=!has;b.setAttribute('aria-pressed',String(has&&p===phase));}
  $('projects').setAttribute('aria-pressed',String(!s||startOpen));
 }
 function renderLeft(s:Scene){
  const lib=$('library'),tree=$('tree');lib.replaceChildren();tree.replaceChildren();
- const all=scenes();if(all.length>1){const row=el('div',{className:'scene-switch'});for(const x of all){const b=el('button',{textContent:(x.kind==='mechanism'?'⚙ ':x.kind==='train'?'⚙ Getriebe: ':'▦ ')+x.label});b.dataset.sceneSwitch=keyOf(x);b.setAttribute('aria-pressed',String(keyOf(x)===keyOf(s)));b.onclick=()=>openScene(x,x.kind===s.kind?phase:undefined);row.append(b);}tree.append(row);}
+ const all=scenes();if(all.length>1){const row=el('div',{className:'scene-switch'});for(const x of all){const b=el('button',{textContent:(x.kind==='mechanism'?'⚙ ':'▦ ')+x.label});b.dataset.sceneSwitch=keyOf(x);b.setAttribute('aria-pressed',String(keyOf(x)===keyOf(s)));b.onclick=()=>openScene(x,x.kind===s.kind?phase:undefined);row.append(b);}tree.append(row);}
  let title='';
- if(phase===1){title=s.kind==='train'?'Bibliothek: Zahnräder':'Bibliothek: Teile';build.renderStore(lib);}
+ if(phase===1){title='Bibliothek';build.renderStore(lib);}
  else if(phase===2&&s.kind==='mechanism'){title='Bestand für die Getriebesuche';lib.append(stockBox());renderCatalog();}
  $('library-box').hidden=!title;$('library-title').textContent=title;
- if(s.kind==='mechanism'){mech.renderScene(tree,phase);if(phase===1)build.renderPlaced(tree);}else build.renderPlaced(tree);
+ if(s.kind==='mechanism')mech.renderScene(tree,phase);build.renderPlaced(tree,phase);
 }
 function renderRight(s:Scene){
  if(s.kind==='mechanism'){if(build.holdsProperties)build.renderProperties();else mech.renderProperties();}else build.renderProperties();
- const box=$('todo'),items=s.kind==='mechanism'?mech.todo().map(t=>({...t,go:()=>{phase=t.phase;mech.open(t.item);}})):build.todo().map(t=>({...t,phase:t.phase as Phase,go:()=>{phase=t.phase as Phase;t.open();draw();}}));box.replaceChildren();$('todo-box').hidden=!items.length;
+ const box=$('todo'),items=[...(s.kind==='mechanism'?mech.todo().map(t=>({...t,go:()=>{phase=t.phase;mech.open(t.item);}})):[]),...build.todo().map(t=>({...t,phase:t.phase as Phase,go:()=>{phase=t.phase as Phase;build.deselect();t.open();draw();}}))];box.replaceChildren();$('todo-box').hidden=!items.length;
  const next=items.find(t=>!t.done);
  for(const t of items){const li=el('li',{});li.dataset.state=t.done?'done':t===next?'current':'open';const b=el('button',{textContent:`${t.done?'✓':phaseNames[t.phase].slice(0,1)} ${t.label}`});b.dataset.todo=t.label;b.onclick=()=>{t.go();};li.append(b);if(t===next)li.append(el('p',{textContent:t.hint}));box.append(li);}
  if(!next&&items.length)box.append(el('p',{className:'state-pass',textContent:'✓ Alles erledigt.'}));
@@ -147,25 +156,27 @@ function stockBox(){return el('div',{id:'stock'},el('p',{className:'muted',textC
 function renderCatalog(){if(!$('catalog-items'))return;$('catalog-filter').oninput=renderCatalog;renderStock(doc.catalog??defaultCatalog(),{},undefined,edit=>change(()=>{doc.catalog??=defaultCatalog();edit(doc.catalog);},'Bestand aktualisiert: Die nächste Getriebesuche nutzt ihn.'));}
 
 // ---------- start page ----------
-/** New content for the open project, or a new project if this one has content already. */
-async function intoProject(label:string){if(scenes().length||!project.id){await createProject(label);}else if(project.name!==label&&/^(Mein Projekt|Projekt \d+|Neues Projekt)$/.test(project.name)){project.name=label;savedState='';}}
-async function adoptModel(label:string,make:()=>Promise<void>,p:Phase=1){followMechanism=true;await make();followMechanism=false;const s=scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);if(s)openScene(s,p);void label;}
-async function startWith(label:string,content:(d:StudioDocument)=>Scene|Promise<Scene|void>|void,p:Phase=1){await intoProject(label);let made:Scene|void=undefined;const before=structuredClone(doc);try{made=await content(doc);doc=parseStudio(doc);history.record(before,doc);}catch(e){doc=before;status.textContent=String(e);}const s=made??scenes().at(-1);if(s)openScene(s,p);else draw();void renderProjects();}
+const generic=(name:string)=>/^(Mein Projekt|Projekt \d+|Neues Projekt( \d+)?)$/.test(name);
+const projectEmpty=()=>!doc.mechanisms?.length&&(doc.builds??[]).every(isEmpty);
+/** New content for the open project if it is still empty (it takes the name, if it has none of its own), else a new
+ * project. `here`: always the open one. */
+async function intoProject(label:string,here=false){if(!project.id||!here&&!projectEmpty()){await createProject(label);}else if(project.name!==label&&generic(project.name)){project.name=label;savedState='';}}
+async function adoptModel(make:()=>Promise<void>,p:Phase=1){followMechanism=true;await make();followMechanism=false;const s=scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);if(s)openScene(s,p);}
+async function startWith(label:string,content:(d:StudioDocument)=>Scene|Promise<Scene|void>|void,p:Phase=1){await intoProject(label);let made:Scene|void=undefined;const before=structuredClone(doc);try{made=await content(doc);doc=parseStudio(unify(doc));history.record(before,doc);}catch(e){doc=before;status.textContent=String(e);}const s=(made&&scenes().find(x=>keyOf(x)===keyOf(made as Scene)))??scenes().at(-1);if(s)openScene(s,p);else draw();void renderProjects();}
 const modelFile=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});modelFile.id='model-file';document.body.append(modelFile);
-modelFile.onchange=async()=>{const files=[...(modelFile.files??[])];modelFile.value='';if(!files.length)return;await intoProject(files[0].name.replace(/\.(stl|obj|glb|gltf)$/i,''));followMechanism=true;await mech.importFiles(files);followMechanism=false;const s=scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);if(s)openScene(s,1);void renderProjects();};
+// Into the open project: the library offers it only while the project has no mechanism.
+modelFile.onchange=async()=>{const files=[...(modelFile.files??[])];modelFile.value='';if(!files.length)return;await intoProject(files[0].name.replace(/\.(stl|obj|glb|gltf)$/i,''),true);await adoptModel(()=>mech.importFiles(files),1);void renderProjects();};
 function renderStart(){
  const root=$('start');root.replaceChildren();
  const card=(title:string,text:string,data:Record<string,string>,go:()=>void)=>{const b=el('button',{className:'start-card'},el('strong',{textContent:title}),el('small',{textContent:text}));Object.assign(b.dataset,data);b.onclick=go;return b;};
- const newBuildIn=(d:StudioDocument,label:string,plates:boolean,train=false):Scene=>{const id=(train?'getriebe-':'aufbau-')+crypto.randomUUID().slice(0,8),b={...newBuild(id,label),...(plates?{}:{plates:[]}),...(train?{plates:[],train:newTrain()}:{})};d.builds=[...(d.builds??[]),b];return {kind:train?'train':'build',id,label};};
- root.append(el('h1',{textContent:'Mechanics Studio'}),el('p',{className:'muted',textContent:'Ein Projekt ist ein Gerät: Modell, Teile, Getriebe und alles, was gedruckt wird.'}),
-  el('h2',{textContent:'Neues Projekt'}),el('div',{className:'start-grid'},
-   card('Aus 3D-Modell','STL, OBJ oder GLB laden, Glieder und Achsen festlegen, Antriebe und Strukturen erzeugen.',{newModel:'true'},()=>modelFile.click()),
-   card('Teile auf einer Bodenplatte','Elektronik und Motoren platzieren, Halter, Bohrungen und Gehäuse erzeugen.',{newBuild:'true'},()=>void startWith('Bodenplatte',d=>newBuildIn(d,'Bodenplatte',true))),
-   card('Teile frei im Raum','Teile in den Raum stellen, ein Baum-Netz trägt sie.',{newFree:'true'},()=>void startWith('Aufbau im Raum',d=>newBuildIn(d,'Aufbau im Raum',false))),
-   card('Getriebe aus Zahnrädern','Zahnräder ziehen, sie rasten ein; daraus wird ein Mechanismus mit Lagern und Gestell.',{newTrain:'true'},()=>void startWith('Getriebe',d=>newBuildIn(d,'Getriebe',false,true)))),
-  el('h2',{textContent:'Beispiele'}),el('div',{className:'start-grid'},
+ /** The project's parts list (an empty project has one). */
+ const partsOf=(d:StudioDocument):Scene=>{let x=d.builds?.find(y=>!y.mechanism);if(!x){x=emptyBuild();d.builds=[...(d.builds??[]),x];}return {kind:'build',id:x.id,label:x.label};};
+ root.append(el('h1',{textContent:'Mechanics Studio'}),el('p',{className:'muted',textContent:'Ein Projekt ist ein Gerät. Jedes beginnt gleich: leer, mit derselben Bibliothek für 3D-Modell, Bodenplatten, Elektronik, Motoren und Zahnräder.'}),
+  el('div',{className:'start-grid'},
+   card('＋ Neues Projekt','Leer. Aus der Bibliothek holen, was das Gerät braucht.',{newProject:'true'},()=>void (async()=>{if(!projectEmpty()||!generic(project.name))await createProject('Neues Projekt');startOpen=false;const s=current();if(s)openScene(s,1);else draw();void renderProjects();})())),
+  el('h2',{textContent:'Beispiele'}),el('p',{className:'muted',textContent:'Fertige Projekte zum Ansehen und Ändern: Jedes wird ein eigenes Projekt.'}),el('div',{className:'start-grid'},
    ...([['robot','Roboterarm','Drei Drehachsen mit NEMA-Motoren.'],['cnc','CNC-Portal','Drei Linearachsen mit Spindeln.'],['sled','Schlitten auf Wellenbahn','Ein Wagen auf einer gebogenen Bahn.'],['hand','Handgetriebe (LEGO)','z16 → z40 in Gleitlagern, von Hand gedreht.'],['planet','Planetengetriebe (LEGO)','Sonne z16, drei z40, Hohlrad gedruckt, 1 : 7.'],['planet16','Planetengetriebe 4 × LEGO z16','Hohlrad z48, 1 : 4.']] as const).map(([key,title,text])=>card(title,text,{demo:key},()=>void startWith(title,async()=>{followMechanism=true;await mech.addDemo(demos[key]());followMechanism=false;return scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);}))),
-   card('Arduino Uno im Gehäuse','Eine Platine auf einer Platte, das Gehäuse folgt aus ihren Steckern.',{example:'case'},()=>void startWith('Arduino Uno im Gehäuse',d=>{const s=newBuildIn(d,'Arduino Uno im Gehäuse',true),b=d.builds!.find(x=>x.id===s.id)!;b.items.push({...newItem('uno',partById('arduinouno3')!,[0,0]),plate:b.plates[0].id});return s;},3)),
+   card('Arduino Uno im Gehäuse','Eine Platine auf einer Platte, das Gehäuse folgt aus ihren Steckern.',{example:'case'},()=>void startWith('Arduino Uno im Gehäuse',d=>{const s=partsOf(d),b=d.builds!.find(x=>x.id===s.id)!,plate=newBuild('','').plates[0];b.plates.push(plate);b.items.push({...newItem('uno',partById('arduinouno3')!,[0,0]),plate:plate.id});return s;},3)),
    ...Object.entries(templates).map(([key,t])=>card(t.label.replace(' (Vorlage)',''),'Kinematik-Beispiel: Körper, Gelenke und Kontakte.',{mechanismTemplate:key},()=>void startWith(t.label.replace(' (Vorlage)',''),d=>{const id='mech-'+crypto.randomUUID().slice(0,8),label=t.label.replace(' (Vorlage)','');d.mechanisms=[...(d.mechanisms??[]),{id,label,mechanism:t.build()}];return {kind:'mechanism',id,label};})))),
   el('h2',{textContent:'Deine Projekte'}));
  const list=el('div',{className:'project-list',id:'project-list'});root.append(list);void store.settled().catch(()=>{}).then(()=>store.list()).then(all=>{list.replaceChildren(...all.map(p=>{const open=el('button',{className:'project-open',textContent:p.id===project.id?project.name:p.name});open.dataset.openProject=p.id;open.setAttribute('aria-current',String(p.id===project.id));open.onclick=()=>void switchProject(p.id).then(()=>{startOpen=false;draw();});return el('div',{className:'project-row'},open,el('small',{textContent:p.updated?new Date(p.updated).toLocaleString('de-DE',{dateStyle:'medium',timeStyle:'short'}):''}));}));});
@@ -191,7 +202,7 @@ async function renderProjects(){if(document.body.dataset.view==='start')renderSt
 function restoreView(v:ProjectView|undefined){const s=scenes().find(x=>keyOf(x)===v?.scene)??(v?.mechanism?scenes().find(x=>x.kind==='mechanism'&&x.id===v.mechanism):v?.build?scenes().find(x=>x.id===v.build):undefined);if(s)sceneKey=keyOf(s);phase=(v?.phase as Phase)??1;const c=current();if(c){enterScene(c);if(c.kind==='mechanism')mech.open(mech.defaultPage(phasesOf(c).includes(phase)?phase:1));}}
 async function switchProject(id:string){
  finishDrag();await saveNow();await store.settled().catch(()=>{});
- let f;try{f=await store.read(id);f={...f,doc:parseStudio(f.doc)};}catch(e){status.textContent=`Projekt konnte nicht geöffnet werden: ${e}`;return;}
+ let f;try{f=await store.read(id);f={...f,doc:parseStudio(unify(parseStudio(f.doc)))};}catch(e){status.textContent=`Projekt konnte nicht geöffnet werden: ${e}`;return;}
  const free=await store.claim(id);motion.close();mech.exit();build.exit();history=new StudioHistory();doc=f.doc;project={id,name:f.name,readOnly:!free};sceneKey='';phase=1;await store.setActive(id);restoreView(f.view);drawView();syncHistory();savedState=fileState();saveState.textContent=free?'Gespeichert':'Nur Ansicht';await renderProjects();status.textContent=free?`Projekt ${f.name} geöffnet.`:`${f.name} ist in einem anderen Tab offen: Änderungen hier werden nicht gespeichert.`;
 }
 async function createProject(name:string,content=fresh()){const id=newProjectId();await store.write(id,{format:'studio-project-1',name,updated:new Date().toISOString(),doc:parseStudio(content)});await switchProject(id);}

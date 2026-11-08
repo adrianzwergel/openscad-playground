@@ -343,11 +343,11 @@ export class MechanismEditor{
   await this.addDemo(demos[key]());
  }
  /** A ready model (a demo, a compiled gear train) becomes a mechanism of the document and opens. */
- async addDemo({asset,mechanism,drives,label,fabrication}:Demo){
+ async addDemo({asset,mechanism,drives,label,fabrication}:Demo,also?:(d:StudioDocument)=>void){
   await storeAsset(asset);rememberAsset(asset);this.assets.set(asset.id,asset);
   for(const d of drives)placeMotor(mechanism,d);
   const id='mech-'+crypto.randomUUID().slice(0,8);
-  this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label,mechanism,drives,...(fabrication?{fabrication}:{})}];},`${label} geladen: Regler unter der 3D-Ansicht bewegen die Achsen; unter „Antriebe“ findet die Suche die Getriebe.`);
+  this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label,mechanism,drives,...(fabrication?{fabrication}:{})}];also?.(d);},`${label} geladen: Regler unter der 3D-Ansicht bewegen die Achsen; unter „Antriebe“ findet die Suche die Getriebe.`);
   this.enter(id);this.item='model';this.host.leave();
  }
  /** Renames a link everywhere it is referenced. */

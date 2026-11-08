@@ -4,14 +4,17 @@
 import * as THREE from 'three';
 import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {legoParts} from './graph/lego-parts';
-import {legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf} from './parts/train';
+import {legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain} from './parts/train';
 import type {Train,Wheel} from './parts/train';
 import type {Build} from './parts/build';
 import {planetGearbox,along} from './demos';
 import type {Demo} from './demos';
 import {driveCatalog} from './kinematics/drive';
 
-export type TrainHost={build:()=>Build|undefined;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;canvas:()=>HTMLCanvasElement;ray:(e:{clientX:number;clientY:number})=>THREE.Raycaster;root:()=>THREE.Object3D;orbit:(on:boolean)=>void;adopt:(d:Demo)=>void};
+export type TrainHost={build:()=>Build|undefined;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;/** Clears the other selections. */pick:()=>void;canvas:()=>HTMLCanvasElement;ray:(e:{clientX:number;clientY:number})=>THREE.Raycaster;root:()=>THREE.Object3D;orbit:(on:boolean)=>void;
+ /** A finished train or block becomes the project's mechanism; `consume`: the wheels here go into it. */adopt:(d:Demo,consume?:boolean)=>void;
+ /** The train to change, made with the first wheel (inside a change). */ensure:()=>Train;
+ /** The project has a mechanism already: a train or block cannot become a second one. */mechanism:()=>boolean};
 type Drag={wheel:Wheel;isNew:boolean;moved:boolean;over:boolean;start:[number,number];at:[number,number];shaft?:string};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
@@ -20,13 +23,16 @@ function modelOf(id:string){let g=shapes.get(id);if(!g){g=new STLLoader().loadAs
 const label=(w:Wheel)=>`${w.part?'LEGO':'Gedruckt'} z${w.teeth}${w.part?'':` m${w.module}`}`;
 
 export class TrainEditor{
+ /** A wheel is selected. */
+ get selectedId(){return this.selected;}
+ select(id?:string){this.selected=id;}
  private selected?:string;private drag?:Drag;private loaded=new Map<string,THREE.BufferGeometry>();private sun=legoGears.find(p=>p.teeth===16)?.id??legoGears[0].id;private planet=legoGears.find(p=>p.teeth===16)?.id??legoGears[0].id;
  onChange=()=>{};
  constructor(private host:TrainHost){}
  private train():Train|undefined{return this.host.build()?.train;}
  reset(){this.selected=undefined;this.drag=undefined;}
  /** The train as seen while dragging. */
- private shown():Train|undefined{const t=this.train(),d=this.drag;if(!t||!d?.over)return t;const id=d.shaft??d.wheel.shaft,shafts=t.shafts.some(s=>s.id===id)?t.shafts.map(s=>s.id===id&&!d.shaft?{...s,at:d.at}:s):[...t.shafts,{id,at:d.at}];return {...t,shafts,wheels:[...t.wheels.filter(w=>w.id!==d.wheel.id),{...d.wheel,shaft:id}]};}
+ private shown():Train|undefined{const d=this.drag,t=this.train()??(d?.over?newTrain():undefined);if(!t||!d?.over)return t;const id=d.shaft??d.wheel.shaft,shafts=t.shafts.some(s=>s.id===id)?t.shafts.map(s=>s.id===id&&!d.shaft?{...s,at:d.at}:s):[...t.shafts,{id,at:d.at}];return {...t,shafts,wheels:[...t.wheels.filter(w=>w.id!==d.wheel.id),{...d.wheel,shaft:id}]};}
  draw(group:THREE.Group){
   const t=this.shown();if(!t)return;const bad=new Set(trainIssues(t).flatMap(x=>x.wheels)),on=new Set(meshes(t).flat().map(w=>w.id));
   for(const s of t.shafts){const list=t.wheels.filter(w=>w.shaft===s.id);if(!list.length)continue;const lo=Math.min(...list.map(w=>w.z-w.width/2))-8,hi=Math.max(...list.map(w=>w.z+w.width/2))+8,color=s.id===t.input?0x63cbb3:s.id===t.output?0xffb347:0xc9d4db,m=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.4,hi-lo,16),new THREE.MeshStandardMaterial({color,roughness:.5}));m.position.set(s.at[0],(lo+hi)/2,s.at[1]);m.userData.shaft=s.id;group.add(m);}
@@ -47,16 +53,16 @@ export class TrainEditor{
  private startNew(w:Omit<Wheel,'id'|'shaft'|'z'>,e:PointerEvent){const id='r-'+crypto.randomUUID().slice(0,8);this.drag={wheel:{...w,id,shaft:'w-'+id,z:0},isNew:true,moved:false,over:false,start:[e.clientX,e.clientY],at:[0,0]};this.track();}
  private track(){const move=(e:PointerEvent)=>this.dragMove(e),up=(e:PointerEvent)=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);this.dragEnd();};window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);}
  private dragMove(e:PointerEvent){
-  const d=this.drag,t=this.train();if(!d||!t)return;if(Math.hypot(e.clientX-d.start[0],e.clientY-d.start[1])>3)d.moved=true;if(!d.moved)return;
+  const d=this.drag,t=this.train()??newTrain();if(!d)return;if(Math.hypot(e.clientX-d.start[0],e.clientY-d.start[1])>3)d.moved=true;if(!d.moved)return;
   d.over=!d.isNew||document.elementFromPoint(e.clientX,e.clientY)===this.host.canvas();if(!d.over){this.onChange();return;}
   const p=this.point(e);if(!p)return;const s=snapWheel(t,d.wheel,p,1,e.altKey);d.at=s.at;d.shaft=s.shaft;d.wheel.z=s.z;this.onChange();
  }
  private dragEnd(){
-  const d=this.drag,t=this.train();this.drag=undefined;this.host.orbit(true);if(!d||!t)return;
+  const d=this.drag,t=this.train()??newTrain();this.drag=undefined;this.host.orbit(true);if(!d)return;
   if(d.isNew&&!d.moved){const x=t.shafts.length?Math.max(...t.shafts.map(s=>s.at[0]))+60:0;d.at=[x,0];d.over=true;}
   if(!d.moved&&!d.isNew||!d.over){this.onChange();return;}
-  this.selected=d.wheel.id;
-  this.host.change(()=>{const x=this.train()!,target=d.shaft??d.wheel.shaft;let wheel=x.wheels.find(w=>w.id===d.wheel.id);if(!wheel){wheel={...d.wheel,shaft:target};x.wheels.push(wheel);}const old=wheel.shaft;wheel.z=d.wheel.z;wheel.shaft=target;
+  this.host.pick();this.selected=d.wheel.id;
+  this.host.change(()=>{const x=this.host.ensure(),target=d.shaft??d.wheel.shaft;let wheel=x.wheels.find(w=>w.id===d.wheel.id);if(!wheel){wheel={...d.wheel,shaft:target};x.wheels.push(wheel);}const old=wheel.shaft;wheel.z=d.wheel.z;wheel.shaft=target;
    const s=x.shafts.find(y=>y.id===target);if(s){if(!d.shaft)s.at=d.at;}else x.shafts.push({id:target,at:d.at});
    if(old!==target&&!x.wheels.some(w=>w.shaft===old))x.shafts=x.shafts.filter(y=>y.id!==old);
    x.input??=target;if(target!==x.input)x.output=x.output&&x.shafts.some(y=>y.id===x.output)?x.output:target;},d.shaft?`${label(d.wheel)} sitzt auf der Welle.`:d.isNew?`${label(d.wheel)} platziert.`:`${label(d.wheel)} verschoben.`);
@@ -65,8 +71,8 @@ export class TrainEditor{
  private remove(){const id=this.selected!;this.selected=undefined;this.host.change(()=>{const x=this.train()!;x.wheels=x.wheels.filter(w=>w.id!==id);x.shafts=x.shafts.filter(s=>x.wheels.some(w=>w.shaft===s.id));if(!x.shafts.some(s=>s.id===x.input))delete x.input;if(!x.shafts.some(s=>s.id===x.output))delete x.output;},'Rad entfernt');}
 
  renderPlaced(root:HTMLElement){
-  const t=this.train();if(!t)return;if(!t.wheels.length)root.append(el('p',{className:'muted',textContent:'Noch keine Räder. Zahnräder aus der Bibliothek in die Ansicht ziehen.'}));
-  for(const w of t.wheels){const row=el('button',{textContent:`  ${label(w)}${w.shaft===t.input?' · Eingang':w.shaft===t.output?' · Ausgang':''}`,className:'tree-sub'});row.dataset.wheel=w.id;row.setAttribute('aria-selected',String(this.selected===w.id));row.onclick=()=>{this.selected=w.id;this.host.leave();};root.append(el('div',{className:'tree-row'},row));}
+  const t=this.train();if(!t)return;
+  for(const w of t.wheels){const row=el('button',{textContent:`  ${label(w)}${w.shaft===t.input?' · Eingang':w.shaft===t.output?' · Ausgang':''}`,className:'tree-sub'});row.dataset.wheel=w.id;row.setAttribute('aria-selected',String(this.selected===w.id));row.onclick=()=>{this.host.pick();this.selected=w.id;this.host.leave();};root.append(el('div',{className:'tree-row'},row));}
  }
  /** The library of a train: gears, and the planetary stage as a block. */
  renderStore(root:HTMLElement){
@@ -76,14 +82,9 @@ export class TrainEditor{
   root.append(el('div',{className:'tree-group',textContent:'Bausteine'}));
   const choice=(text:string,value:string,write:(v:string)=>void)=>{const s=el('select');s.dataset.planet=text;for(const p of legoGears)s.add(new Option(`LEGO z${p.teeth}`,p.id));s.value=value;s.onchange=()=>{write(s.value);this.host.leave();};return el('label',{},text,s);};
   const teeth=(id:string)=>legoParts.find(p=>p.id===id)!.teeth,zs=teeth(this.sun),zp=teeth(this.planet),zr=zs+2*zp;
-  const go=el('button',{textContent:'＋ Planetenstufe anlegen',className:'primary'});go.dataset.planetMake='true';go.onclick=()=>{const name=`Planetengetriebe z${zs}/z${zp}`;this.host.adopt(planetGearbox({id:`planet-${crypto.randomUUID().slice(0,8)}`,label:name,sun:this.sun,planet:this.planet}));};
+  const go=el('button',{textContent:'＋ Planetenstufe anlegen',className:'primary'});go.dataset.planetMake='true';go.disabled=this.host.mechanism();go.title=go.disabled?'Das Projekt hat schon einen Mechanismus. Für eine Planetenstufe ein neues Projekt anlegen.':'';go.onclick=()=>{const name=`Planetengetriebe z${zs}/z${zp}`;this.host.adopt(planetGearbox({id:`planet-${crypto.randomUUID().slice(0,8)}`,label:name,sun:this.sun,planet:this.planet}));};
   root.append(el('details',{className:'templates'},el('summary',{textContent:'Planetenstufe (Sonne, 3 Planeten, Hohlrad)'}),choice('Sonne',this.sun,v=>{this.sun=v;}),choice('Planeten',this.planet,v=>{this.planet=v;}),el('p',{className:'muted',textContent:`Hohlrad z${zr} gedruckt, 1 : ${(1+zr/zs).toFixed(2).replace('.',',')}`}),go));
  }
- /** The steps of a train: two wheels that mesh, nothing locked, made into a mechanism. */
- todo(){const t=this.train();if(!t)return [];const found=trainIssues(t);return [
-  {label:'Räder platziert',done:t.wheels.length>=2,hint:'Zwei Zahnräder aus der Bibliothek nebeneinander ziehen: Sie rasten im Achsabstand ein.',phase:1,open:()=>{this.selected=undefined;}},
-  {label:'Alle Räder kämmen',done:t.wheels.length>=2&&!found.length,hint:found[0]?.message??'Alles kämmt.',phase:1,open:()=>{this.selected=found[0]?.wheels[0];}},
-  {label:'Als Mechanismus übernommen',done:false,hint:'In „② Bewegen“ den Antrieb wählen und „Als Mechanismus übernehmen“.',phase:2,open:()=>{this.selected=undefined;}}];}
  renderProperties(root:HTMLElement){
   const t=this.train(),b=this.host.build();if(!t||!b)return;
   const set=(message:string,fn:(x:Train)=>void)=>this.host.change(()=>fn(this.train()!),message);
@@ -93,11 +94,10 @@ export class TrainEditor{
    root.append(el('h3',{textContent:label(w)}),number('X der Welle [mm]',s.at[0],n=>shaft(a=>{a[0]=n;}),'1'),number('Höhe der Welle [mm]',s.at[1],n=>shaft(a=>{a[1]=n;}),'1'),number('Lage auf der Welle [mm]',w.z,n=>wheel('Rad verschoben',y=>{y.z=n;})));
    if(!w.part)root.append(number('Zähne',w.teeth,n=>wheel('Zähne geändert',y=>{y.teeth=Math.max(6,Math.round(n));}),'1'),number('Modul',w.module,n=>wheel('Modul geändert',y=>{y.module=Math.max(.3,n);}),'0.25'),number('Breite [mm]',w.width,n=>wheel('Breite geändert',y=>{y.width=Math.max(1,n);})));
    const input=el('button',{textContent:'Als Eingang'});input.dataset.setInput='true';input.onclick=()=>set('Eingang gesetzt',x=>{if(x.output===s.id)delete x.output;x.input=s.id;});const output=el('button',{textContent:'Als Ausgang'});output.dataset.setOutput='true';output.onclick=()=>set('Ausgang gesetzt',x=>{if(x.input===s.id)delete x.input;x.output=s.id;});const remove=el('button',{textContent:'Entfernen',className:'danger'});remove.dataset.remove='true';remove.onclick=()=>this.remove();root.append(el('div',{className:'button-row'},input,output,remove));}
-  const name=el('input',{type:'text',value:b.label});name.setAttribute('aria-label','Name des Getriebes');name.onchange=()=>{const v=name.value.trim();if(v)this.host.change(()=>{this.host.build()!.label=v;},'Getriebe umbenannt');};
   const ratio=ratioOf(t),found=trainIssues(t),lego=t.wheels.some(x=>x.part),kinds=driveCatalog.filter(d=>lego?d.id==='lego-achse':d.id!=='lego-achse');
-  root.append(heading('Getriebe'),el('label',{},'Name',name),el('p',{id:'train-ratio',className:ratio?'state-pass':'muted',textContent:ratio?`Übersetzung 1 : ${Math.abs(ratio).toFixed(2).replace('.',',')}, Ausgang dreht ${ratio>0?'gleichsinnig':'gegensinnig'}`:'Noch keine Verbindung von Eingang zu Ausgang.'}));
+  root.append(heading('Getriebe'),el('p',{id:'train-ratio',className:ratio?'state-pass':'muted',textContent:ratio?`Übersetzung 1 : ${Math.abs(ratio).toFixed(2).replace('.',',')}, Ausgang dreht ${ratio>0?'gleichsinnig':'gegensinnig'}`:'Noch keine Verbindung von Eingang zu Ausgang.'}));
   const s=el('select');s.dataset.field='Antrieb';for(const d of kinds)s.add(new Option(d.label,d.id));s.value=kinds.some(d=>d.id===t.drive)?t.drive:kinds[0].id;s.onchange=()=>set('Antrieb geändert',x=>{x.drive=s.value;});root.append(el('label',{},'Antrieb am Eingang',s));
   const box=el('div',{id:'build-issues'});for(const f of found)box.append(el('p',{className:'state-fail',textContent:f.message}));if(!found.length)box.append(el('p',{className:'state-pass',textContent:'✓ Alle Räder kämmen und drehen frei.'}));root.append(heading('Prüfung'),box);
-  const make=el('button',{textContent:'⚙ Als Mechanismus übernehmen',className:'primary'});make.dataset.compile='true';make.disabled=found.length>0;make.onclick=()=>{try{const drive=kinds.some(d=>d.id===t.drive)?t.drive:kinds[0].id;this.host.adopt(compileTrain({...t,drive},b.label));}catch(e){this.host.status(String(e));}};root.append(make,el('p',{className:'muted',textContent:'Wird ein Mechanismus mit Grundplatte: Regler, Lager & Wellen und Struktur funktionieren dort wie gewohnt. Das Getriebe hier bleibt zum Weiterbearbeiten.'}));
+  const make=el('button',{textContent:'⚙ Als Mechanismus übernehmen',className:'primary'});make.dataset.compile='true';make.disabled=found.length>0||this.host.mechanism();make.onclick=()=>{try{const drive=kinds.some(d=>d.id===t.drive)?t.drive:kinds[0].id;this.host.adopt(compileTrain({...t,drive},'Getriebe'),true);}catch(e){this.host.status(String(e));}};root.append(make,el('p',{className:'muted',textContent:this.host.mechanism()?'Das Projekt hat schon einen Mechanismus: Getriebe für seine Achsen findet die Suche am Antrieb. Für ein eigenes Getriebe ein neues Projekt anlegen.':'Die Räder werden der Mechanismus des Projekts, mit Grundplatte: Regler, Lager & Wellen und Struktur funktionieren dort wie gewohnt.'}));
  }
 }

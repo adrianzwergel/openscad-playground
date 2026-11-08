@@ -17,3 +17,5 @@ export async function menu(p,id){await p.click('#menu summary');await p.waitForS
 export async function example(p,key){if(await p.evaluate(()=>document.body.dataset.view!=='start'))await p.click('#projects');await p.waitForSelector(`[data-demo="${key}"]`,{visible:true});await p.click(`[data-demo="${key}"]`);}
 /** A card of the start page: a new project of that kind. */
 export async function start(p,attr){if(await p.evaluate(()=>document.body.dataset.view!=='start'))await p.click('#projects');await p.waitForSelector(`[${attr}]`,{visible:true});await p.click(`[${attr}]`);}
+/** A new, empty project from the start page; `plate`: with a base plate from the library. */
+export async function newProject(p,plate=false){await start(p,'data-new-project');await p.waitForSelector('[data-store-plate]',{visible:true});if(plate){const n=await p.$$eval('[data-plate]',x=>x.length);await p.click('[data-store-plate]');await p.waitForFunction(n=>document.querySelectorAll('[data-plate]').length>n,{},n);}}
