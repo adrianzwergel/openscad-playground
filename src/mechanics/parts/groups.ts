@@ -10,12 +10,13 @@ import type {Part} from './catalog.ts';
 import type {Shaft,Wheel} from './train.ts';
 import {newTrain,outerOf,inputsOf,outputsOf,setEnds,shaftBody,shaftOfBody,shaftFrames} from './train.ts';
 import type {Input} from './train.ts';
+import type {GearCase} from './gearcase.ts';
 import {add,axisAngle,compose,inverse,multiply,rotate} from '../kinematics/math.ts';
 import type {Frame,V} from '../kinematics/math.ts';
 
 export type GroupKind='ordnung'|'koerper';
 /** `koerper`: starr, `ordnung`: only ordering. */
-export type Group={id:string;label:string;kind:GroupKind;parent?:string};
+export type Group={id:string;label:string;kind:GroupKind;parent?:string;/** The housing of its wheels (parts/gearcase.ts), as set. */housing?:GearCase};
 /** Körper and Träger keep their distances while editing; Ordnung does not. */
 export const rigidOf=(g:Group)=>g.kind==='koerper';
 export const kindNames:Record<GroupKind,string>={ordnung:'Gruppe',koerper:'starre Gruppe'};
@@ -139,7 +140,7 @@ export function insertBlock(b:Build,block:Block,at:V):string{
 /** Checks the groups of a parsed build: known parents, no loops, members that point at groups that exist. */
 export function parseGroups(value:unknown):Group[]|undefined{
  if(value===undefined)return undefined;if(!Array.isArray(value)||value.length>200)throw Error('Aufbau: Gruppen ungültig');
- const out=value.map(g=>{if(!g||typeof g.id!=='string'||!g.id||typeof g.label!=='string'||!(g.kind in kindNames||g.kind==='traeger')&&typeof g.rigid!=='boolean'||g.parent!==undefined&&typeof g.parent!=='string')throw Error('Aufbau: Gruppe ungültig');return {id:g.id,label:g.label.slice(0,80),kind:kindOfOld(g),...(g.parent?{parent:g.parent}:{})} as Group;});
+ const out=value.map(g=>{if(!g||typeof g.id!=='string'||!g.id||typeof g.label!=='string'||!(g.kind in kindNames||g.kind==='traeger')&&typeof g.rigid!=='boolean'||g.parent!==undefined&&typeof g.parent!=='string')throw Error('Aufbau: Gruppe ungültig');return {id:g.id,label:g.label.slice(0,80),kind:kindOfOld(g),...(g.housing&&typeof g.housing==='object'&&['wall','gap','clearance','margin','floor'].every(k=>Number.isFinite(g.housing[k]))?{housing:{wall:g.housing.wall,gap:g.housing.gap,clearance:g.housing.clearance,margin:g.housing.margin,floor:g.housing.floor}}:{}),...(g.parent?{parent:g.parent}:{})} as Group;});
  if(new Set(out.map(g=>g.id)).size!==out.length)throw Error('Aufbau: Gruppe doppelt');
  for(const g of out){if(g.parent&&!out.some(x=>x.id===g.parent))throw Error('Aufbau: Gruppe ohne Obergruppe');const seen=new Set<string>();for(let x:Group|undefined=g;x;x=out.find(y=>y.id===x!.parent)){if(seen.has(x.id))throw Error('Aufbau: Gruppen im Kreis');seen.add(x.id);}}
  return out;}

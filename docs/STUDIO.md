@@ -63,7 +63,12 @@ Mates in Onshape. Logik: `parts/links.ts`, `parts/train.ts`; geprüft von `scrip
   Riemenlänge und die nächste Standardlänge.
 - **③ für alles, was am Getriebe hängt:** Der abgeleitete Mechanismus enthält Zahnräder, Riemen, Gewindespindeln (Lager)
   sowie Zahnstangen und Spindelmuttern als Schlitten auf Schiebegelenken; die Lagerplanung führt sie auf Stangen mit
-  Linearlagern (LM8UU). Teile mit eigener Dreh- oder Schiebeverbindung, die nicht am Getriebe hängen, gehen noch nicht ein.
+  Linearlagern (LM8UU). Auch Teile und Platten mit eigener Dreh- oder Schiebeverbindung werden Körper auf Dreh- bzw.
+  Schiebegelenken (auf der Welt oder auf einem anderen solchen Teil), mit Motor, wenn sie Eingang sind; ③ plant ihnen
+  Lager, Naben, Motorflansche und Linearführungen (`parts/derive.ts`).
+- **Gehäuse je starrer Gruppe mit Rädern:** In ③ steht je Gruppe „Gehäuse: …“. Zwei Lagerschilde neben den Rädern und ein
+  Boden, Bohrungen genau in den Achsabständen (LEGO-Achse 4,8 mm, sonst Wellen-Ø, plus Spiel); Wand, Abstand, Spiel, Rand
+  und Boden stehen in der Gruppe; Vorschau in der Ansicht, STL über OpenSCAD (`parts/gearcase.ts`).
 - Im Szenenbaum stehen unten unter **Verbindungen** alle Wellen, Losräder und nicht festen Teile mit ihrer Verbindung.
 
 **Gruppen** ordnen nur, wie Baugruppen im CAD-Browser. Eine **starre** Gruppe hält beim Bearbeiten ihre Abstände: Ziehst

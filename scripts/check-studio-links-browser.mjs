@@ -33,5 +33,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.waitForSelector(`input[data-joint="teil:${pi.id}"]`);const before=await p.evaluate(k=>window.studioPart(k),`teil:${pi.id}`);await p.$eval(`input[data-joint="teil:${pi.id}"]`,e=>{e.value='50';e.dispatchEvent(new Event('input'));});await wait(400);const after=await p.evaluate(k=>window.studioPart(k),`teil:${pi.id}`);
  assert.ok(Math.abs(after[0]-before[0]-50)<1e-6,`schiebt um 50 mm: ${before} → ${after}`);
  const links=await p.$$eval('[data-link]',x=>x.map(e=>e.textContent));assert.ok(links.some(l=>/Raspberry Pi 4 schiebt entlang x an der Welt · Eingang/.test(l)),links.join(' | '));assert.ok(links.some(l=>/fest an Welle von LEGO z16/.test(l)),links.join(' | '));
+ // ③: the sliding part, driven on its own, gets its linear guide.
+ await p.click('#phases [data-phase="3"]');await p.waitForSelector('[data-derived="bearings"]',{timeout:20000});await p.click('[data-derived="bearings"]');await p.waitForFunction(()=>/LM8UU/.test(document.getElementById('properties').textContent),{timeout:30000});
  assert.deepEqual(errors,[]);console.log(`Studio Verbindungen: Achse steht, Losrad, Teil auf dem Rad an seiner Welle, Schlitten-Teil schiebt 50 mm per Regler, ${links.length} Verbindungen gelistet.`);
 }finally{await browser.close();await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}

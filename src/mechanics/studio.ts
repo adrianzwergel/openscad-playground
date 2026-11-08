@@ -12,7 +12,7 @@ import {MechanismEditor} from './studio-mechanism';
 import type {GripOptions} from './studio-mechanism';
 import {BuildEditor} from './studio-build';
 import {partSeats,newBuild,newItem} from './parts/build';
-import {trainMechanism,trainIssues} from './parts/train';
+import {deriveMechanism} from './parts/derive';
 import {placeMotor} from './kinematics/drive';
 import {partById} from './parts/catalog';
 import type {Seat} from './kinematics/bearings';
@@ -119,8 +119,9 @@ window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e
 function derive(d:StudioDocument){
  const real=(d.mechanisms??[]).filter(m=>!m.derived),lone=(d.builds??[]).find(b=>!b.mechanism),t=lone?.train,old=(d.mechanisms??[]).find(m=>m.derived);let next:typeof old;
  const nuts=(lone?.items??[]).filter(i=>i.free?.joint?.kind==='mutter'&&i.free.body?.startsWith('welle:')).map(i=>({id:i.id,shaft:i.free!.body!.slice(6),along:i.free!.frame.position[1],lead:i.free!.joint!.lead??8,min:i.free!.joint!.min,max:i.free!.joint!.max}));
- if(!real.length&&lone&&t&&(t.wheels.length||t.shafts.some(s=>s.kind==='spindel'))&&!trainIssues(t).length)try{const made=trainMechanism(t,'Getriebe',false,`abgeleitet-${lone.id}`,nuts);mech.useAsset(made.asset);for(const x of made.drives)placeMotor(made.mechanism,x);
-  next={id:`getriebe-${lone.id}`,label:'Getriebe',derived:lone.id,mechanism:made.mechanism,drives:made.drives,...(old?.fabrication??made.fabrication?{fabrication:old?.fabrication??made.fabrication}:{})};}catch{/* not a mechanism yet: ③ says why */}
+ // Gears, belts, racks and nuts, and every part that turns or slides on its own.
+ if(!real.length&&lone)try{const got=deriveMechanism(lone,'Mechanik',`abgeleitet-${lone.id}`,nuts);if(got){const made=got.demo;for(const a of got.assets)mech.useAsset(a);for(const x of made.drives)placeMotor(made.mechanism,x);
+  next={id:`getriebe-${lone.id}`,label:'Mechanik',derived:lone.id,mechanism:made.mechanism,drives:made.drives,...(old?.fabrication??made.fabrication?{fabrication:old?.fabrication??made.fabrication}:{})};}}catch{/* not a mechanism yet: ③ says why */}
  d.mechanisms=[...real,...(next?[next]:[])];if(!d.mechanisms.length)delete d.mechanisms;return d;}
 const derivedId=()=>doc.mechanisms?.find(m=>m.derived)?.id;
 /** The page of the derived mechanism open in ③ ('' when none). */

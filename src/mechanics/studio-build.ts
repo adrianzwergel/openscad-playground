@@ -11,6 +11,7 @@ import {generators,generator} from './parts/generators';
 import {newBuild,modelBuild,newItem,newPlateNode,partOf,sheet,footprint,plugRects,issues,snapTo,nearestFree,plateRect,plateOutline,plateHoles,holderGeometry,flipped,liftOf,shopping,standing,buildGeometry,snap,worldOf,reframe,onSurface,partBox,plateBox,holderPiece} from './parts/build';
 import type {Build,BuildItem,Free,Issue,PlateNode,Sheet} from './parts/build';
 import {solidScad} from './parts/scad';
+import {gearCase,defaultGearCase} from './parts/gearcase';
 import JSZip from 'jszip';
 import {caseParts,caseBlockers,defaultCase} from './parts/case';
 import {solveBuild,surfacePoints,axisLever} from './parts/layout';
@@ -96,6 +97,8 @@ export class BuildEditor{
  private pivot?:{start:Build;centre:V;axis:'y'|'z'};
  /** The scene tree: folded groups, and what is being dragged in it. */
  private folded=new Set<string>();private layerDrag?:Member;
+ /** The group whose gear housing shows in the view. */
+ private caseOf?:string;
  constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;},canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt,ensure:()=>{const b=this.ensure();return b.train??=newTrain();},mechanism:()=>this.attached,phase:()=>this.host.phase?.()??3,
   unit:w=>{const b=this.build(),id=b?unitOf(b,{kind:'wheel',id:w}):undefined;return b&&id?{id,label:this.groupLabel(id),wheels:new Set(contents(b,id).wheels.map(x=>x.id))}:undefined;},
   moveUnit:(unit,delta,message)=>{const frames=this.frames();this.host.change(()=>{moveGroup(this.build()!,unit,{delta},frames);},message);}});this.trains.onChange=()=>this.refresh();}
@@ -141,6 +144,7 @@ export class BuildEditor{
    if(p.body>0&&i.holder.kind!=='none'){const seat=holderPiece(b,i),under=new THREE.Group();under.position.z=-liftOf(i);for(const s of holderGeometry(seat,seat.items[0]).solids){const m=primMesh(s);if(m)under.add(m);}g.add(under);}
    const q=partBox(p,{position:[0,0,0],rotation:[0,0,0,1]}),box=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(...q.half.map(v=>2*v) as [number,number,number])),new THREE.LineBasicMaterial({color:bad.has(i.id)?0xff5a55:i.id===this.selected||lit.has(i.id)?0xffffff:0x63cbb3}));box.position.set(...q.center);g.add(box);}
   const zone=b.items.find(i=>i.id===this.selected&&i.free&&i.wish)?.wish;if(zone){const m=new THREE.Mesh(new THREE.SphereGeometry(zone.size[0],24,16),new THREE.MeshBasicMaterial({color:0x7fb6ff,wireframe:true,transparent:true,opacity:.25}));m.position.set(...zone.center as [number,number,number]);this.group.add(m);}
+  const shown=this.caseOf&&b.train?b.groups?.find(g=>g.id===this.caseOf):undefined;if(shown)try{const c=gearCase(b.train!,new Set(contents(b,shown.id).wheels.map(w=>w.id)),shown.housing??defaultGearCase);for(const s of c.solids){const m=primMesh(s);if(m){const mat=m.material as THREE.MeshStandardMaterial;mat.transparent=true;mat.opacity=.3;mat.depthWrite=false;m.userData.gearCase=true;this.group.add(m);}}}catch{/* no wheels any more */}
   if(this.active&&this.net.positions&&this.net.key===this.netKey(b)){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(this.net.positions,3));g.computeVertexNormals();const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0xc58a4a,roughness:.6,side:THREE.DoubleSide}));m.userData.net=true;this.group.add(m);}
   this.syncGizmo();
   if(this.fitNext){this.fitNext=false;this.host.fit();}
@@ -335,9 +339,10 @@ export class BuildEditor{
    return;}
   if(phase===3){
    // The gears are made from their derived mechanism, in this scene: bearings and a structure per link.
-   if(wheels&&!this.attached){const open=this.host.derivedPage?.()??'';if(this.host.derived?.()){row('⊚ Lager & Wellen',{derived:'bearings'},open==='bearings',()=>this.host.openDerived?.('bearings'));row('🕸 Struktur je Glied',{derived:'structure'},open==='structure',()=>this.host.openDerived?.('structure'));}
+   if((wheels||this.host.derived?.())&&!this.attached){const open=this.host.derivedPage?.()??'';if(this.host.derived?.()){row('⊚ Lager & Wellen',{derived:'bearings'},open==='bearings',()=>this.host.openDerived?.('bearings'));row('🕸 Struktur je Glied',{derived:'structure'},open==='structure',()=>this.host.openDerived?.('structure'));}
     else{const why=trainIssues(b!.train!)[0];root.append(el('p',{className:'muted',textContent:`Lager und Struktur entstehen, sobald die Zahnräder stimmen: ${why?.message??''}`}));row('⚙ Zahnräder prüfen',{trainPage:'true'},this.trainOpen,()=>{this.host.picked?.();this.openTrain();this.refresh();this.host.leave();});}}
    if(this.active&&b&&!b.plates.length&&b.items.length)row('🕸 Baum-Netz',{overview:'true'},nothing,()=>pick());
+   for(const g of b?.groups??[])if(g.kind==='koerper'&&contents(b!,g.id).wheels.length)row(`▣ Gehäuse: ${g.label}`,{gearcase:g.id},this.groupId===g.id,()=>{this.host.picked?.();this.selectMember({kind:'group',id:g.id});this.refresh();this.host.leave();});
    for(const n of b?.plates??[])row('▭ Bodenplatte · Druckdateien',{plate:n.id},!this.selected&&this.plateId===n.id,()=>pick(undefined,n.id));
    if(!this.attached&&!b?.items.length&&!b?.plates.length&&!wheels)root.append(el('p',{className:'muted',textContent:'Noch nichts zu fertigen. In „① Aufbauen“ Teile, eine Bodenplatte oder ein 3D-Modell holen.'}));
    return;}
@@ -500,7 +505,15 @@ export class BuildEditor{
   keep.onclick=()=>void (async()=>{try{await this.host.saveBlock?.(blockOf(b,g.id,this.frames()));this.host.status(`${g.label} liegt in der Bibliothek unter „Eigene Bausteine“.`);this.host.leave();}catch(e){this.host.status(`Nicht gespeichert: ${e instanceof Error?e.message:e}`);}})();
   const apart=el('button',{textContent:'Auflösen'});apart.dataset.groupDissolve='true';apart.onclick=()=>{const id=g.id;this.groupId=undefined;const frames=this.frames();this.host.change(()=>{dissolve(this.build()!,id,frames);},`${g.label} aufgelöst.`);};
   const remove=el('button',{textContent:'Mit Inhalt entfernen',className:'danger'});remove.dataset.groupRemove='true';remove.onclick=()=>this.removeSelectedGroup();
-  root.append(el('div',{className:'button-row'},keep,apart,remove));}
+  root.append(el('div',{className:'button-row'},keep,apart,remove));
+  // In ③ a starr group with wheels gets its housing: shields with the bores at the fixed axis distances, and a floor.
+  if((this.host.phase?.()??3)===3&&g.kind==='koerper'&&c.wheels.length&&b.train){const h=g.housing??defaultGearCase,setCase=(k:keyof typeof defaultGearCase,v:number)=>set('Gehäuse geändert',y=>{y.housing={...(y.housing??defaultGearCase),[k]:v};});
+   let made;try{made=gearCase(b.train,new Set(c.wheels.map(w=>w.id)),h);}catch(e){root.append(el('p',{className:'state-fail',textContent:String(e)}));return;}
+   const number=(text:string,value:number,write:(n:number)=>void,step='0.5')=>{const input=el('input',{type:'number',step,value:String(Math.round(value*1000)/1000)});input.dataset.field=text;input.setAttribute('aria-label',text);input.onchange=()=>{const n=Number(input.value);if(Number.isFinite(n))write(n);};return el('label',{},text,input);};
+   root.append(heading('Gehäuse (Lagerschilde)'),el('p',{id:'gearcase-info',className:'muted',textContent:`${made.outer.map(v=>v.toFixed(0)).join(' × ')} mm · ${made.bores.length} Bohrung${made.bores.length===1?'':'en'}: ${made.bores.map(x=>`Ø ${x.d.toFixed(1).replace('.',',')}`).join(', ')}, genau in den Achsabständen der Gruppe.`}),
+    number('Wand [mm]',h.wall,v=>setCase('wall',Math.max(1,v))),number('Abstand zu den Rädern [mm]',h.gap,v=>setCase('gap',Math.max(0,v))),number('Spiel der Bohrung [mm]',h.clearance,v=>setCase('clearance',Math.max(0,v)),'0.05'),number('Rand [mm]',h.margin,v=>setCase('margin',Math.max(0,v))),number('Boden [mm]',h.floor,v=>setCase('floor',Math.max(1,v))));
+   const show=el('input',{type:'checkbox',checked:this.caseOf===g.id});show.dataset.gearcaseShow='true';show.onchange=()=>{this.caseOf=show.checked?g.id:undefined;this.refresh();};
+   const stl=el('button',{textContent:'⬇ Gehäuse als STL',className:'primary'});stl.dataset.gearcaseStl='true';stl.onclick=()=>this.exportSolid(made,`${g.label}-gehaeuse`);root.append(el('label',{className:'check'},show,'In der Ansicht zeigen'),stl);}}
  private report(found:Issue[]){const box=el('div',{id:'build-issues'});if(!found.length)box.append(el('p',{className:'state-pass',textContent:'✓ Nichts überschneidet sich, alle Stecker sind frei.'}));for(const f of found)box.append(el('p',{className:'state-fail',textContent:f.message}));return box;}
  /** Where a free thing hangs, and its numbers; changing the link keeps it where it is in the room. */
  /** The connection of a part or plate: connected to what, fixed or turning about / sliding along one of its axes, driven
@@ -615,6 +628,11 @@ export class BuildEditor{
   catch(e){this.host.status(`Gehäuse: ${e instanceof Error?e.message:e}`);}
  }
  /** Exact booleans in the render worker: what the printer gets is OpenSCAD's result, not the preview. */
+ /** Any solid through OpenSCAD in the render worker, downloaded as STL. */
+ private exportSolid(g:{solids:Prim[];holes:Prim[]},name:string){
+  this.host.status('STL wird erzeugt …');const w=new Worker('./mechanics-render-worker.js');
+  w.onmessage=({data})=>{w.terminate();if(data.error){this.host.status('STL: '+data.error);return;}const url=URL.createObjectURL(new Blob([data.stl],{type:'model/stl'})),a=el('a',{href:url,download:`${name.replace(/[^\wäöüÄÖÜß-]+/g,'_')}.stl`});a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);this.host.status(`STL erzeugt: ${name}.`);};
+  w.postMessage({source:solidScad(g)});}
  private exportSheet(s:Sheet,name:string){
   this.host.status('STL wird erzeugt …');const w=new Worker('./mechanics-render-worker.js');
   w.onmessage=({data})=>{w.terminate();if(data.error){this.host.status('STL: '+data.error);return;}const url=URL.createObjectURL(new Blob([data.stl],{type:'model/stl'})),a=el('a',{href:url,download:`${name.replace(/[^\wäöüÄÖÜß-]+/g,'_')}.stl`});a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);this.host.status(`STL erzeugt: ${name}.`);};
