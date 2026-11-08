@@ -98,26 +98,33 @@ export function partnerOf(t:Train,w:Wheel){const pair=meshes(t).find(p=>p.some(x
 // ---------- to a mechanism ----------
 function spec(w:Wheel):ElementSpec{const lego=w.part?legoParts.find(p=>p.id===w.part):undefined;return lego?legoSpec(lego,'spur'):spurSpec(w.teeth,w.module,w.width,5.1);}
 /** The train as a mechanism on a base plate, like the gearbox demos: the plane stands upright on the plate, the shafts
- * run along y, the train belongs to the drive H1 and the output shaft is the axis the sliders turn. */
-export function compileTrain(t:Train,label:string):Demo{
+ * run along y. Every input drives its own chain (drive H1, H2, …); the slider of a chain turns its first output (or the
+ * input, without one). `lift`: raised on a plate as the demos stand (made into the project's mechanism); without it the
+ * shafts stay exactly where the Studio shows them and the plate lies under the wheels (the mechanism derived live). */
+export function trainMechanism(t:Train,label:string,lift=true,assetId=`getriebe-${crypto.randomUUID().slice(0,8)}`):Demo{
  const blocking=trainIssues(t);if(blocking.length)throw Error(blocking[0].message);
- const input=inputsOf(t)[0].shaft,output=outputsOf(t)[0],{rate}=rates(t,input),ratio=ratioOf(t,input,output)!,used=t.shafts.filter(s=>rate.has(s.id)&&t.wheels.some(w=>w.shaft===s.id)),wheels=t.wheels.filter(w=>rate.has(w.shaft));
- const y0=Math.min(...wheels.map(w=>w.z-w.width/2)),y1=Math.max(...wheels.map(w=>w.z+w.width/2)),low=Math.min(...wheels.map(w=>shaftOf(t,w).at[1]-outerOf(w))),H=6+10-low;
- const x0=Math.min(...wheels.map(w=>shaftOf(t,w).at[0]-outerOf(w))),x1=Math.max(...wheels.map(w=>shaftOf(t,w).at[0]+outerOf(w)));
- const centre=(s:Shaft):Frame=>({position:[s.at[0],0,s.at[1]+H],rotation:along.y}),out=t.shafts.find(s=>s.id===output)!,o=centre(out).position,lego=wheels.some(w=>w.part);
- const size:V=[x1-x0+48,y1-y0+72,6],start=y0-24;
- const {asset,mesh}=modelAsset(`getriebe-${crypto.randomUUID().slice(0,8)}`,label,[['Grundplatte',box([(x0+x1)/2,(y0+y1)/2,3],size)],['Abtriebsachse',cylinder('y',[o[0],(y0+y1)/2,o[2]],lego?2.4:2.5,y1-y0+48)]]);
- const body=(s:Shaft)=>s.id===output?'Abtrieb':`H1/s${used.filter(x=>x.id!==output).indexOf(s)}`,jointOf=(s:Shaft)=>s.id===output?'Abtrieb':`H1/ground/s${used.filter(x=>x.id!==output).indexOf(s)}`;
- // The input shaft comes first: the drive turns it.
- used.sort((a,b)=>(b.id===input?1:0)-(a.id===input?1:0));
- const span=(s:Shaft)=>{const on=wheels.filter(w=>w.shaft===s.id);return [Math.min(...on.map(w=>w.z-w.width/2)),Math.max(...on.map(w=>w.z+w.width/2))];};
- const mechanism:Mechanism={format:'kinematics-1',parameters:[],patterns:[],
-  bodies:[{id:'ground',frame:identity(),ground:true,display:mesh(['Grundplatte'])},{id:'Abtrieb',frame:centre(out),display:mesh(['Abtriebsachse'])},...used.filter(s=>s!==out).map(s=>{const [a,b]=span(s);return {id:body(s),frame:centre(s),shaft:{diameter:lego?4.8:5,start:s.id===input?start:a-14,end:b+14}};})],
-  joints:used.map((s):JointRelation=>({id:jointOf(s),joint:{kind:'revolute'},a:{body:'ground',local:centre(s)},b:{body:body(s),local:identity()},...(s===out?{limits:{min:-180,max:180}}:{})})),
-  elements:wheels.map((w,k):Element=>{const e=spec(w),s=shaftOf(t,w);return {id:`H1/r${k+1}`,source:e.source,surfaces:e.surfaces,interfaces:e.interfaces,envelope:e.envelope,mounts:[{interface:'bore',body:body(s),pose:compose(identity(),{position:[0,0,w.z],rotation:[0,0,0,1]})}],phase:0};}),
-  contacts:meshes(t).filter(([a,b])=>rate.has(a.shaft)&&rate.has(b.shaft)).map(([a,b],k):Contact=>({id:`H1/k${k+1}`,kind:'roll',mode:'fixed-axes',a:{element:`H1/r${wheels.indexOf(a)+1}`,surface:'teeth'},b:{element:`H1/r${wheels.indexOf(b)+1}`,surface:'teeth'},params:{offsetA:0,offsetB:0}})),
-  input:{kind:'coordinate',joint:'Abtrieb',coordinate:0},output:{kind:'coordinate',joint:'Abtrieb',coordinate:0},range:{from:-180,to:180,samples:37}};
- const perOutput=Object.fromEntries(used.filter(s=>s!==out).map(s=>[jointOf(s),rate.get(s.id)!/rate.get(out.id)!])),inputShaft=t.shafts.find(s=>s.id===input)!,iC=centre(inputShaft).position;
- const drives:Drive[]=[{id:'H1',spec:inputsOf(t)[0].drive,body:'ground',frame:{position:[iC[0],start-6,iC[2]],rotation:toward([0,1,0])},axis:'Abtrieb',target:Math.abs(ratio),tolerance:5,maxStages:Math.max(1,used.length-1),gear:{reference:0,rates:perOutput,offsets:Object.fromEntries(Object.keys(perOutput).map(id=>[id,0])),label:wheels.map(nameOf).join(' · '),ratio:Math.abs(ratio),notes:[]}}];
+ const ins=inputsOf(t),outs=outputsOf(t),chains=ins.map(i=>({input:i,rate:rates(t,i.shaft).rate})),one=chains.length===1;
+ const all=t.wheels.filter(w=>chains.some(c=>c.rate.has(w.shaft)));
+ const y0=Math.min(...all.map(w=>w.z-w.width/2)),y1=Math.max(...all.map(w=>w.z+w.width/2)),low=Math.min(...all.map(w=>shaftOf(t,w).at[1]-outerOf(w))),H=lift?6+10-low:0,floor=lift?0:low-16;
+ const x0=Math.min(...all.map(w=>shaftOf(t,w).at[0]-outerOf(w))),x1=Math.max(...all.map(w=>shaftOf(t,w).at[0]+outerOf(w))),lego=all.some(w=>w.part);
+ const centre=(s:Shaft):Frame=>({position:[s.at[0],0,s.at[1]+H],rotation:along.y}),size:V=[x1-x0+48,y1-y0+72,6],start=y0-24;
+ const axisOf=chains.map(c=>outs.find(o=>c.rate.has(o))??c.input.shaft),axes=chains.map((c,k)=>t.shafts.find(s=>s.id===axisOf[k])!);
+ const {asset,mesh}=modelAsset(assetId,label,[['Grundplatte',box([(x0+x1)/2,(y0+y1)/2,floor+3],size)],...axes.map((s,k)=>[`Abtriebsachse${one?'':`-${k+1}`}`,cylinder('y',[centre(s).position[0],(y0+y1)/2,centre(s).position[2]],lego?2.4:2.5,y1-y0+48)] as [string,ReturnType<typeof box>])]);
+ const bodies:Mechanism['bodies']=[{id:'ground',frame:identity(),ground:true,display:mesh(['Grundplatte'])}],joints:JointRelation[]=[],elements:Element[]=[],contacts:Contact[]=[],drives:Drive[]=[];
+ chains.forEach((c,k)=>{
+  const H1=`H${k+1}`,axisName=one?'Abtrieb':`Abtrieb-${k+1}`,used=t.shafts.filter(s=>c.rate.has(s.id)&&t.wheels.some(w=>w.shaft===s.id)),wheels=t.wheels.filter(w=>c.rate.has(w.shaft)),out=axes[k];
+  // The input shaft comes first: the drive turns it.
+  used.sort((a,b)=>(b.id===c.input.shaft?1:0)-(a.id===c.input.shaft?1:0));const rest=used.filter(s=>s!==out);
+  const body=(s:Shaft)=>s===out?axisName:`${H1}/s${rest.indexOf(s)}`,jointOf=(s:Shaft)=>s===out?axisName:`${H1}/ground/s${rest.indexOf(s)}`;
+  const span=(s:Shaft)=>{const on=wheels.filter(w=>w.shaft===s.id);return [Math.min(...on.map(w=>w.z-w.width/2)),Math.max(...on.map(w=>w.z+w.width/2))];};
+  bodies.push({id:axisName,frame:centre(out),display:mesh([`Abtriebsachse${one?'':`-${k+1}`}`])},...rest.map(s=>{const [a,b]=span(s);return {id:body(s),frame:centre(s),shaft:{diameter:lego?4.8:5,start:s.id===c.input.shaft?start:a-14,end:b+14}};}));
+  joints.push(...used.map((s):JointRelation=>({id:jointOf(s),joint:{kind:'revolute'},a:{body:'ground',local:centre(s)},b:{body:body(s),local:identity()},...(s===out?{limits:{min:-180,max:180}}:{})})));
+  elements.push(...wheels.map((w,n):Element=>{const e=spec(w),s=shaftOf(t,w);return {id:`${H1}/r${n+1}`,source:e.source,surfaces:e.surfaces,interfaces:e.interfaces,envelope:e.envelope,mounts:[{interface:'bore',body:body(s),pose:compose(identity(),{position:[0,0,w.z],rotation:[0,0,0,1]})}],phase:0};}));
+  contacts.push(...meshes(t).filter(([a,b])=>c.rate.has(a.shaft)&&c.rate.has(b.shaft)).map(([a,b],n):Contact=>({id:`${H1}/k${n+1}`,kind:'roll',mode:'fixed-axes',a:{element:`${H1}/r${wheels.indexOf(a)+1}`,surface:'teeth'},b:{element:`${H1}/r${wheels.indexOf(b)+1}`,surface:'teeth'},params:{offsetA:0,offsetB:0}})));
+  const perOutput=Object.fromEntries(rest.map(s=>[jointOf(s),c.rate.get(s.id)!/c.rate.get(out.id)!])),iC=centre(t.shafts.find(s=>s.id===c.input.shaft)!).position,ratio=1/c.rate.get(out.id)!;
+  drives.push({id:H1,spec:c.input.drive,body:'ground',frame:{position:[iC[0],start-6,iC[2]],rotation:toward([0,1,0])},axis:axisName,target:Math.abs(ratio),tolerance:5,maxStages:Math.max(1,used.length-1),gear:{reference:0,rates:perOutput,offsets:Object.fromEntries(Object.keys(perOutput).map(id=>[id,0])),label:wheels.map(nameOf).join(' · '),ratio:Math.abs(ratio),notes:[]}});});
+ const first=one?'Abtrieb':'Abtrieb-1',mechanism:Mechanism={format:'kinematics-1',parameters:[],patterns:[],bodies,joints,elements,contacts,input:{kind:'coordinate',joint:first,coordinate:0},output:{kind:'coordinate',joint:first,coordinate:0},range:{from:-180,to:180,samples:37}};
  return {label,asset,mechanism,drives,...(lego?{fabrication:{bearings:{shaft:'lego',prefer:'plain',clearance:.2,wall:4}}}:{})};
 }
+/** The train made into the project's mechanism, raised on its plate. */
+export const compileTrain=(t:Train,label:string):Demo=>trainMechanism(t,label,true);

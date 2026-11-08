@@ -75,14 +75,18 @@ einzelner Eingang und Ausgang werden Listen.
 Alle drei sind immer offen. Was eine Phase für das Projekt nicht hat, sagt der Szenenbaum.
 
 Zahnräder drehen sich in jeder Phase: Sobald Räder kämmen und ein Eingang gesetzt ist, steht unter der Ansicht der Regler
-„Zahnräder drehen“; jedes Rad, das am Eingang hängt, läuft mit seiner Übersetzung mit, auch in Gruppen. „Lager und
-Gestell erzeugen“ in ③ macht aus den Rädern den Mechanismus des Projekts (vorher „Als Mechanismus übernehmen“ in ②).
+„Zahnräder drehen“ je Eingang; jedes Rad und Teil, das an einer Welle hängt, läuft mit, auch in Gruppen.
+
+Aus den Zahnrädern eines Projekts ohne Modell entsteht nach jeder Änderung ein Mechanismus (`derive` in `studio.ts`,
+`trainMechanism` in `parts/train.ts`): genau dort, wo die Räder in der Ansicht stehen, eine Antriebskette je Eingang. Er ist
+keine eigene Szene. In ③ öffnen „Lager & Wellen“ und „Struktur je Glied“ seine Seiten im Mechanismus-Editor; die Räder
+bleiben, wo sie gebaut werden, Gruppen und Zuordnungen bleiben erhalten. Einen Umwandlungsknopf gibt es nicht mehr.
 
 | Phase | Mechanismus | Teile, Platten, Zahnräder |
 |---|---|---|
 | ① Aufbauen | Modell & Glieder | platzieren, Halter, Bohrungen, Räder einrasten |
 | ② Bewegen | Achsen, Antriebe, Getriebesuche | Zahnräder: Eingang, Ausgang, Antrieb |
-| ③ Fertigen | Lager & Wellen, Struktur je Glied | Platte als STL, Gehäuse, Träger aus Baum-Netz; Zahnräder: Lager und Gestell erzeugen |
+| ③ Fertigen | Lager & Wellen, Struktur je Glied | Platte als STL, Gehäuse, Baum-Netz; Zahnräder: Lager & Wellen, Struktur je Glied |
 
 ## Aufbau des Codes
 

@@ -1,6 +1,7 @@
 // Studio: a gear train by hand. z16 dragged into the view, z40 beside it snaps to the mesh distance, the ratio shows,
 // a third wheel on the same shaft stacks; undo works, a reload keeps it; the button makes it a mechanism with sliders
-// and bearings. The planetary stage from the blocks becomes a mechanism too.
+// and bearings, planned in ③ right on the gears without a scene of its own. The planetary stage from the blocks becomes a
+// mechanism too.
 import puppeteer from 'puppeteer';import {goTo,phase,menu,newProject} from './studio-ui.mjs';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 const dir=await fs.mkdtemp(path.join(os.tmpdir(),'studio-train-'));
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,userDataDir:path.join(dir,'profil'),args:['--enable-unsafe-swiftshader']});
@@ -33,9 +34,10 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // The wheels turn by hand in any phase: the slider under the view, the output read off at 1 : 2,5.
  await phase(p,1);await p.waitForSelector('input[data-axis="Zahnräder"]');await p.$eval('input[data-axis="Zahnräder"]',e=>{e.value='100';e.dispatchEvent(new Event('input'));});assert.match(await p.$eval('#axes',e=>e.textContent),/Ausgang LEGO z40: -40°/);
  // In ③ the button: a mechanism with a slider, its train driven, bearings planned.
- await phase(p,3);await p.waitForSelector('[data-compile]');
- await p.click('[data-compile]');await p.waitForFunction(()=>document.body.dataset.scene==='mechanism',{timeout:20000});await p.waitForSelector('input[data-axis="Abtrieb"]',{timeout:20000});f=await settled(p,x=>x.doc.mechanisms?.length===1);assert.ok(!(f.doc.builds??[]).some(x=>x.train?.wheels.length),'die Räder sind jetzt der Mechanismus');const m=f.doc.mechanisms[0];assert.equal(m.drives[0].target,2.5);assert.ok(m.drives[0].gear);assert.equal(m.fabrication.bearings.shaft,'lego');
- await goTo(p,'Lager & Wellen');await wait(500);assert.match(await p.$eval('#properties',e=>e.textContent),/Gleitlager/);
+ await phase(p,3);await p.waitForSelector('[data-derived="bearings"]');f=await settled(p,x=>x.doc.mechanisms?.[0]?.derived);const m=f.doc.mechanisms[0];assert.equal(m.drives[0].target,2.5);assert.ok(m.drives[0].gear);assert.equal(m.fabrication.bearings.shaft,'lego');assert.ok(f.doc.builds[0].train.wheels.length===2,'die Räder bleiben, wo sie gebaut werden');
+ await p.click('[data-derived="bearings"]');await p.waitForFunction(()=>/Gleitlager/.test(document.getElementById('properties').textContent),{timeout:20000});assert.equal(await p.evaluate(()=>document.body.dataset.scene),'build','keine eigene Szene');
+ // The structure per link, from the same gears: the frame that holds the shafts (ground) and the shafts.
+ await p.click('[data-derived="structure"]');await p.waitForSelector('[data-generate-structures]',{timeout:20000});await p.click('[data-generate-structures]');await p.waitForFunction(()=>['done','error'].includes(document.getElementById('structure-progress')?.dataset.state),{timeout:300000});const made=await p.$eval('#structure-progress',e=>e.textContent);assert.match(made,/Fertig/,made);assert.equal(await p.evaluate(()=>document.body.dataset.scene),'build');
  // One device, one mechanism: here the block is locked; in a new project it becomes its mechanism.
  await phase(p,1);await p.waitForSelector('[data-planet-make]');assert.equal(await p.$eval('[data-planet-make]',b=>b.disabled),true);
  await newProject(p);await p.waitForSelector('[data-planet-make]');await p.evaluate(()=>{const b=document.querySelector('[data-planet-make]');b.closest('details.store-group').open=true;b.closest('details.templates').open=true;});await p.click('[data-planet-make]');await p.waitForFunction(()=>document.body.dataset.scene==='mechanism',{timeout:20000});f=await settled(p,x=>x.doc.mechanisms?.length===1&&/z16\/z16/.test(x.doc.mechanisms[0].label));assert.equal(f.doc.mechanisms[0].drives[0].target,4);

@@ -12,6 +12,8 @@ import {MechanismEditor} from './studio-mechanism';
 import type {GripOptions} from './studio-mechanism';
 import {BuildEditor} from './studio-build';
 import {partSeats,newBuild,newItem} from './parts/build';
+import {trainMechanism,trainIssues} from './parts/train';
+import {placeMotor} from './kinematics/drive';
 import {partById} from './parts/catalog';
 import type {Seat} from './kinematics/bearings';
 import {ProjectStore} from './project-store';
@@ -33,7 +35,7 @@ const isEmpty=(b:{items:unknown[];plates:unknown[];train?:{wheels:unknown[]}})=>
 /** One device: once the project has its mechanism, the parts belong to it (an empty list goes); without one there is
  * always a list to place into. */
 function unify(d:StudioDocument){
- const ms=d.mechanisms??[],ids=new Set(ms.map(m=>m.id));for(const b of d.builds??[])if(b.mechanism&&!ids.has(b.mechanism))delete b.mechanism;
+ const ms=(d.mechanisms??[]).filter(m=>!m.derived),ids=new Set(ms.map(m=>m.id));for(const b of d.builds??[])if(b.mechanism&&!ids.has(b.mechanism))delete b.mechanism;
  if(ms.length){d.builds=(d.builds??[]).filter(b=>b.mechanism||!isEmpty(b));if(ms.length===1&&!d.builds.some(b=>b.mechanism)){const lone=d.builds.find(b=>!b.mechanism);if(lone)lone.mechanism=ms[0].id;}}
  else if(!d.builds?.length)d.builds=[emptyBuild()];
  return d;}
@@ -64,14 +66,15 @@ const grid=new THREE.GridHelper(600,30,0x33424e,0x22303a);scene.add(grid);
 const mechRoot=new THREE.Group();mechRoot.rotation.x=-Math.PI/2;scene.add(mechRoot);
 const motion=new MotionPanel(()=>mech.active?mech.motionSource():undefined,on=>{mech.view.group.visible=!on&&mech.active;},text=>{status.textContent=text;});
 const mech:MechanismEditor=new MechanismEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),
- sideProperties:()=>{if(!build.holdsProperties)return false;build.renderProperties();return true;},selectedElsewhere:():boolean=>build.holdsProperties,deselect:()=>build.deselect(),
+ sideProperties:()=>{if(derivedOpen||!build.holdsProperties)return false;build.renderProperties();return true;},selectedElsewhere:():boolean=>!derivedOpen&&build.holdsProperties,deselect:()=>build.deselect(),
  extraSeats:():Seat[]=>{const b=doc.builds?.find(x=>x.mechanism===mech.activeId);return b?partSeats(b):[];},
  status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>fit(),grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.motor)transform.detach();},dragging:()=>transform.dragging,free:()=>free});
 const build:BuildEditor=new BuildEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>fit(),canvas:()=>renderer.domElement,ray:e=>hits(e as MouseEvent),orbit:on=>{orbit.enabled=on;},
  frames:()=>mech.active?mech.framesNow():{},surface:ray=>mech.active?mech.surfaceAt(ray):undefined,model:()=>mech.active?mech.clashContext():undefined,range:()=>mech.posesOverRange(),
  grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.buildGizmo)transform.detach();},dragging:()=>transform.dragging,
  mode:()=>transform.mode==='rotate'?'rotate':'translate',blocks:()=>blocks.all,saveBlock:async x=>{await blocks.add(x);},removeBlock:async id=>{await blocks.remove(id);},
- adopt:(d,consume)=>void adoptModel(()=>mech.addDemo(d,consume?x=>{for(const b of x.builds??[])if(!b.mechanism)delete b.train;}:undefined),consume?3:2),phase:()=>phase,loadModel:()=>modelFile.click()});
+ adopt:(d,consume)=>void adoptModel(()=>mech.addDemo(d,consume?x=>{for(const b of x.builds??[])if(!b.mechanism)delete b.train;}:undefined),consume?3:2),phase:()=>phase,loadModel:()=>modelFile.click(),
+ derived:()=>derivedId(),openDerived:page=>openDerived(page),derivedPage:()=>derivedOpen,derivedDone:()=>!!derivedOpen&&mech.activeId===derivedId()&&!!mech.todo().find(t=>t.label==='Strukturen erzeugt')?.done,picked:()=>{if(derivedOpen){derivedOpen='';mech.exit();}}});
 mechRoot.add(mech.view.group,mech.handles,motion.view.group,build.group);
 // The gizmo on a handle: mode, steps (Alt held: none) and axes as the handle asks.
 let steps:{step:number;angle:number}={step:0,angle:0},free=false;
@@ -90,7 +93,7 @@ window.addEventListener('keydown',e=>{if(e.key==='Alt'&&!free){free=true;snaps()
 window.addEventListener('studio-pick',e=>{const d=(e as CustomEvent).detail;if(!mech.pickByName(d.part,d.local))status.textContent='Teil nicht gefunden: '+d.part;});
 const ray=new THREE.Raycaster();ray.params.Line={threshold:4};function hits(e:MouseEvent){const r=renderer.domElement.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);return ray;}
 renderer.domElement.addEventListener('pointerdown',e=>{if(e.button!==0||transform.dragging||transform.axis)return;const s=current();if(!s)return;
- if(s.kind!=='mechanism'){build.pointerDown(e,hits(e));return;}
+ if(s.kind!=='mechanism'){if(derivedOpen){derivedOpen='';mech.exit();}build.pointerDown(e,hits(e));return;}
  if(build.pointerDown(e,hits(e)))return;const h=mech.click(hits(e));if(h){grip(h,mech.handleOptions(h));mech.selectHandle(h);}else transform.detach();});
 renderer.domElement.addEventListener('pointermove',e=>{if(transform.dragging)return;const s=current();renderer.domElement.style.cursor=(s&&(build.hover(hits(e))||s.kind==='mechanism'&&mech.hover(hits(e))))?'pointer':'default';});
 function fit(){const bounds=new THREE.Box3();scene.updateMatrixWorld(true);for(const g of [mech.view.group,motion.view.group,mech.handles,build.group])if(g.visible&&g.children.length)bounds.union(new THREE.Box3().setFromObject(g));if(bounds.isEmpty())return;const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()).length();orbit.target.copy(center);camera.position.copy(center).add(new THREE.Vector3(.75,.6,.95).normalize().multiplyScalar(Math.max(80,size*1.25)));camera.near=Math.max(.1,size/500);camera.far=size*50+1000;camera.updateProjectionMatrix();orbit.update();}
@@ -101,24 +104,37 @@ renderer.setAnimationLoop(()=>{build.follow();catchUp();$('gizmo-tools').hidden=
 
 // ---------- changes and history ----------
 function syncHistory(){($('undo') as HTMLButtonElement).disabled=!history.canUndo;($('redo') as HTMLButtonElement).disabled=!history.canRedo;}
-function change(edit:()=>void,message:string){const before=structuredClone(doc);try{motion.close();edit();doc=parseStudio(unify(doc));history.record(before,doc);draw();status.textContent=message;}catch(e){doc=before;draw();status.textContent=String(e);}}
+function change(edit:()=>void,message:string){const before=structuredClone(doc);try{motion.close();edit();doc=parseStudio(derive(unify(doc)));history.record(before,doc);draw();status.textContent=message;}catch(e){doc=before;draw();status.textContent=String(e);}}
 transform.addEventListener('mouseDown',()=>{dragBefore=structuredClone(doc);motion.close();});
 transform.addEventListener('objectChange',()=>{const o=transform.object;if(!o||!dragBefore)return;if(o.userData.buildGizmo){build.onDrag();return;}if(mech.active)mech.onDrag(o);});
 function finishDrag(cancel=false){if(!dragBefore)return;const before=dragBefore;dragBefore=undefined;let failed=false;try{if(cancel)doc=before;else{doc=parseStudio(doc);history.record(before,doc);}}catch(e){doc=before;failed=true;status.textContent=String(e);}draw();if(mech.active)mech.dragEnd(cancel||failed);}
 transform.addEventListener('mouseUp',()=>finishDrag());
-function travelHistory(redo=false){finishDrag();motion.close();doc=redo?history.redo(doc):history.undo(doc);draw();status.textContent=redo?'Wiederhergestellt':'Rückgängig';}
+function travelHistory(redo=false){finishDrag();motion.close();doc=parseStudio(derive(redo?history.redo(doc):history.undo(doc)));draw();status.textContent=redo?'Wiederhergestellt':'Rückgängig';}
 $('undo').onclick=()=>travelHistory();$('redo').onclick=()=>travelHistory(true);
 window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement||e.target instanceof HTMLSelectElement)return;if(current()&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='g'){e.preventDefault();build.groupSelection();return;}if(current()&&!e.ctrlKey&&!e.metaKey&&build.key(e)){e.preventDefault();return;}if(e.key==='Escape'){finishDrag(true);return;}if((e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();travelHistory(e.shiftKey||e.key.toLowerCase()==='y');}});
 
+// ---------- the mechanism derived from gears ----------
+/** A project without a model: the mechanism of its gears is derived after every change, where the Studio shows them;
+ * bearings and structures in ③ work on it. It is no scene, the gears stay where they are made. */
+function derive(d:StudioDocument){
+ const real=(d.mechanisms??[]).filter(m=>!m.derived),lone=(d.builds??[]).find(b=>!b.mechanism),t=lone?.train,old=(d.mechanisms??[]).find(m=>m.derived);let next:typeof old;
+ if(!real.length&&lone&&t?.wheels.length&&!trainIssues(t).length)try{const made=trainMechanism(t,'Getriebe',false,`abgeleitet-${lone.id}`);mech.useAsset(made.asset);for(const x of made.drives)placeMotor(made.mechanism,x);
+  next={id:`getriebe-${lone.id}`,label:'Getriebe',derived:lone.id,mechanism:made.mechanism,drives:made.drives,...(old?.fabrication??made.fabrication?{fabrication:old?.fabrication??made.fabrication}:{})};}catch{/* not a mechanism yet: ③ says why */}
+ d.mechanisms=[...real,...(next?[next]:[])];if(!d.mechanisms.length)delete d.mechanisms;return d;}
+const derivedId=()=>doc.mechanisms?.find(m=>m.derived)?.id;
+/** The page of the derived mechanism open in ③ ('' when none). */
+let derivedOpen:''|'bearings'|'structure'='';
+function openDerived(page:'bearings'|'structure'){const id=derivedId();if(!id)return;build.deselect();derivedOpen=page;if(mech.activeId!==id)mech.enter(id);mech.view.hideModel=true;mech.open(page);}
+
 // ---------- scenes and phases ----------
 /** What a project can show: its mechanisms, and builds and gear trains that stand alone. */
-function scenes():Scene[]{return [...(doc.mechanisms??[]).map(m=>({kind:'mechanism' as const,id:m.id,label:m.label})),...(doc.builds??[]).filter(b=>!b.mechanism).map(b=>({kind:'build' as const,id:b.id,label:b.label}))];}
+function scenes():Scene[]{return [...(doc.mechanisms??[]).filter(m=>!m.derived).map(m=>({kind:'mechanism' as const,id:m.id,label:m.label})),...(doc.builds??[]).filter(b=>!b.mechanism).map(b=>({kind:'build' as const,id:b.id,label:b.label}))];}
 const keyOf=(s:Scene)=>`${s.kind}:${s.id}`;
 function current():Scene|undefined{const all=scenes();return all.find(s=>keyOf(s)===sceneKey)??all[0];}
 /** Every project has all three phases; what a phase has nothing for says so in the tree. */
 const phasesOf=(_s:Scene):Phase[]=>[1,2,3];
-function enterScene(s:Scene){if(s.kind==='mechanism'){if(build.activeId)build.exit();if(mech.activeId!==s.id)mech.enter(s.id);}else{if(mech.activeId)mech.exit();if(build.activeId!==s.id)build.enter(s.id);}}
-function setPhase(p:Phase){const s=current();if(!s)return;phase=phasesOf(s).includes(p)?p:phasesOf(s)[0];build.deselect();
+function enterScene(s:Scene){if(s.kind==='mechanism'){derivedOpen='';if(build.activeId)build.exit();if(mech.activeId!==s.id)mech.enter(s.id);}else{if(mech.activeId&&!(derivedOpen&&mech.activeId===derivedId())){mech.exit();derivedOpen='';}if(build.activeId!==s.id)build.enter(s.id);}}
+function setPhase(p:Phase){const s=current();if(!s)return;phase=phasesOf(s).includes(p)?p:phasesOf(s)[0];build.deselect();if(derivedOpen){derivedOpen='';mech.exit();}
  if(s.kind==='mechanism'){enterScene(s);mech.open(mech.defaultPage(phase));return;}const b=doc.builds?.find(x=>x.id===s.id);if(phase===3&&b?.plates[0]&&!b.items.some(i=>i.free))build.selectPlate(b.plates[0].id);else if(phase!==1&&b?.train?.wheels.length&&!b.items.length&&!b.plates.length)build.openTrain();else build.overview();draw();}
 function openScene(s:Scene,p?:Phase){sceneKey=keyOf(s);startOpen=false;enterScene(s);setPhase(p??1);}
 for(const b of document.querySelectorAll<HTMLButtonElement>('#phases [data-phase]'))b.onclick=()=>setPhase(Number(b.dataset.phase) as Phase);
@@ -130,7 +146,8 @@ function drawView(){
  if(!s){mech.exit();build.exit();transform.detach();}
  if(!s||startOpen){renderStart();renderHeader(s);syncHistory();return;}
  enterScene(s);if(!phasesOf(s).includes(phase))phase=phasesOf(s)[0];document.body.dataset.scene=s.kind;document.body.dataset.phase=String(phase);
- mech.view.group.visible=s.kind==='mechanism'&&!motion.active;build.attach(s.kind==='mechanism'?s.id:undefined);build.group.visible=true;
+ if(derivedOpen&&(phase!==3||!derivedId())){derivedOpen='';mech.exit();}
+ mech.view.group.visible=(s.kind==='mechanism'||!!derivedOpen)&&!motion.active;if(derivedOpen)mech.refresh();build.attach(s.kind==='mechanism'?s.id:undefined);build.group.visible=true;
  const axes=$('axes');if(s.kind==='mechanism'){mech.refresh();mech.renderAxes(axes);}else axes.replaceChildren();build.refresh();
  // The wheels' slider joins the axes; without either the bar stays away.
  const wheelsTurn=build.renderAxes(axes);if(wheelsTurn)axes.hidden=false;document.body.dataset.axes=String(s.kind==='mechanism'||wheelsTurn);
@@ -152,7 +169,7 @@ function renderLeft(s:Scene){
  if(s.kind==='mechanism')mech.renderScene(tree,phase);build.renderPlaced(tree,phase);
 }
 function renderRight(s:Scene){
- if(s.kind==='mechanism'){if(build.holdsProperties)build.renderProperties();else mech.renderProperties();}else build.renderProperties();
+ if(s.kind==='mechanism'){if(build.holdsProperties)build.renderProperties();else mech.renderProperties();}else if(derivedOpen)mech.renderProperties();else build.renderProperties();
  const box=$('todo'),items=[...(s.kind==='mechanism'?mech.todo().map(t=>({...t,go:()=>{phase=t.phase;mech.open(t.item);}})):[]),...build.todo().map(t=>({...t,phase:t.phase as Phase,go:()=>{phase=t.phase as Phase;build.deselect();t.open();draw();}}))];box.replaceChildren();$('todo-box').hidden=!items.length;
  const next=items.find(t=>!t.done);
  for(const t of items){const li=el('li',{});li.dataset.state=t.done?'done':t===next?'current':'open';const b=el('button',{textContent:`${t.done?'✓':phaseNames[t.phase].slice(0,1)} ${t.label}`});b.dataset.todo=t.label;b.onclick=()=>{t.go();};li.append(b);if(t===next)li.append(el('p',{textContent:t.hint}));box.append(li);}
@@ -164,7 +181,7 @@ function renderCatalog(){if(!$('catalog-items'))return;$('catalog-filter').oninp
 
 // ---------- start page ----------
 const generic=(name:string)=>/^(Mein Projekt|Projekt \d+|Neues Projekt( \d+)?)$/.test(name);
-const projectEmpty=()=>!doc.mechanisms?.length&&(doc.builds??[]).every(isEmpty);
+const projectEmpty=()=>!doc.mechanisms?.some(m=>!m.derived)&&(doc.builds??[]).every(isEmpty);
 /** New content for the open project if it is still empty (it takes the name, if it has none of its own), else a new
  * project. `here`: always the open one. */
 async function intoProject(label:string,here=false){if(!project.id||!here&&!projectEmpty()){await createProject(label);}else if(project.name!==label&&generic(project.name)){project.name=label;savedState='';}}
@@ -209,7 +226,7 @@ async function renderProjects(){if(document.body.dataset.view==='start')renderSt
 function restoreView(v:ProjectView|undefined){const s=scenes().find(x=>keyOf(x)===v?.scene)??(v?.mechanism?scenes().find(x=>x.kind==='mechanism'&&x.id===v.mechanism):v?.build?scenes().find(x=>x.id===v.build):undefined);if(s)sceneKey=keyOf(s);phase=(v?.phase as Phase)??1;const c=current();if(c){enterScene(c);if(c.kind==='mechanism')mech.open(mech.defaultPage(phasesOf(c).includes(phase)?phase:1));}}
 async function switchProject(id:string){
  finishDrag();await saveNow();await store.settled().catch(()=>{});
- let f;try{f=await store.read(id);f={...f,doc:parseStudio(unify(parseStudio(f.doc)))};}catch(e){status.textContent=`Projekt konnte nicht geöffnet werden: ${e}`;return;}
+ let f;try{f=await store.read(id);f={...f,doc:parseStudio(derive(unify(parseStudio(f.doc))))};}catch(e){status.textContent=`Projekt konnte nicht geöffnet werden: ${e}`;return;}
  const free=await store.claim(id);motion.close();mech.exit();build.exit();history=new StudioHistory();doc=f.doc;project={id,name:f.name,readOnly:!free};sceneKey='';phase=1;await store.setActive(id);restoreView(f.view);drawView();syncHistory();savedState=fileState();saveState.textContent=free?'Gespeichert':'Nur Ansicht';await renderProjects();status.textContent=free?`Projekt ${f.name} geöffnet.`:`${f.name} ist in einem anderen Tab offen: Änderungen hier werden nicht gespeichert.`;
 }
 async function createProject(name:string,content=fresh()){const id=newProjectId();await store.write(id,{format:'studio-project-1',name,updated:new Date().toISOString(),doc:parseStudio(content)});await switchProject(id);}
@@ -221,6 +238,6 @@ $('import').onclick=()=>{($('menu') as HTMLDetailsElement).open=false;finishDrag
 importFile.onchange=async()=>{const chosen=importFile.files?.[0];importFile.value='';if(!chosen)return;try{if(chosen.size>2000000)throw Error('Projekt zu groß (max. 2 MB)');const imported=importStudio(await chosen.text());await createProject(chosen.name.replace(/\.json$/i,''),imported);startOpen=false;draw();status.textContent='Projekt importiert.';}catch(e){status.textContent=`Import abgelehnt: ${e}`;}};
 window.addEventListener('pagehide',()=>{try{if(!project.readOnly&&fileState()!==savedState)store.stash(project.id,{format:'studio-project-1',name:project.name,updated:new Date().toISOString(),doc:parseStudio(doc),view:projectView()});}catch{/* nothing to keep */}void saveNow();});
 
-restoreView(openView);draw();savedState=fileState();saveState.textContent=project.readOnly?'Nur Ansicht':'Gespeichert';
+doc=parseStudio(derive(doc));restoreView(openView);draw();savedState=fileState();saveState.textContent=project.readOnly?'Nur Ansicht':'Gespeichert';
 if(project.readOnly)status.textContent=`${project.name} ist in einem anderen Tab offen: Änderungen hier werden nicht gespeichert.`;if(loadError)status.textContent=loadError;
 if(new URLSearchParams(location.search).has('tour')){const s=document.createElement('script');s.src='./tour.js';document.body.append(s);}

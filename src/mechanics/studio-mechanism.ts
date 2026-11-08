@@ -342,6 +342,8 @@ export class MechanismEditor{
  async loadDemo(key:keyof typeof demos='robot'){
   await this.addDemo(demos[key]());
  }
+ /** An asset made in memory (the plate of a derived gear train): known from now on, not stored. */
+ useAsset(asset:Asset){rememberAsset(asset);this.assets.set(asset.id,asset);}
  /** A ready model (a demo, a compiled gear train) becomes a mechanism of the document and opens. */
  async addDemo({asset,mechanism,drives,label,fabrication}:Demo,also?:(d:StudioDocument)=>void){
   await storeAsset(asset);rememberAsset(asset);this.assets.set(asset.id,asset);

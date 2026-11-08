@@ -12,7 +12,7 @@ import {parseBuild} from './parts/build.ts';
 import type {Build} from './parts/build.ts';
 /** `mechanisms` are kinematics-1 documents edited in the Studio (stored raw: parameters may be expressions).
  * `builds`: plates with parts from the store. */
-export type StudioDocument={version:1;builds?:Build[];catalog?:SearchCatalog;assemblies:{id:string;graph:Mechanism;adopted?:boolean}[];mechanisms?:{id:string;label:string;mechanism:Kinematics;drives?:Drive[];fabrication?:{bearings?:Record<string,string|number>;structure?:Record<string,string|number>}}[];routes:{id:string;assembly:string;source:'input';target:'output';ratio?:number}[]};
+export type StudioDocument={version:1;builds?:Build[];catalog?:SearchCatalog;assemblies:{id:string;graph:Mechanism;adopted?:boolean}[];mechanisms?:{id:string;label:string;mechanism:Kinematics;drives?:Drive[];/** Derived from the gears of this build after every change: no scene of its own. */derived?:string;fabrication?:{bearings?:Record<string,string|number>;structure?:Record<string,string|number>}}[];routes:{id:string;assembly:string;source:'input';target:'output';ratio?:number}[]};
 const id=(x:unknown)=>{if(typeof x!=='string'||! /^[a-zA-Z0-9_-]{1,80}$/.test(x))throw Error('Ungültige Studio-ID');return x;};
 export function parseStudio(value:unknown):StudioDocument{
  const p=value as StudioDocument;if(!p||p.version!==1||!Array.isArray(p.assemblies)||p.assemblies.length>16||!Array.isArray(p.routes)||p.routes.length>32)throw Error('Ungültiges Studio-Projekt');
@@ -20,7 +20,7 @@ export function parseStudio(value:unknown):StudioDocument{
  const routes=p.routes.map(r=>{if(!r||r.source!=='input'||r.target!=='output'||!assemblies.some(a=>a.id===r.assembly)||r.ratio!==undefined&&(!Number.isFinite(r.ratio)||r.ratio<=0||r.ratio>1000))throw Error('Ungültige Route');return {id:id(r.id),assembly:id(r.assembly),source:'input' as const,target:'output' as const,...(r.ratio===undefined?{}:{ratio:r.ratio})};});
  if(p.mechanisms!==undefined&&(!Array.isArray(p.mechanisms)||p.mechanisms.length>16))throw Error('Ungültige Mechanismenliste');
  const mechanisms=p.mechanisms?.map(m=>{if(!m||typeof m.label!=='string'||!m.label.trim()||m.label.length>80)throw Error('Mechanismus braucht einen Namen');let drives:Drive[]=[];try{drives=parseDrives(m.drives,parseKinematics(structuredClone(m.mechanism)));}catch(e){throw Error(`Mechanismus ${m.label}: ${e instanceof Error?e.message:e}`);}const fab=m.fabrication;if(fab!==undefined&&(typeof fab!=='object'||[fab.bearings,fab.structure].some(x=>x!==undefined&&(typeof x!=='object'||Object.values(x).some(v=>typeof v!=='string'&&typeof v!=='number')))))throw Error(`Mechanismus ${m.label}: Fertigungseinstellungen ungültig.`);
-  return {id:id(m.id),label:m.label,mechanism:structuredClone(m.mechanism),...(drives.length?{drives}:{}),...(fab?{fabrication:structuredClone(fab)}:{})};});
+  return {id:id(m.id),label:m.label,mechanism:structuredClone(m.mechanism),...(typeof m.derived==='string'?{derived:m.derived}:{}),...(drives.length?{drives}:{}),...(fab?{fabrication:structuredClone(fab)}:{})};});
  if(mechanisms&&new Set(mechanisms.map(m=>m.id)).size!==mechanisms.length)throw Error('Doppelte Studio-ID');
  if(p.builds!==undefined&&(!Array.isArray(p.builds)||p.builds.length>32))throw Error('Ungültige Aufbauliste');
  const builds=p.builds?.map(parseBuild);if(builds&&new Set(builds.map(b=>b.id)).size!==builds.length)throw Error('Doppelte Studio-ID');

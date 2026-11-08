@@ -41,6 +41,8 @@ export type BuildHost={doc:()=>StudioDocument;change:(edit:()=>void,message:stri
  /** A finished train or block becomes the project's mechanism; `consume`: the train's wheels go into it. */adopt:(d:Demo,consume?:boolean)=>void;
  /** Opens the file dialog for a 3D model. */loadModel?:()=>void;
  /** The mode of the view's handle (the toolbar chooses it). */mode?:()=>'translate'|'rotate';
+ /** The mechanism derived from the gears (no model in the project): its id, a page of it opened in ③, which page is open,
+  * whether its structures are made; something of the parts was picked (the page closes). */derived?:()=>string|undefined;openDerived?:(page:'bearings'|'structure')=>void;derivedPage?:()=>string;derivedDone?:()=>boolean;picked?:()=>void;
  /** The library's own blocks, for every project. */blocks?:()=>readonly Block[];saveBlock?:(b:Block)=>Promise<void>;removeBlock?:(id:string)=>Promise<void>;
  /** The Studio's phase: 1 builds up, 3 makes (printing files, housings, the net). Without one, everything shows. */phase?:()=>number;};
 type Drag={item?:BuildItem;plate?:PlateNode;isNew:boolean;offset:[number,number];moved:boolean;over:boolean;start:[number,number]};
@@ -303,7 +305,7 @@ export class BuildEditor{
   * printed (plates, the net). In a mechanism the parts on its model. */
  renderPlaced(root:HTMLElement,phase:1|2|3=1){
   const b=this.build(),wheels=this.wheels;
-  const pick=(item?:string,plate?:string)=>{this.selected=item;this.plateId=plate;this.trainOpen=false;this.trains.select(undefined);this.refresh();this.host.leave();};
+  const pick=(item?:string,plate?:string)=>{this.host.picked?.();this.selected=item;this.plateId=plate;this.trainOpen=false;this.trains.select(undefined);this.refresh();this.host.leave();};
   const row=(text:string,data:Record<string,string>,selected:boolean,go:()=>void,sub=false)=>{const r=el('button',{textContent:text,...(sub?{className:'tree-sub'}:{})});Object.assign(r.dataset,data);r.setAttribute('aria-selected',String(selected));r.onclick=go;root.append(el('div',{className:'tree-row'},r));};
   const nothing=!this.selected&&!this.plateId&&!this.trainOpen&&!this.trains.selectedId;
   if(phase===2){
@@ -311,7 +313,9 @@ export class BuildEditor{
    else if(!this.attached)root.append(el('p',{className:'muted',textContent:'Noch nichts, das sich bewegt. In „① Aufbauen“ ein 3D-Modell laden oder Zahnräder setzen.'}));
    return;}
   if(phase===3){
-   if(wheels&&!this.attached)row('⚙ Zahnräder: Lager und Gestell',{trainMake:'true'},this.trainOpen,()=>{this.openTrain();this.refresh();this.host.leave();});
+   // The gears are made from their derived mechanism, in this scene: bearings and a structure per link.
+   if(wheels&&!this.attached){const open=this.host.derivedPage?.()??'';if(this.host.derived?.()){row('⊚ Lager & Wellen',{derived:'bearings'},open==='bearings',()=>this.host.openDerived?.('bearings'));row('🕸 Struktur je Glied',{derived:'structure'},open==='structure',()=>this.host.openDerived?.('structure'));}
+    else{const why=trainIssues(b!.train!)[0];root.append(el('p',{className:'muted',textContent:`Lager und Struktur entstehen, sobald die Zahnräder stimmen: ${why?.message??''}`}));row('⚙ Zahnräder prüfen',{trainPage:'true'},this.trainOpen,()=>{this.host.picked?.();this.openTrain();this.refresh();this.host.leave();});}}
    if(this.active&&b&&!b.plates.length&&b.items.length)row('🕸 Baum-Netz',{overview:'true'},nothing,()=>pick());
    for(const n of b?.plates??[])row('▭ Bodenplatte · Druckdateien',{plate:n.id},!this.selected&&this.plateId===n.id,()=>pick(undefined,n.id));
    if(!this.attached&&!b?.items.length&&!b?.plates.length&&!wheels)root.append(el('p',{className:'muted',textContent:'Noch nichts zu fertigen. In „① Aufbauen“ Teile, eine Bodenplatte oder ein 3D-Modell holen.'}));
@@ -390,7 +394,7 @@ export class BuildEditor{
   if(!this.attached)out.push({label:'Etwas platziert',done:true,hint:'',phase:1,open:()=>this.overview()});
   if(b.items.length)out.push({label:'Nichts im Weg',done:!found.length,hint:found[0]?.message??'Alles frei.',phase:1,open:()=>{this.selected=found[0]?.items[0];}});
   if(wheels){const bad=trainIssues(t!);out.push({label:'Alle Räder kämmen',done:t!.wheels.length>=2&&!bad.length,hint:t!.wheels.length<2?'Ein zweites Zahnrad daneben ziehen: Es rastet im Achsabstand ein.':bad[0]?.message??'Alles kämmt.',phase:1,open:()=>{this.trains.select(bad[0]?.wheels[0]??t!.wheels[0].id);}});
-   if(!this.attached)out.push({label:'Lager und Gestell erzeugt',done:false,hint:'In „③ Fertigen“: „Lager und Gestell erzeugen“ macht die Räder zum Mechanismus, mit Lagern und Struktur.',phase:3,open:()=>this.openTrain()});}
+   if(!this.attached)out.push({label:'Lager und Struktur',done:!!this.host.derivedDone?.(),hint:'In „③ Fertigen“: „Lager & Wellen“ planen, dann „Struktur je Glied“ erzeugen.',phase:3,open:()=>this.host.openDerived?.('bearings')});}
   if(this.active&&!b.plates.length&&b.items.length)out.push({label:'Träger erzeugt',done:!!this.net.positions&&this.net.key===this.netKey(b),hint:'In „③ Fertigen“ das Baum-Netz erzeugen.',phase:3,open:()=>this.overview()});
   if(b.plates.length)out.push({label:'Druckdateien',done:false,hint:'Bodenplatte wählen: Platte als STL oder Gehäuse als ZIP.',phase:3,open:()=>{this.selected=undefined;this.plateId=b.plates[0].id;}});
   return out;
