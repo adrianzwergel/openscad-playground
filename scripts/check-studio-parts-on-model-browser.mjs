@@ -16,7 +16,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // Onto the forearm: it hangs there, lying on the surface.
  await dragPart(p,'[data-part="rpi-pico"]',[-15,0,495]);let f=await settled(p,x=>x.doc.builds?.[0]?.items.length===1);const build=f.doc.builds[0],pico=build.items[0];
  assert.equal(pico.free?.body,'Unterarm',JSON.stringify(pico));assert.equal(build.mechanism,f.doc.mechanisms[0].id);assert.match(await p.$eval('#status',e=>e.textContent),/an Unterarm/);
- assert.equal(await p.$eval('[data-item]',e=>e.textContent.includes('Unterarm')),true);await p.waitForSelector('[data-field="Hängt an"]');
+ assert.equal(await p.$eval('[data-item]',e=>e.textContent.includes('Unterarm')),true);await p.waitForSelector('[data-field="Verbunden mit"]');
  const free=await p.$eval('#build-issues',e=>e.textContent);assert.match(free,/Nichts/,free);
  // The slider takes it along.
  const place=()=>p.evaluate(()=>window.studioPart());const before=await place();await slide(p,'Schulter',.8);await wait(900);const after=await place();assert.ok(Math.hypot(after[0]-before[0],after[1]-before[1],after[2]-before[2])>40,`mitgefahren: ${before} → ${after}`);
@@ -27,12 +27,12 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.evaluate(()=>document.querySelector('[data-item]').click());await p.waitForSelector('[data-holder-stl]');const cdp=await p.createCDPSession();await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:files});await p.click('[data-holder-stl]');
  let stl;for(let i=0;i<150&&!stl;i++){stl=(await fs.readdir(files)).find(n=>n.endsWith('.stl'));if(!stl)await wait(200);}assert.ok(stl,'Halter-STL');await wait(300);assert.ok((await fs.stat(path.join(files,stl))).size>1500);
  // Taken to another link it stays where it is in the room; moved into the forearm the check says so; the sweep runs.
- await p.$eval('[data-field="Hängt an"]',e=>{e.value='Oberarm';e.dispatchEvent(new Event('change'));});f=await settled(p,x=>x.doc.builds[0].items[0].free.body==='Oberarm');await p.waitForSelector('[data-field="Hängt an"]');
+ await p.$eval('[data-field="Verbunden mit"]',e=>{e.value='Oberarm';e.dispatchEvent(new Event('change'));});f=await settled(p,x=>x.doc.builds[0].items[0].free.body==='Oberarm');await p.waitForSelector('[data-field="Verbunden mit"]');
  await p.$eval('[data-field="Y [mm]"]',e=>{e.value='-13';e.dispatchEvent(new Event('change'));});await p.waitForFunction(()=>/steckt in Unterarm/.test(document.getElementById('build-issues')?.textContent??''),{timeout:8000});
  await p.click('[data-sweep-parts]');await p.waitForFunction(()=>{const t=document.getElementById('build-sweep')?.textContent??'';return t&&!t.includes('wird geprüft');},{timeout:60000});assert.match(await p.$eval('#build-sweep',e=>e.textContent),/Unterarm/);
  // A plate from the store on the base, a part on the plate.
  // Somewhere here, for the weight: a zone on the forearm finds the place with the shortest lever, free over the way.
- await p.$eval('[data-field="Hängt an"]',e=>{e.value='Unterarm';e.dispatchEvent(new Event('change'));});await settled(p,x=>x.doc.builds[0].items[0].free.body==='Unterarm');await p.waitForSelector('[data-field="Y [mm]"]');await p.$eval('[data-field="Y [mm]"]',e=>{e.value='-19';e.dispatchEvent(new Event('change'));});await wait(300);
+ await p.$eval('[data-field="Verbunden mit"]',e=>{e.value='Unterarm';e.dispatchEvent(new Event('change'));});await settled(p,x=>x.doc.builds[0].items[0].free.body==='Unterarm');await p.waitForSelector('[data-field="Y [mm]"]');await p.$eval('[data-field="Y [mm]"]',e=>{e.value='-19';e.dispatchEvent(new Event('change'));});await wait(300);
  await p.select('[data-field="Platz"]','zone');f=await settled(p,x=>x.doc.builds[0].items[0].wish?.mode==='zone');await p.waitForSelector('[data-find-place]');assert.equal(await p.$('[data-field="Y [mm]"]'),null,'der Platz gehört jetzt dem Tool');const near=()=>p.$eval('#status',e=>e.textContent);
  await p.$eval('[data-field="Radius [mm]"]',e=>{e.value='110';e.dispatchEvent(new Event('change'));});await p.waitForSelector('[data-find-place]');await p.select('[data-field="Ziel"]','axis');await wait(200);await p.waitForSelector('[data-find-place]');const z0=f.doc.builds[0].items[0].free.frame.position[2];
  await p.click('[data-find-place]');await p.waitForFunction(()=>/Platz gefunden|Kein/.test(document.getElementById('status').textContent),{timeout:60000});const report=await near();assert.match(report,/Platz gefunden an/,report);console.log(report);f=await settled(p,x=>x.doc.builds[0].items[0].free.frame.position[2]<z0-20);assert.match(await p.$eval('#build-issues',e=>e.textContent),/Nichts/);

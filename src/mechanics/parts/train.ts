@@ -14,9 +14,11 @@ import {modelAsset,box,cylinder,along} from '../demos.ts';
 import type {Demo} from '../demos.ts';
 
 export const legoGears=legoParts.filter(p=>p.search&&p.teeth>0&&p.mount==='cross');
-export type Shaft={id:string;at:[number,number]};
+/** A shaft is a part of its own: `fixed`, it stands in its carrier (an axle: wheels on it run loose), else it turns in it.
+ * `kind`, `d`: what it is made of and its diameter, for bearings and the parts list. */
+export type Shaft={id:string;at:[number,number];fixed?:boolean;kind?:'lego'|'gedruckt'|'stahl';d?:number};
 /** `part`: a LEGO gear by id; without one a printed spur gear of `module`. */
-export type Wheel={id:string;shaft:string;z:number;teeth:number;module:number;width:number;part?:string;/** The group it sits in. */group?:string};
+export type Wheel={id:string;shaft:string;z:number;teeth:number;module:number;width:number;part?:string;/** The group it sits in. */group?:string;/** Runs free on its shaft (an idler) instead of fixed to it. */loose?:boolean};
 /** A driven shaft and what drives it. */
 export type Input={shaft:string;drive:string};
 /** `inputs`: driven shafts, each with its own drive; `outputs`: shafts read off (several of both). `input`, `output`,
@@ -41,8 +43,11 @@ const facing=(a:Wheel,b:Wheel)=>Math.abs(a.z-b.z)<(a.width+b.width)/2-.01;
 /** Wheels that mesh: facing each other at the sum of their pitch radii, of the same module. */
 export function meshes(t:Train){const out:[Wheel,Wheel][]=[];t.wheels.forEach((a,i)=>{for(const b of t.wheels.slice(i+1))if(a.shaft!==b.shaft&&a.module===b.module&&facing(a,b)&&Math.abs(apart(shaftOf(t,a),shaftOf(t,b))-pitchOf(a)-pitchOf(b))<.05)out.push([a,b]);});return out;}
 /** Turns of each shaft per turn of one input (the first, without `from`); a loop that disagrees locks the train. */
-export function rates(t:Train,from=inputsOf(t)[0]?.shaft){const rate=new Map<string,number>(),pairs=meshes(t);let locked=false;if(!from)return {rate,locked};rate.set(from,1);const open=[from];
- while(open.length){const s=open.pop()!;for(const [a,b] of pairs)for(const [x,y] of [[a,b],[b,a]]){if(x.shaft!==s)continue;const next=-rate.get(s)!*x.teeth/y.teeth,known=rate.get(y.shaft);if(known===undefined){rate.set(y.shaft,next);open.push(y.shaft);}else if(Math.abs(known-next)>1e-9)locked=true;}}
+/** What turns as one: a shaft with the wheels fixed on it, or a loose wheel on its own. */
+export const nodeOf=(w:Wheel)=>w.loose?`rad:${w.id}`:w.shaft;
+export function rates(t:Train,from=inputsOf(t)[0]?.shaft){const rate=new Map<string,number>(),pairs=meshes(t),fixed=new Set(t.shafts.filter(s=>s.fixed).map(s=>s.id));let locked=false;if(!from||fixed.has(from))return {rate,locked:!!from};rate.set(from,1);const open=[from];
+ // A fixed shaft does not turn: a chain that would turn it locks.
+ while(open.length){const s=open.pop()!;for(const [a,b] of pairs)for(const [x,y] of [[a,b],[b,a]]){if(nodeOf(x)!==s)continue;const next=-rate.get(s)!*x.teeth/y.teeth,to=nodeOf(y);if(fixed.has(to)){locked=true;continue;}const known=rate.get(to);if(known===undefined){rate.set(to,next);open.push(to);}else if(Math.abs(known-next)>1e-9)locked=true;}}
  return {rate,locked};}
 /** Where every shaft stands with the inputs turned by `turns` (degrees, by input shaft): each input turns its chain. A shaft
  * two inputs reach is held by the first; `clash` names such pairs, they lock each other. */
@@ -54,14 +59,19 @@ export function ratioOf(t:Train,input=inputsOf(t)[0]?.shaft,output=outputsOf(t)[
 /** A shaft as a body things can hang on: the Studio's room, turned by the inputs about the shafts' direction (y). */
 export const shaftBody=(id:string)=>`welle:${id}`;
 export const shaftOfBody=(body:string|undefined)=>body?.startsWith('welle:')?body.slice(6):undefined;
-export function shaftFrames(t:Train|undefined,turns:Record<string,number>={}):Record<string,Frame>{if(!t)return {};const {angle}=motion(t,turns);return Object.fromEntries(t.shafts.map(s=>[shaftBody(s.id),{position:[s.at[0],0,s.at[1]] as V,rotation:axisAngle([0,1,0],angle.get(s.id)??0)}]));}
+/** A loose wheel as a body: it turns on its own. */
+export const wheelBody=(id:string)=>`rad:${id}`;
+/** The bodies of the train: every shaft, and every loose wheel, turned by the inputs. */
+export function shaftFrames(t:Train|undefined,turns:Record<string,number>={}):Record<string,Frame>{if(!t)return {};const {angle}=motion(t,turns),at=(s:Shaft,a:number)=>({position:[s.at[0],0,s.at[1]] as V,rotation:axisAngle([0,1,0],a)});
+ return Object.fromEntries([...t.shafts.map(s=>[shaftBody(s.id),at(s,angle.get(s.id)??0)]),...t.wheels.filter(w=>w.loose).map(w=>[wheelBody(w.id),at(shaftOf(t,w),angle.get(nodeOf(w))??0)])]);}
 export type TrainIssue={wheels:string[];message:string};
 /** What is fine but worth knowing: wheels no input reaches stand still (something else may move them later). */
-export function trainNotes(t:Train):string[]{const ins=inputsOf(t);if(!ins.length)return [];const {owner}=motion(t),still=t.wheels.filter(w=>!owner.has(w.shaft));return still.length?[`${still.map(nameOf).join(', ')} ${still.length===1?'hängt':'hängen'} an keinem Eingang und ${still.length===1?'steht':'stehen'} still.`]:[];}
+export function trainNotes(t:Train):string[]{const ins=inputsOf(t);if(!ins.length)return [];const {owner}=motion(t),still=t.wheels.filter(w=>!owner.has(nodeOf(w)));return still.length?[`${still.map(nameOf).join(', ')} ${still.length===1?'hängt':'hängen'} an keinem Eingang und ${still.length===1?'steht':'stehen'} still.`]:[];}
 const nameOf=(w:Wheel)=>`${w.part?'LEGO ':''}z${w.teeth}`;
 export function trainIssues(t:Train):TrainIssue[]{const out:TrainIssue[]=[],pairs=meshes(t),ins=inputsOf(t),outs=outputsOf(t),{owner,clash}=motion(t),label=(s:string)=>{const w=t.wheels.find(x=>x.shaft===s);return w?nameOf(w):'Welle';};
  t.wheels.forEach((a,i)=>{for(const b of t.wheels.slice(i+1)){if(a.shaft===b.shaft){if(facing(a,b))out.push({wheels:[a.id,b.id],message:`${nameOf(a)} und ${nameOf(b)} sitzen auf derselben Welle ineinander.`});continue;}if(!facing(a,b)||pairs.some(p=>p.includes(a)&&p.includes(b)))continue;const d=apart(shaftOf(t,a),shaftOf(t,b));if(d<outerOf(a)+outerOf(b)+.5)out.push({wheels:[a.id,b.id],message:`${nameOf(a)} stößt an ${nameOf(b)}, ohne zu kämmen.`});}});
- if(ins.some(i=>rates(t,i.shaft).locked))out.push({wheels:[],message:'Die Räder sperren sich: Ein Kreis aus Rädern kann sich so nicht drehen.'});
+ const fixedIn=ins.filter(i=>t.shafts.find(s=>s.id===i.shaft)?.fixed);for(const i of fixedIn)out.push({wheels:[],message:`Der Eingang an ${label(i.shaft)} sitzt auf einer feststehenden Achse: Sie dreht sich nicht.`});
+ if(ins.some(i=>!fixedIn.includes(i)&&rates(t,i.shaft).locked))out.push({wheels:[],message:'Die Räder sperren sich: Ein Kreis aus Rädern oder eine feststehende Achse hält sie fest.'});
  for(const [a,b] of clash)out.push({wheels:[],message:`Die Eingänge an ${label(a)} und ${label(b)} treiben dieselbe Kette: Sie sperren sich.`});
  if(!ins.length)out.push({wheels:[],message:'Einen Eingang wählen: an der Welle, die angetrieben wird.'});
  if(!outs.length)out.push({wheels:[],message:'Einen Ausgang wählen.'});
@@ -105,23 +115,25 @@ function spec(w:Wheel):ElementSpec{const lego=w.part?legoParts.find(p=>p.id===w.
 export function trainMechanism(t:Train,label:string,lift=true,assetId=`getriebe-${crypto.randomUUID().slice(0,8)}`):Demo{
  const blocking=trainIssues(t);if(blocking.length)throw Error(blocking[0].message);
  const ins=inputsOf(t),outs=outputsOf(t),chains=ins.map(i=>({input:i,rate:rates(t,i.shaft).rate})),one=chains.length===1;
- const all=t.wheels.filter(w=>chains.some(c=>c.rate.has(w.shaft)));
+ const all=t.wheels.filter(w=>chains.some(c=>c.rate.has(nodeOf(w))));
  const y0=Math.min(...all.map(w=>w.z-w.width/2)),y1=Math.max(...all.map(w=>w.z+w.width/2)),low=Math.min(...all.map(w=>shaftOf(t,w).at[1]-outerOf(w))),H=lift?6+10-low:0,floor=lift?0:low-16;
  const x0=Math.min(...all.map(w=>shaftOf(t,w).at[0]-outerOf(w))),x1=Math.max(...all.map(w=>shaftOf(t,w).at[0]+outerOf(w))),lego=all.some(w=>w.part);
  const centre=(s:Shaft):Frame=>({position:[s.at[0],0,s.at[1]+H],rotation:along.y}),size:V=[x1-x0+48,y1-y0+72,6],start=y0-24;
- const axisOf=chains.map(c=>outs.find(o=>c.rate.has(o))??c.input.shaft),axes=chains.map((c,k)=>t.shafts.find(s=>s.id===axisOf[k])!);
+ const axisOf=chains.map(c=>outs.find(o=>c.rate.has(o))??c.input.shaft),axes=chains.map((c,k)=>({id:axisOf[k],at:t.shafts.find(s=>s.id===axisOf[k])!.at}));
+ // A node: what turns as one, standing on the axis of its shaft.
+ const nodesOf=(rate:Map<string,number>)=>[...rate.keys()].map(id=>{const wheels=t.wheels.filter(w=>nodeOf(w)===id);return {id,at:(t.shafts.find(s=>s.id===id)??shaftOf(t,wheels[0])).at,wheels};}).filter(n=>n.wheels.length);
  const {asset,mesh}=modelAsset(assetId,label,[['Grundplatte',box([(x0+x1)/2,(y0+y1)/2,floor+3],size)],...axes.map((s,k)=>[`Abtriebsachse${one?'':`-${k+1}`}`,cylinder('y',[centre(s).position[0],(y0+y1)/2,centre(s).position[2]],lego?2.4:2.5,y1-y0+48)] as [string,ReturnType<typeof box>])]);
  const bodies:Mechanism['bodies']=[{id:'ground',frame:identity(),ground:true,display:mesh(['Grundplatte'])}],joints:JointRelation[]=[],elements:Element[]=[],contacts:Contact[]=[],drives:Drive[]=[];
  chains.forEach((c,k)=>{
-  const H1=`H${k+1}`,axisName=one?'Abtrieb':`Abtrieb-${k+1}`,used=t.shafts.filter(s=>c.rate.has(s.id)&&t.wheels.some(w=>w.shaft===s.id)),wheels=t.wheels.filter(w=>c.rate.has(w.shaft)),out=axes[k];
+  const H1=`H${k+1}`,axisName=one?'Abtrieb':`Abtrieb-${k+1}`,used=nodesOf(c.rate),wheels=used.flatMap(n=>n.wheels),out=used.find(n=>n.id===axes[k].id)!;
   // The input shaft comes first: the drive turns it.
   used.sort((a,b)=>(b.id===c.input.shaft?1:0)-(a.id===c.input.shaft?1:0));const rest=used.filter(s=>s!==out);
-  const body=(s:Shaft)=>s===out?axisName:`${H1}/s${rest.indexOf(s)}`,jointOf=(s:Shaft)=>s===out?axisName:`${H1}/ground/s${rest.indexOf(s)}`;
-  const span=(s:Shaft)=>{const on=wheels.filter(w=>w.shaft===s.id);return [Math.min(...on.map(w=>w.z-w.width/2)),Math.max(...on.map(w=>w.z+w.width/2))];};
+  type Node=typeof used[number];const body=(s:Node)=>s===out?axisName:`${H1}/s${rest.indexOf(s)}`,jointOf=(s:Node)=>s===out?axisName:`${H1}/ground/s${rest.indexOf(s)}`,nodeOfWheel=(w:Wheel)=>used.find(n=>n.id===nodeOf(w))!;
+  const span=(s:Node)=>{const on=s.wheels;return [Math.min(...on.map(w=>w.z-w.width/2)),Math.max(...on.map(w=>w.z+w.width/2))];};
   bodies.push({id:axisName,frame:centre(out),display:mesh([`Abtriebsachse${one?'':`-${k+1}`}`])},...rest.map(s=>{const [a,b]=span(s);return {id:body(s),frame:centre(s),shaft:{diameter:lego?4.8:5,start:s.id===c.input.shaft?start:a-14,end:b+14}};}));
   joints.push(...used.map((s):JointRelation=>({id:jointOf(s),joint:{kind:'revolute'},a:{body:'ground',local:centre(s)},b:{body:body(s),local:identity()},...(s===out?{limits:{min:-180,max:180}}:{})})));
-  elements.push(...wheels.map((w,n):Element=>{const e=spec(w),s=shaftOf(t,w);return {id:`${H1}/r${n+1}`,source:e.source,surfaces:e.surfaces,interfaces:e.interfaces,envelope:e.envelope,mounts:[{interface:'bore',body:body(s),pose:compose(identity(),{position:[0,0,w.z],rotation:[0,0,0,1]})}],phase:0};}));
-  contacts.push(...meshes(t).filter(([a,b])=>c.rate.has(a.shaft)&&c.rate.has(b.shaft)).map(([a,b],n):Contact=>({id:`${H1}/k${n+1}`,kind:'roll',mode:'fixed-axes',a:{element:`${H1}/r${wheels.indexOf(a)+1}`,surface:'teeth'},b:{element:`${H1}/r${wheels.indexOf(b)+1}`,surface:'teeth'},params:{offsetA:0,offsetB:0}})));
+  elements.push(...wheels.map((w,n):Element=>{const e=spec(w),s=nodeOfWheel(w);return {id:`${H1}/r${n+1}`,source:e.source,surfaces:e.surfaces,interfaces:e.interfaces,envelope:e.envelope,mounts:[{interface:'bore',body:body(s),pose:compose(identity(),{position:[0,0,w.z],rotation:[0,0,0,1]})}],phase:0};}));
+  contacts.push(...meshes(t).filter(([a,b])=>c.rate.has(nodeOf(a))&&c.rate.has(nodeOf(b))).map(([a,b],n):Contact=>({id:`${H1}/k${n+1}`,kind:'roll',mode:'fixed-axes',a:{element:`${H1}/r${wheels.indexOf(a)+1}`,surface:'teeth'},b:{element:`${H1}/r${wheels.indexOf(b)+1}`,surface:'teeth'},params:{offsetA:0,offsetB:0}})));
   const perOutput=Object.fromEntries(rest.map(s=>[jointOf(s),c.rate.get(s.id)!/c.rate.get(out.id)!])),iC=centre(t.shafts.find(s=>s.id===c.input.shaft)!).position,ratio=1/c.rate.get(out.id)!;
   drives.push({id:H1,spec:c.input.drive,body:'ground',frame:{position:[iC[0],start-6,iC[2]],rotation:toward([0,1,0])},axis:axisName,target:Math.abs(ratio),tolerance:5,maxStages:Math.max(1,used.length-1),gear:{reference:0,rates:perOutput,offsets:Object.fromEntries(Object.keys(perOutput).map(id=>[id,0])),label:wheels.map(nameOf).join(' · '),ratio:Math.abs(ratio),notes:[]}});});
  const first=one?'Abtrieb':'Abtrieb-1',mechanism:Mechanism={format:'kinematics-1',parameters:[],patterns:[],bodies,joints,elements,contacts,input:{kind:'coordinate',joint:first,coordinate:0},output:{kind:'coordinate',joint:first,coordinate:0},range:{from:-180,to:180,samples:37}};

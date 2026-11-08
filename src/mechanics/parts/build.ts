@@ -14,10 +14,13 @@ import type {Train} from './train.ts';
 import {parseTrain} from './train.ts';
 import type {Group} from './groups.ts';
 import {parseGroups} from './groups.ts';
+import type {Joint} from './links.ts';
+import {parseJoint,itemBody} from './links.ts';
 
 type P2=[number,number];
 /** A place in space: `frame` on the link `body`, or in the world without one. */
-export type Free={frame:Frame;body?:string};
+/** Where a part or plate stands, on what it is connected to (`body`, else the world), and how it moves there (parts/links.ts). */
+export type Free={frame:Frame;body?:string;joint?:Joint};
 /** How free the tool is to choose the place. On a plate: `zone` a rectangle (`center`, `size`), `auto` anywhere. On a
  * model: `zone` a ball (`center`, `size[0]` its radius). `goal` decides among the places that fit. */
 export type Wish={mode:'zone'|'auto';center:number[];size:number[];goal:'middle'|'axis'};
@@ -44,7 +47,7 @@ export const sheet=(b:Build,plate:string):Sheet=>({plate:b.plates.find(p=>p.id==
 const num=(x:unknown,lo:number,hi:number,what:string)=>{if(typeof x!=='number'||!Number.isFinite(x)||x<lo||x>hi)throw Error(`Aufbau: ${what} ungültig`);return x;};
 const pair=(x:unknown,lo:number,hi:number,what:string):P2=>{if(!Array.isArray(x)||x.length!==2)throw Error(`Aufbau: ${what} ungültig`);return [num(x[0],lo,hi,what),num(x[1],lo,hi,what)];};
 const text=(x:unknown,what:string)=>{if(typeof x!=='string'||!x.length||x.length>80)throw Error(`Aufbau: ${what} ungültig`);return x;};
-const parseFree=(f:Free|undefined):Free=>{const q=f?.frame;if(!q||!Array.isArray(q.position)||q.position.length!==3||!Array.isArray(q.rotation)||q.rotation.length!==4||![...q.position,...q.rotation].every(Number.isFinite))throw Error('Aufbau: Lage ungültig');return {frame:structuredClone(q),...(f!.body?{body:text(f!.body,'Glied')}:{})};};
+const parseFree=(f:Free|undefined):Free=>{const q=f?.frame;if(!q||!Array.isArray(q.position)||q.position.length!==3||!Array.isArray(q.rotation)||q.rotation.length!==4||![...q.position,...q.rotation].every(Number.isFinite))throw Error('Aufbau: Lage ungültig');return {frame:structuredClone(q),...(f!.body?{body:text(f!.body,'Glied')}:{}),...(f!.joint?{joint:parseJoint(f!.joint)!}:{})};};
 const parseWish=(w:Wish):Wish=>{if(w.mode!=='zone'&&w.mode!=='auto'||w.goal!=='middle'&&w.goal!=='axis'||!Array.isArray(w.center)||!Array.isArray(w.size)||![...w.center,...w.size].every(Number.isFinite))throw Error('Aufbau: Wunsch ungültig');return structuredClone(w);};
 function parsePlate(p:PlateNode):PlateNode{
  if(!p||p.mode!=='auto'&&p.mode!=='fixed'||!Array.isArray(p.holes)||p.holes.length>500)throw Error('Aufbau: Platte ungültig');
@@ -57,11 +60,9 @@ export function parseBuild(value:unknown):Build{
  const own=Array.isArray(b.parts)?b.parts.map(x=>structuredClone(x)):[],plates=b.plates.map(parsePlate);if(new Set(plates.map(p=>p.id)).size!==plates.length)throw Error('Aufbau: Platte doppelt');
  const items=b.items.map(i=>{if(!partById(i.part,own))throw Error(`Aufbau: Teil ${i.part} fehlt im Katalog`);if(i.side!=='top'&&i.side!=='bottom')throw Error('Aufbau: Seite ungültig');if(i.plate?!plates.some(p=>p.id===i.plate):!i.free)throw Error('Aufbau: Teil ohne Lage');
   return {id:text(i.id,'Teil'),part:i.part,at:pair(i.at,-5000,5000,'Position'),angle:num(i.angle,-720,720,'Drehung'),side:i.side,clearance:num(i.clearance,0,100,'Abstand'),holder:{kind:text(i.holder?.kind,'Halter'),params:structuredClone(i.holder?.params??{})},...(i.holes?{holes:structuredClone(i.holes)}:{}),...(i.plugsOff?{plugsOff:[...i.plugsOff]}:{}),...(i.plate?{plate:i.plate}:{free:parseFree(i.free)}),...(i.wish?{wish:parseWish(i.wish)}:{}),...(i.mass!==undefined?{mass:num(i.mass,0,1e6,'Masse')}:{}),...(typeof i.group==='string'?{group:i.group}:{})};});
- const before=new Set(Array.isArray(b.groups)?(b.groups as {id:string;kind?:string}[]).filter(g=>g&&!g.kind).map(g=>g.id):[]),groups=parseGroups(b.groups),known=new Set((groups??[]).map(g=>g.id)),train=b.train?parseTrain(b.train):undefined;
+ const groups=parseGroups(b.groups),known=new Set((groups??[]).map(g=>g.id)),train=b.train?parseTrain(b.train):undefined;
  // A member whose group is gone stands alone.
  for(const x of [...items,...plates,...(train?.wheels??[])])if(x.group!==undefined&&!known.has(x.group))delete x.group;
- // Körper from before `turns`: one whose parts hung on its one shaft turned with it.
- for(const g of groups??[]){if(g.kind!=='koerper'||g.turns||before.has(g.id))continue;const shafts=[...new Set((train?.wheels??[]).filter(w=>w.group===g.id).map(w=>w.shaft))],body=shafts.length===1?`welle:${shafts[0]}`:'';if(body&&[...items,...plates].some(x=>x.group===g.id&&(x as {free?:{body?:string}}).free?.body===body))g.turns=shafts[0];}
  return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(train?{train}:{}),...(groups?.length?{groups}:{}),...(Array.isArray(b.order)&&b.order.length<=2000?{order:b.order.filter((k:unknown)=>typeof k==='string')}:{})};
 }
 export const partOf=(b:{parts:Part[]},i:BuildItem)=>partById(i.part,b.parts)!;
@@ -159,7 +160,7 @@ export function plateBox(b:Build,n:PlateNode,world:Frame){const r=plateRect(shee
 export function holderPiece(b:Build,i:BuildItem):Sheet{const plate={...newPlate(),margin:4,mount:{on:false,d:3.4,inset:5}},item:BuildItem={...i,at:[0,0],angle:0,side:partOf(b,i).body>0?'top':'bottom'};delete item.free;return {plate,items:[item],parts:b.parts,grid:0};}
 export const itemMass=(b:{parts:Part[]},i:BuildItem)=>i.mass??massOf(partOf(b,i));
 /** Where a part stands in the room, free or on its plate. */
-export function standing(b:Build,i:BuildItem,frames:Record<string,Frame>):Frame{if(i.free)return worldOf(i.free,frames);const n=b.plates.find(p=>p.id===i.plate)!,p=partOf(b,i),z=i.side==='top'?liftOf(i):-n.thickness-liftOf(i);return compose(compose(worldOf(n.free,frames),{position:[i.at[0],i.at[1],z],rotation:axisAngle([0,0,1],i.angle)}),{position:[0,0,0],rotation:flipped(p,i)?[1,0,0,0]:[0,0,0,1]});}
+export function standing(b:Build,i:BuildItem,frames:Record<string,Frame>):Frame{if(i.free)return frames[itemBody(i.id)]??worldOf(i.free,frames);const n=b.plates.find(p=>p.id===i.plate)!,p=partOf(b,i),z=i.side==='top'?liftOf(i):-n.thickness-liftOf(i);return compose(compose(worldOf(n.free,frames),{position:[i.at[0],i.at[1],z],rotation:axisAngle([0,0,1],i.angle)}),{position:[0,0,0],rotation:flipped(p,i)?[1,0,0,0]:[0,0,0,1]});}
 /** The seats of one part: a dome per hole or the clip's arms and supports, reaching away from the part. */
 function itemSeats(b:Build,i:BuildItem,f:Frame,link:string):Seat[]{
  const p=partOf(b,i),out:Seat[]=[],seat=(id:string,frame:Frame,feature:Seat['feature'],keep?:Seat['keep']):Seat=>({id:`${i.id}/${id}`,link,line:i.id,kind:'mount',part:p.id,frame,feature,...(keep?{keep}:{})});

@@ -152,3 +152,7 @@ button.part-card{display:block;width:100%;text-align:left;cursor:pointer;color:i
 #tree .layer-row[data-drop=before]{box-shadow:inset 0 2px 0 var(--accent)}
 #tree .layer-row[data-drop=after]{box-shadow:inset 0 -2px 0 var(--accent)}
 #tree .layer-row[data-drop=into]{outline:1px dashed var(--accent);background:#1f3a3a}
+
+/* The connections under the layers: a folding head and one row per connection. */
+#tree .layer-section{display:block;width:100%;text-align:left;margin-top:12px;background:none;border:0;color:#8fa6b5;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:4px 2px;cursor:pointer}
+#tree .layer-link{display:block;width:100%;text-align:left;font-size:12px;color:var(--soft);background:none;border:0;padding:3px 8px 3px 20px;cursor:pointer}#tree .layer-link:hover{color:#fff}

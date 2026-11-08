@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {legoParts} from './graph/lego-parts';
-import {inputsOf,outputsOf,setEnds,motion,trainNotes,legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
+import {inputsOf,outputsOf,setEnds,motion,trainNotes,nodeOf,legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
 import type {Train,Wheel} from './parts/train';
 import type {Build} from './parts/build';
 import {joinShaft} from './parts/groups';
@@ -36,7 +36,11 @@ const partnerText=(t:Train,d:Drag)=>{const o=t.wheels.find(w=>w.id===d.partner);
 export class TrainEditor{
  /** A wheel is selected. */
  get selectedId(){return this.selected;}
- select(id?:string){this.selected=id;}
+ select(id?:string){this.selected=id;this.shaftSel=undefined;}
+ /** A shaft is selected: a part of its own, with its connection and its ends. */
+ private shaftSel?:string;
+ get shaftId(){return this.shaftSel;}
+ selectShaft(id?:string){this.shaftSel=id;this.selected=undefined;}
  private selected?:string;private drag?:Drag;private loaded=new Map<string,THREE.BufferGeometry>();private sun=legoGears.find(p=>p.teeth===16)?.id??legoGears[0].id;private planet=legoGears.find(p=>p.teeth===16)?.id??legoGears[0].id;
  onChange=()=>{};
  /** How far each input is turned (degrees, by shaft): every wheel and part that hangs on it turns with its rate. */
@@ -44,7 +48,7 @@ export class TrainEditor{
  get turnsNow():Readonly<Record<string,number>>{return this.turns;}
  constructor(private host:TrainHost){}
  private train():Train|undefined{return this.host.build()?.train;}
- reset(){this.selected=undefined;this.drag=undefined;}
+ reset(){this.selected=undefined;this.shaftSel=undefined;this.drag=undefined;}
  /** The train as seen while dragging. */
  private shown():Train|undefined{const d=this.drag,t=this.train()??(d?.over?newTrain():undefined);if(!t||!d?.over)return t;const id=d.shaft??d.wheel.shaft,shafts=t.shafts.some(s=>s.id===id)?t.shafts.map(s=>s.id===id&&!d.shaft?{...s,at:d.at}:s):[...t.shafts,{id,at:d.at}];return {...t,shafts,wheels:[...t.wheels.filter(w=>w.id!==d.wheel.id),{...d.wheel,shaft:id}]};}
  draw(group:THREE.Group,lit:ReadonlySet<string>=new Set(),override?:Train){
@@ -59,7 +63,7 @@ export class TrainEditor{
   this.spin(t);
  }
  /** Turns the drawn wheels to the inputs' angles. */
- private spin(t:Train){const {angle}=motion(t,this.turns);for(const w of t.wheels){const o=this.spins.get(w.id);if(o)o.rotation.z=(angle.get(w.shaft)??0)*Math.PI/180;}}
+ private spin(t:Train){const {angle}=motion(t,this.turns);for(const w of t.wheels){const o=this.spins.get(w.id);if(o)o.rotation.z=(angle.get(nodeOf(w))??0)*Math.PI/180;}}
  /** The sliders under the view: one per input, turned by hand; the outputs read off. Returns whether there is one. */
  renderAxes(root:HTMLElement,moved:()=>void=()=>{}){
   const t=this.train(),ins=t?inputsOf(t):[];if(!t||!ins.length)return false;const outs=outputsOf(t),name=(s:string)=>{const w=t.wheels.find(x=>x.shaft===s);return w?label(w):'Welle';};
@@ -92,7 +96,7 @@ export class TrainEditor{
   this.host.change(()=>{const x=this.host.ensure(),target=d.shaft??d.wheel.shaft;let wheel=x.wheels.find(w=>w.id===d.wheel.id);if(!wheel){wheel={...d.wheel,shaft:target};x.wheels.push(wheel);}const old=wheel.shaft;wheel.z=d.wheel.z;wheel.shaft=target;
    const s=x.shafts.find(y=>y.id===target);if(s){if(!d.shaft)s.at=d.at;}else x.shafts.push({id:target,at:d.at});
    if(old!==target&&!x.wheels.some(w=>w.shaft===old))x.shafts=x.shafts.filter(y=>y.id!==old);
-   const bb=this.host.build();if(bb)joinShaft(bb,wheel);const known=(s:string)=>x.shafts.some(y=>y.id===s);let ins=inputsOf(x).filter(i=>known(i.shaft)),outs=outputsOf(x).filter(known);
+   const bb=this.host.build();if(bb)joinShaft(bb,wheel);if(x.shafts.find(y=>y.id===target)?.fixed)wheel.loose=true;const known=(s:string)=>x.shafts.some(y=>y.id===s);let ins=inputsOf(x).filter(i=>known(i.shaft)),outs=outputsOf(x).filter(known);
    if(!ins.length)ins=[{shaft:target,drive:driveFor(wheel)}];else if(!outs.length&&!ins.some(i=>i.shaft===target))outs=[target];setEnds(x,ins,outs);},d.shaft?`${label(d.wheel)} sitzt auf der Welle.`:`${label(d.wheel)} ${d.isNew?'platziert':'verschoben'}${partnerText(t,d)}.`);
  }
  key(e:KeyboardEvent){if(e.key==='Delete'&&this.selected){this.remove();return true;}return false;}
@@ -116,25 +120,35 @@ export class TrainEditor{
   const t=this.train(),b=this.host.build();if(!t||!b)return;
   const set=(message:string,fn:(x:Train)=>void)=>this.host.change(()=>fn(this.train()!),message);
   const number=(text:string,value:number,write:(n:number)=>void,step='0.5')=>{const input=el('input',{type:'number',step,value:String(Math.round(value*1000)/1000)});input.dataset.field=text;input.setAttribute('aria-label',text);input.onchange=()=>{const n=Number(input.value);if(Number.isFinite(n))write(n);};return el('label',{},text,input);};
-  const w=t.wheels.find(x=>x.id===this.selected),lego=t.wheels.some(x=>x.part),kinds=driveCatalog.filter(d=>lego?d.id==='lego-achse':d.id!=='lego-achse'),ins=inputsOf(t),outs=outputsOf(t),name=(s:string)=>{const x=t.wheels.find(y=>y.shaft===s);return x?label(x):'Welle';};
+  // A shaft's page shows the shaft (its first wheel stands for it in moves), a wheel's page the wheel.
+  const shaftMode=!!this.shaftSel&&!this.selected,w=shaftMode?t.wheels.find(x=>x.shaft===this.shaftSel):t.wheels.find(x=>x.id===this.selected),lego=t.wheels.some(x=>x.part),kinds=driveCatalog.filter(d=>lego?d.id==='lego-achse':d.id!=='lego-achse'),ins=inputsOf(t),outs=outputsOf(t),name=(s:string)=>{const x=t.wheels.find(y=>y.shaft===s);return x?label(x):'Welle';};
   if(w){const s=t.shafts.find(x=>x.id===w.shaft)!,wheel=(message:string,fn:(y:Wheel)=>void)=>set(message,x=>{const y=x.wheels.find(z=>z.id===w.id);if(y)fn(y);}),shaft=(fn:(at:[number,number])=>void)=>set('Welle verschoben',x=>{const y=x.shafts.find(z=>z.id===s.id);if(y)fn(y.at);});
    // In a rigid group the axis distances are fixed: a place set here moves the whole group.
    const unit=this.host.unit?.(w.id),move=(delta:[number,number,number],message:string)=>this.host.moveUnit?.(unit!.id,delta,`${unit!.label}: ${message}`);
-   root.append(el('h3',{textContent:label(w)}));
+   root.append(el('h3',{textContent:shaftMode?`${s.fixed?'Achse':'Welle'} · ${t.wheels.filter(x=>x.shaft===s.id).map(label).join(', ')}`:label(w)}));
    if(unit)root.append(el('p',{className:'muted',textContent:`In der festen Gruppe „${unit.label}“: Die Achsabstände sind fest, Lage und Winkel verschieben die ganze Gruppe.`}));
-   root.append(number('X der Welle [mm]',s.at[0],n=>unit?move([n-s.at[0],0,0],'verschoben'):shaft(a=>{a[0]=n;}),'1'),number('Höhe der Welle [mm]',s.at[1],n=>unit?move([0,0,n-s.at[1]],'verschoben'):shaft(a=>{a[1]=n;}),'1'),number('Lage auf der Welle [mm]',w.z,n=>unit?move([0,n-w.z,0],'auf den Wellen verschoben'):wheel('Rad verschoben',y=>{y.z=n;})));
+   root.append(number('X der Welle [mm]',s.at[0],n=>unit?move([n-s.at[0],0,0],'verschoben'):shaft(a=>{a[0]=n;}),'1'),number('Höhe der Welle [mm]',s.at[1],n=>unit?move([0,0,n-s.at[1]],'verschoben'):shaft(a=>{a[1]=n;}),'1'));
+   if(shaftMode){
+    // The shaft as a part: what it is, and its connection: it turns in its carrier, or it stands as an axle.
+    const kind=el('select');kind.dataset.field='Welle aus';for(const [v,l] of [['lego','LEGO-Achse'],['gedruckt','gedruckt'],['stahl','Stahlwelle']])kind.add(new Option(l,v));kind.value=s.kind??(lego?'lego':'stahl');kind.onchange=()=>set('Welle geändert',x=>{const y=x.shafts.find(z=>z.id===s.id);if(y)y.kind=kind.value as 'lego'|'gedruckt'|'stahl';});
+    const turn=el('select');turn.dataset.field='Verbindung der Welle';turn.add(new Option('dreht in ihrem Träger','dreht'));turn.add(new Option('steht fest (Achse: Räder laufen lose)','steht'));turn.value=s.fixed?'steht':'dreht';
+    turn.onchange=()=>set(turn.value==='steht'?'Achse steht fest; die Räder darauf laufen lose.':'Welle dreht.',x=>{const y=x.shafts.find(z=>z.id===s.id);if(!y)return;if(turn.value==='steht'){y.fixed=true;for(const r of x.wheels)if(r.shaft===y.id)r.loose=true;}else delete y.fixed;});
+    root.append(heading('Welle'),el('label',{},'Aus',kind),...(s.kind&&s.kind!=='lego'||!lego&&!s.kind?[number('Ø [mm]',s.d??5,n=>set('Durchmesser geändert',x=>{const y=x.shafts.find(z=>z.id===s.id);if(y)y.d=Math.max(1,n);}),'0.5')]:[]),el('label',{},'Verbindung',turn));}
+   else{root.append(number('Lage auf der Welle [mm]',w.z,n=>unit?move([0,n-w.z,0],'auf den Wellen verschoben'):wheel('Rad verschoben',y=>{y.z=n;})));
+    const on=el('select');on.dataset.field='Auf der Welle';on.add(new Option('fest: dreht mit der Welle','fest'));on.add(new Option('lose: läuft frei (Losrad)','lose'));on.value=w.loose?'lose':'fest';on.disabled=!!s.fixed&&!w.loose;on.onchange=()=>wheel(on.value==='lose'?`${label(w)} läuft lose.`:`${label(w)} fest auf der Welle.`,y=>{if(on.value==='lose')y.loose=true;else delete y.loose;});
+    const open=el('button',{textContent:`${s.fixed?'Achse':'Welle'} ›`});open.dataset.openShaft='true';open.onclick=()=>{this.selectShaft(s.id);this.host.leave();};root.append(el('label',{},'Auf der Welle',on),open);}
    // The angle around a neighbour; in a rigid group only around one outside it.
-   const pair=meshes(t).find(p=>p.some(x=>x.id===w.id)&&(!unit||p.some(x=>!unit.wheels.has(x.id)))),near=pair?partnerOf({...t,wheels:t.wheels.filter(x=>pair.includes(x))},w):undefined;
+   const pair=shaftMode?undefined:meshes(t).find(p=>p.some(x=>x.id===w.id)&&(!unit||p.some(x=>!unit.wheels.has(x.id)))),near=pair?partnerOf({...t,wheels:t.wheels.filter(x=>pair.includes(x))},w):undefined;
    if(near){const step=gridOf(t).angle;root.append(number(`Winkel am ${label(near.wheel)} [°]`,near.angle,n=>{const at=around(near.centre,near.distance,((n%360)+360)%360);if(unit)move([at[0]-s.at[0],0,at[1]-s.at[1]],'um das Rad außerhalb gedreht');else shaft(a=>{a[0]=at[0];a[1]=at[1];});},String(step||1)),el('p',{className:'muted',textContent:unit?'Setzt die ganze Gruppe so, dass dieses Rad unter dem Winkel am Rad außerhalb kämmt. 0° waagerecht, 90° darüber.':'Dreht die Welle um das Nachbarrad, der Achsabstand bleibt. 0° waagerecht, 90° darüber.'}));}
-   if(!w.part&&unit)root.append(el('p',{className:'muted',textContent:`Zähne z${w.teeth}, Modul ${w.module}, ${w.width} mm breit: in der festen Gruppe gesperrt, weil sie den Achsabstand ändern. Zum Ändern die Gruppe auf „frei“ stellen.`}));
+   if(shaftMode)void 0;else if(!w.part&&unit)root.append(el('p',{className:'muted',textContent:`Zähne z${w.teeth}, Modul ${w.module}, ${w.width} mm breit: in der festen Gruppe gesperrt, weil sie den Achsabstand ändern. Zum Ändern die Gruppe auf „frei“ stellen.`}));
    else if(!w.part)root.append(number('Zähne',w.teeth,n=>wheel('Zähne geändert',y=>{y.teeth=Math.max(6,Math.round(n));}),'1'),number('Modul',w.module,n=>wheel('Modul geändert',y=>{y.module=Math.max(.3,n);}),'0.25'),number('Breite [mm]',w.width,n=>wheel('Breite geändert',y=>{y.width=Math.max(1,n);})));
    // Ends of the shaft: several inputs and outputs in a train; a shaft is one or the other.
    const isIn=ins.find(i=>i.shaft===s.id),isOut=outs.includes(s.id),ends=(message:string,fn:(i:typeof ins,o:string[])=>[typeof ins,string[]])=>set(message,x=>{const [i,o]=fn(inputsOf(x),outputsOf(x));setEnds(x,i,o);});
    const input=el('input',{type:'checkbox',checked:!!isIn});input.dataset.setInput='true';input.onchange=()=>ends(input.checked?'Eingang gesetzt':'Kein Eingang mehr',(i,o)=>input.checked?[[...i,{shaft:s.id,drive:kinds[0].id}],o.filter(y=>y!==s.id)]:[i.filter(y=>y.shaft!==s.id),o]);
    const output=el('input',{type:'checkbox',checked:isOut});output.dataset.setOutput='true';output.onchange=()=>ends(output.checked?'Ausgang gesetzt':'Kein Ausgang mehr',(i,o)=>output.checked?[i.filter(y=>y.shaft!==s.id),[...o,s.id]]:[i,o.filter(y=>y!==s.id)]);
-   root.append(heading('Welle'),el('label',{className:'check'},input,'Eingang: wird angetrieben'),el('label',{className:'check'},output,'Ausgang'));
-   if(isIn){const d=el('select');d.dataset.field='Antrieb';for(const k of kinds)d.add(new Option(k.label,k.id));d.value=kinds.some(k=>k.id===isIn.drive)?isIn.drive:kinds[0].id;d.onchange=()=>ends('Antrieb geändert',(i,o)=>[i.map(y=>y.shaft===s.id?{...y,drive:d.value}:y),o]);root.append(el('label',{},'Antrieb an diesem Eingang',d));}
-   const remove=el('button',{textContent:'Entfernen',className:'danger'});remove.dataset.remove='true';remove.onclick=()=>this.remove();root.append(el('div',{className:'button-row'},remove));}
+   if(shaftMode)root.append(el('label',{className:'check'},input,'Eingang: wird angetrieben'),el('label',{className:'check'},output,'Ausgang'));
+   if(shaftMode&&isIn){const d=el('select');d.dataset.field='Antrieb';for(const k of kinds)d.add(new Option(k.label,k.id));d.value=kinds.some(k=>k.id===isIn.drive)?isIn.drive:kinds[0].id;d.onchange=()=>ends('Antrieb geändert',(i,o)=>[i.map(y=>y.shaft===s.id?{...y,drive:d.value}:y),o]);root.append(el('label',{},'Antrieb an diesem Eingang',d));}
+   if(!shaftMode){const remove=el('button',{textContent:'Entfernen',className:'danger'});remove.dataset.remove='true';remove.onclick=()=>this.remove();root.append(el('div',{className:'button-row'},remove));}}
   const found=trainIssues(t),pairs=ins.flatMap(i=>outs.map(o=>({i:i.shaft,o,r:ratioOf(t,i.shaft,o)}))).filter(p=>p.r!==undefined);
   root.append(heading('Getriebe'),el('p',{id:'train-ratio',className:pairs.length?'state-pass':'muted',textContent:pairs.length?pairs.map(p=>`${name(p.i)} → ${name(p.o)}: 1 : ${Math.abs(p.r!).toFixed(2).replace('.',',')}, ${p.r!>0?'gleichsinnig':'gegensinnig'}`).join(' · '):'Noch keine Verbindung von einem Eingang zu einem Ausgang.'}),
    el('p',{className:'muted',textContent:`${ins.length} Eingang${ins.length===1?'':'e'}, ${outs.length} Ausgang${outs.length===1?'':'e'}: an der Welle eines Rads einstellen.`}));

@@ -1,7 +1,7 @@
 // Gear trains built by hand: what meshes, the ratio, snapping, what is refused; the compiled mechanism turns at the
 // ratio, closes, gets its bearings and its structures like the gearbox demos.
 import assert from 'node:assert/strict';
-import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,trainMechanism,trainNotes,legoGears,parseTrain,gridPoints} from '../../src/mechanics/parts/train.ts';
+import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,trainMechanism,trainNotes,motion,shaftFrames,legoGears,parseTrain,gridPoints} from '../../src/mechanics/parts/train.ts';
 import {solve} from '../../src/mechanics/kinematics/solver.ts';
 import {heldTrains} from '../../src/mechanics/kinematics/drive.ts';
 import {planBearings,applyBearings} from '../../src/mechanics/kinematics/bearings.ts';
@@ -43,6 +43,10 @@ for(const [name,x,ratio] of [['einstufig',t,2.5],['zweistufig',two,6.25],['Zwisc
  console.log(`${name}: 1 : ${ratio}, ${plan.seats.length} Sitze, ${links.filter(l=>l.result).map(l=>`${l.link} ${l.result.report.mass.toFixed(0)} g`).join(', ')}`);}
 // A wheel no input reaches is no error: it stands still, and the note says so.
 {const lonely=structuredClone(t);lonely.shafts.push({id:'z',at:[200,0]});lonely.wheels.push(wheel('w9','z',24));assert.deepEqual(trainIssues(lonely),[]);assert.match(trainNotes(lonely)[0],/z24 hängt an keinem Eingang und steht still/);}
+// An idler on a fixed axle: z16 → z24 loose on its axle → z40. The axle stands, the idler turns, the ratio stays 2,5.
+{const idl=structuredClone(idle);idl.shafts[1].fixed=true;idl.wheels[1].loose=true;assert.deepEqual(trainIssues(idl),[]);assert.equal(ratioOf(idl),2.5);const m=motion(idl,{a:100});assert.equal(m.angle.get('m'),undefined,'die Achse steht');assert.ok(Math.abs(m.angle.get('rad:w2')+100*16/24)<1e-9,'das Losrad dreht');
+ const fr=shaftFrames(idl,{a:100});assert.ok(fr['rad:w2'],'Losrad ist ein Körper');const d=trainMechanism(idl,'Losrad',false,'test-los');assert.equal(d.mechanism.joints.length,3);
+ const jam=structuredClone(idle);jam.shafts[1].fixed=true;assert.ok(trainIssues(jam).some(x=>/feststehende Achse hält/.test(x.message)),'fest auf feststehender Achse sperrt');}
 // Derived live: two inputs, two chains, two drives; the shafts stay where the Studio shows them; it closes and is borne.
 const dual=structuredClone(t);dual.shafts.push({id:'c',at:[0,80]},{id:'d',at:[28,80]});dual.wheels.push(wheel('w7','c',16),wheel('w8','d',40));dual.inputs=[{shaft:'a',drive:'lego-achse'},{shaft:'c',drive:'lego-achse'}];dual.outputs=['b','d'];delete dual.input;delete dual.output;
 {const d=trainMechanism(dual,'Zwei',false,'test-zwei'),m=d.mechanism;assert.deepEqual(d.drives.map(x=>x.axis),['Abtrieb-1','Abtrieb-2']);assert.deepEqual(m.bodies.find(x=>x.id==='Abtrieb-2').frame.position,[28,0,80]);

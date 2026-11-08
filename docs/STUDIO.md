@@ -40,38 +40,25 @@ Beispiel, Zahnräder übernommen), hängt der Aufbau sich an ihn; ein leerer Auf
 Projekt einen Aufbau zum Hineinziehen. Das hält `unify` in `studio.ts` nach jeder Änderung und beim Öffnen ein.
 Übernommene Zahnräder werden der Mechanismus, im Aufbau bleiben sie nicht stehen.
 
-### Gruppen
+### Bauteile, Verbindungen, Gruppen (wie in CAD)
 
-Strg-Klick in der Ansicht oder im Szenenbaum wählt mehrere Dinge, Strg+G (oder „Gruppieren“) macht daraus eine Gruppe.
-Gruppen sind gemischt (Räder, Teile, Platten) und dürfen in Gruppen stecken; im Baum sind sie Ordner. Eine Platte bringt die
-Teile auf ihr mit, ein Rad die Räder auf seiner Welle: eine Welle ist ein Stück. Eine Gruppe sagt, was ihre Teile
-zueinander sind:
+Bewegung steckt nicht im Baum, sondern in **Verbindungen** zwischen jeweils zwei Dingen, wie Joints in Fusion 360 oder
+Mates in Onshape. Logik: `parts/links.ts`, `parts/train.ts`; geprüft von `scripts/parts/check-links.mjs`.
 
-| Art | Bewegung | heißt | Bedeutung |
-|---|---|---|---|
-| ◆ Körper | steht | ▣ Träger, wenn er Wellen lagert | ein starres Stück; die Räder darin drehen in ihren Wellen, deren Achsabstände fest sind (dafür entstehen Lager und Gehäuse); es kann selbst Teil einer größeren Mechanik sein, etwa ein Arm |
-| ◆ Körper | dreht mit Welle … | Körper | alles darin hängt an dieser Welle und dreht mit (Sensorscheibe, Nocke); alle seine Räder sitzen auf ihr |
-| ▢ Ordnung | – | Ordnung | hält nur im Baum zusammen |
+- **Welle** ist ein eigenes Bauteil (Zeile im Baum, die Räder darunter): aus LEGO-Achse, gedruckt oder Stahl, mit Ø; sie
+  **dreht** in ihrem Träger oder **steht fest** (Achse). Ein Rad sitzt **fest** auf ihr oder läuft **lose** (Losrad); auf
+  einer feststehenden Achse laufen Räder lose. Eingänge (mit Antrieb) und Ausgänge setzt man an der Welle.
+- **Teile und Platten** sind **verbunden mit** der Welt, einem Glied des Modells, einer Welle, einem losen Rad, einem Teil
+  oder einer Platte. Die Verbindung ist **fest**, **dreht** um X/Y/Z durch einen Drehpunkt oder **schiebt** entlang X/Y/Z
+  (Richtungen dessen, womit verbunden), mit Bereich und auf Wunsch als **Eingang** mit Regler. Was daran hängt, fährt
+  mit, über ganze Ketten. Ein Teil, das auf ein Zahnrad gezogen wird, ist fest mit dessen Welle verbunden.
+- **Zahneingriffe** erkennt das Studio selbst; sie koppeln die Drehungen der Wellen und losen Räder.
+- Im Szenenbaum stehen unten unter **Verbindungen** alle Wellen, Losräder und nicht festen Teile mit ihrer Verbindung.
 
-Von selbst: ein Körper; Teile zusammen mit den Rädern einer Welle drehen mit ihr. Räder, die an keinem Eingang hängen,
-sind kein Fehler: Sie stehen still, die Prüfung sagt es als Hinweis.
-
-- Körper halten beim Bearbeiten ihre Abstände: Ziehst du ein Stück, kommt die Gruppe mit (die äußerste
-  solche), ein Rad rastet dabei an Räder außerhalb ein. Auch die Felder eines Rads verschieben dann die ganze Gruppe;
-  Zähne, Modul und Breite gedruckter Räder sind gesperrt.
-- Liegen die Gewählten in verschiedenen Gruppen, kommt die neue Gruppe dorthin, wo das Rad ist: Ein Sensor mit dem z16
-  eines Trägers wird ein Körper im Träger.
-- Jede Welle ist ein Körper, an den man auch einzeln hängen kann („Hängt an: Welle von …“).
-- Eingänge und Ausgänge setzt man an der Welle eines Rads, beliebig viele; jeder Eingang hat seinen Antrieb und unter
-  der Ansicht seinen Regler. Zwei Eingänge, die dieselbe Kette treiben, meldet die Prüfung.
-- Griff: Eine gewählte Gruppe trägt ihn in ihrer Mitte. Drehen geht mit Rädern nur um die Wellenrichtung, sonst um die
-  Senkrechte.
-- Bibliothek: „In die Bibliothek legen“ (Körper und Träger) speichert unter „Eigene Bausteine“ für jedes Projekt
-  (OPFS `/bausteine`), mit ihren Eingängen und Ausgängen.
-
-Logik: `parts/groups.ts` und `parts/train.ts` (geprüft von `scripts/parts/check-groups.mjs`), Bedienung: `studio-build.ts`,
-`studio-train.ts`. Ältere Dateien: „fest“ wird Körper oder (mit Rädern auf mehreren Wellen) Träger, „frei“ Ordnung; ein
-einzelner Eingang und Ausgang werden Listen.
+**Gruppen** ordnen nur, wie Baugruppen im CAD-Browser. Eine **starre** Gruppe hält beim Bearbeiten ihre Abstände: Ziehst
+du ein Stück, kommt die Gruppe mit, ein Rad rastet dabei an Räder außerhalb ein; der Griff sitzt in ihrer Mitte. Gruppiert
+man Teile mit den Rädern einer Welle, verbindet das Studio die Teile fest mit dieser Welle (eine Verbindung wie jede
+andere). Starre Gruppen gehen als Bausteine in die Bibliothek. Strg-Klick wählt mehrere, Strg+G gruppiert.
 
 ### Phasen
 
