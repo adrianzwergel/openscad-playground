@@ -359,3 +359,11 @@ Structure = {
 A komplett (die Sitze sind die Haltepunkte), dann B1–B3 bis zur ersten
 gedruckten Halterung am Roboterarm, dann B4 (Nachweis), B6 (Gehäuse, zeigt die
 Eigenständigkeit), B5 und B7.
+
+## Zu weiche Glieder: zweiter Anlauf
+
+Verfehlt ein Glied Festigkeit oder Steifigkeit, war meist der Raum für die Streben zu knapp: Ein Nachbar, ein Teil aus dem
+Store oder ein Rad nimmt ihn. `linkStructures` rechnet das Glied dann noch einmal mit 1,6-fachem Suchraum, danach auch
+mit dichtem Netz, und nimmt den ersten Anlauf, der hält, sonst den, der am nächsten dran ist. Die Prüfung nennt das
+(`retry`). Beispiel: ein Raspberry Pi Pico auf dem Unterarm des Roboterarms ließ den Oberarm im ersten Anlauf 0,82 mm
+nachgeben, im zweiten 0,50 mm bei 514 g.

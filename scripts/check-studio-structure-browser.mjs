@@ -39,9 +39,8 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  assert.match(report,/Fertig/,report+' '+JSON.stringify(rows.map(r=>r.text)));if(process.env.PART)assert.match(report,/4 von 4 Haltepunkten der Teile eingebunden/,report);assert.ok(rows.length>=2&&rows.every(r=>r.state==='ok'||demo==='hand'&&r.state==='skip'),JSON.stringify(rows));
  if(demo==='hand')assert.ok(rows.some(r=>r.link==='Abtrieb'&&r.state==='skip'&&/Nichts zu drucken/.test(r.text)),JSON.stringify(rows));
  // Strong and stiff enough under the design loads: no hint on utilisation or deflection.
- // A part takes room the other links need (it swings with its link): their warnings are its price, not a failure.
- if(!process.env.PART)assert.ok(rows.every(r=>!/Größte (Auslastung|Verformung)/.test(r.text)),JSON.stringify(rows.map(r=>r.text)));
- if(!process.env.PART)assert.deepEqual(await p.$eval('.steps li',l=>l.map(x=>x.dataset.state)),Array(7).fill('done'),'alle Schritte erledigt');
+ assert.ok(rows.every(r=>!/Größte (Auslastung|Verformung)/.test(r.text)),JSON.stringify(rows.map(r=>r.text)));
+ assert.deepEqual(await p.$$eval('.steps li',l=>l.map(x=>x.dataset.state)),Array(7).fill('done'),'alle Schritte erledigt');
  // Sliders still move the arm with its structures.
  const first=await p.$eval('#axes input[type=range]',r=>r.dataset.axis);
  await p.evaluate(a=>{const s=document.querySelector(`#axes input[data-axis="${a}"]`);s.value=String(Number(s.max)*.5);s.dispatchEvent(new Event('input'));},first);
