@@ -1,7 +1,7 @@
 // Studio: a gear train by hand. z16 dragged into the view, z40 beside it snaps to the mesh distance, the ratio shows,
 // a third wheel on the same shaft stacks; undo works, a reload keeps it; the button makes it a mechanism with sliders
 // and bearings. The planetary stage from the blocks becomes a mechanism too.
-import puppeteer from 'puppeteer';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
+import puppeteer from 'puppeteer';import {goTo,phase,menu} from './studio-ui.mjs';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 const dir=await fs.mkdtemp(path.join(os.tmpdir(),'studio-train-'));
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,userDataDir:path.join(dir,'profil'),args:['--enable-unsafe-swiftshader']});
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
@@ -23,10 +23,10 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // A reload keeps it, and the build stays open.
  await wait(500);await p.reload();await p.waitForSelector('#train-ratio',{timeout:20000});assert.match(await p.$eval('#train-ratio',e=>e.textContent),/2,50/);
  // The button: a mechanism with a slider, its train driven, bearings planned.
- await p.click('[data-compile]');await p.waitForFunction(()=>document.body.dataset.mode==='mechanism',{timeout:20000});await p.waitForSelector('input[data-axis="Abtrieb"]',{timeout:20000});f=await settled(p,x=>x.doc.mechanisms?.length===1);const m=f.doc.mechanisms[0];assert.equal(m.drives[0].target,2.5);assert.ok(m.drives[0].gear);assert.equal(m.fabrication.bearings.shaft,'lego');
- await p.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Lager & Wellen')).click());await wait(500);assert.match(await p.$eval('#properties',e=>e.textContent),/Gleitlager/);
+ await p.click('[data-compile]');await p.waitForFunction(()=>document.body.dataset.scene==='mechanism',{timeout:20000});await p.waitForSelector('input[data-axis="Abtrieb"]',{timeout:20000});f=await settled(p,x=>x.doc.mechanisms?.length===1);const m=f.doc.mechanisms[0];assert.equal(m.drives[0].target,2.5);assert.ok(m.drives[0].gear);assert.equal(m.fabrication.bearings.shaft,'lego');
+ await goTo(p,'Lager & Wellen');await wait(500);assert.match(await p.$eval('#properties',e=>e.textContent),/Gleitlager/);
  // Back in the train; the planetary block.
- await p.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Getriebe-Baugruppe')).click());await p.waitForSelector('[data-build]');await p.evaluate(()=>[...document.querySelectorAll('[data-build]')].find(b=>b.textContent.includes('Getriebe')).click());await p.waitForSelector('[data-planet-make]');
- await p.evaluate(()=>document.querySelector('[data-planet-make]').closest('details').open=true);await p.click('[data-planet-make]');await p.waitForFunction(()=>document.body.dataset.mode==='mechanism',{timeout:20000});f=await settled(p,x=>x.doc.mechanisms?.length===2);assert.equal(f.doc.mechanisms[1].drives[0].target,4);assert.match(f.doc.mechanisms[1].label,/z16\/z16/);
+ await p.click('[data-scene-switch^="train:"]');await p.waitForSelector('[data-planet-make]');
+ await p.evaluate(()=>document.querySelector('[data-planet-make]').closest('details').open=true);await p.click('[data-planet-make]');await p.waitForFunction(()=>document.body.dataset.scene==='mechanism',{timeout:20000});f=await settled(p,x=>x.doc.mechanisms?.length===2);assert.equal(f.doc.mechanisms[1].drives[0].target,4);assert.match(f.doc.mechanisms[1].label,/z16\/z16/);
  assert.deepEqual(errors,[]);console.log('Studio Getriebe: gezogen, eingerastet (28 mm), 1 : 2,5, aufgesteckt, Reload, Mechanismus mit Regler und Lagern, Planetenstufe.');
 }finally{await browser.close();await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}

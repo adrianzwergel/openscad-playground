@@ -5,7 +5,7 @@
 // Planetengetriebe: its train comes with the demo; five shaft lines, the carrier on the output axle by a cross hole,
 // the ring gear on four heat-set inserts.
 // Usage: node scripts/check-studio-structure-browser.mjs [robot|cnc|sled|hand|planet|planet16]
-import puppeteer from 'puppeteer';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
+import puppeteer from 'puppeteer';import {goTo,phase,menu,example,start} from './studio-ui.mjs';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 const demo=process.argv[2]??'robot',drives={robot:['M1','M2','M3'],cnc:['M1','M2','M3'],sled:['M1'],hand:['H1'],planet:[],planet16:[]}[demo];
 const dir=await fs.mkdtemp(path.join(os.tmpdir(),'studio-structure-'));
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--enable-unsafe-swiftshader']});
@@ -13,8 +13,8 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  const cdp=await p.createCDPSession();await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:dir});
  await p.goto('http://localhost:4001/studio');await p.waitForSelector('canvas');await p.evaluate(()=>localStorage.removeItem('mechanics-studio'));await p.reload();await p.waitForSelector('canvas');
  const ready=()=>p.waitForFunction(()=>document.querySelector('#mechanism-preview')?.dataset.state==='ok',{timeout:120000});
- const open=label=>p.evaluate(label=>[...document.querySelectorAll('#tree button')].find(b=>b.textContent.includes(label)).click(),label);
- await p.click(`[data-demo="${demo}"]`);await ready();
+ const open=label=>goTo(p,label);
+ await example(p,`${demo}`);await ready();
  for(const id of drives){await open('⚡ '+id);await p.waitForSelector(`[data-find-gear="${id}"]`);await p.click(`[data-find-gear="${id}"]`);
   await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#drive-progress')?.dataset.state),{timeout:180000});await p.click('[data-adopt="0"]');
   await p.waitForFunction(()=>['ok','hit','error'].includes(document.querySelector('#drive-check')?.dataset.state),{timeout:180000});await ready();if(demo==='hand')assert.match(await p.$eval('.drive-gear',e=>e.textContent),/16 Tooth.*40 Tooth.*1 : 2.50/);}
@@ -25,14 +25,14 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  if(demo==='hand'){const text=await p.$eval('#bearing-lines',e=>e.textContent);assert.ok(lines.length===2&&/Bohrung Ø5 für Welle Ø4.8/.test(text)&&!/Rillenkugellager/.test(text),text);}
  if(demo.startsWith('planet')){const text=await p.$eval('#bearing-lines',e=>e.textContent);assert.ok(lines.length===5&&/Steg mit Kreuzbohrung/.test(text)&&!/Rillenkugellager/.test(text),text);assert.ok(bom.some(x=>/4× Einpressmutter M3/.test(x)),bom.join(' | '));}
  // PART=1 (robot): a Raspberry Pi Pico from the store on the forearm; the structure must print its holders in.
- if(process.env.PART){await p.evaluate(()=>document.querySelector('#fit').click());await new Promise(r=>setTimeout(r,800));const card='[data-part="rpi-pico"]';await p.evaluate(s=>{const r=document.querySelector(s);r.closest('details').open=true;r.scrollIntoView({block:'center'});},card);
+ if(process.env.PART){await phase(p,1);await p.evaluate(()=>document.querySelector('#fit').click());await new Promise(r=>setTimeout(r,800));const card='[data-part="rpi-pico"]';await p.evaluate(s=>{const r=document.querySelector(s);r.closest('details').open=true;r.scrollIntoView({block:'center'});},card);
   const from=await p.$eval(card,e=>{const b=e.getBoundingClientRect();return [b.x+b.width/2,b.y+b.height/2];}),to=await p.evaluate(a=>window.studioScreen(a),[-15,0,495]);await p.mouse.move(...from);await p.mouse.down();await p.mouse.move(from[0]+30,from[1],{steps:3});await p.mouse.move(...to,{steps:8});await new Promise(r=>setTimeout(r,100));await p.mouse.up();await new Promise(r=>setTimeout(r,800));
   assert.match(await p.$eval('#status',e=>e.textContent),/an Unterarm/);}
  // Step 7: structures.
  await open('Struktur je Glied');await p.waitForSelector('[data-generate-structures]');const t0=Date.now();await p.click('[data-generate-structures]');
  await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#structure-progress')?.dataset.state),{timeout:900000});
  // DOC=file keeps the Studio document of this run (to study a failing link with diag.mjs).
- if(process.env.DOC){await p.evaluate(()=>document.getElementById('save').click());await fs.writeFile(process.env.DOC,await p.evaluate(()=>localStorage.getItem('mechanics-studio')));
+ if(process.env.DOC){await p.evaluate(()=>window.studioSave());await fs.writeFile(process.env.DOC,await p.evaluate(()=>localStorage.getItem('mechanics-studio')));
   // The stored 3D models too (IndexedDB), as JSON with plain arrays.
   await fs.writeFile(process.env.DOC+'.assets.json',await p.evaluate(()=>new Promise((res,rej)=>{const r=indexedDB.open('mechanics-studio-assets',1);r.onsuccess=()=>{const q=r.result.transaction('assets').objectStore('assets').getAll();q.onsuccess=()=>res(JSON.stringify(q.result,(k,v)=>v instanceof Float32Array?Array.from(v):v));q.onerror=()=>rej(q.error);};r.onerror=()=>rej(r.error);})));}
  const report=await p.$eval('#structure-progress',e=>e.textContent),rows=await p.$$eval('.structure-row',l=>l.map(x=>({link:x.dataset.link,state:x.dataset.state,text:x.textContent})));
@@ -40,7 +40,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  if(demo==='hand')assert.ok(rows.some(r=>r.link==='Abtrieb'&&r.state==='skip'&&/Nichts zu drucken/.test(r.text)),JSON.stringify(rows));
  // Strong and stiff enough under the design loads: no hint on utilisation or deflection.
  assert.ok(rows.every(r=>!/Größte (Auslastung|Verformung)/.test(r.text)),JSON.stringify(rows.map(r=>r.text)));
- assert.deepEqual(await p.$$eval('.steps li',l=>l.map(x=>x.dataset.state)),Array(7).fill('done'),'alle Schritte erledigt');
+ const todo=await p.$$eval('#todo li',l=>l.map(x=>x.dataset.state+' '+x.textContent));assert.ok(todo.length===5&&todo.every(t=>t.startsWith('done')),JSON.stringify(todo));
  // Sliders still move the arm with its structures.
  const first=await p.$eval('#axes input[type=range]',r=>r.dataset.axis);
  await p.evaluate(a=>{const s=document.querySelector(`#axes input[data-axis="${a}"]`);s.value=String(Number(s.max)*.5);s.dispatchEvent(new Event('input'));},first);

@@ -1,6 +1,6 @@
 // Target mechanism from a 3D model: import an OBJ robot, form links, detect axes from clicked cylinders,
 // move each axis live with its slider.
-import puppeteer from 'puppeteer';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
+import puppeteer from 'puppeteer';import {goTo,phase,menu,example,start} from './studio-ui.mjs';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 import * as THREE from 'three';import {OBJExporter} from 'three/addons/exporters/OBJExporter.js';
 // Robot: base, turntable (axis z), shoulder hub (axis x at height 85), upper arm.
 const scene=new THREE.Scene(),mesh=(name,g)=>{const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial());m.name=name;scene.add(m);return m;};
@@ -22,7 +22,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
   await p.waitForFunction((part,link)=>[...document.querySelectorAll('.part-row')].find(r=>r.querySelector('.part-name').textContent.endsWith(part))?.querySelector('select').value===link,{},part,link);};
  await assign('Drehteller','glied1');await assign('Schulter','glied1');await assign('Oberarm','glied2');
  // Axis 1: ground → glied1 from the turntable cylinder.
- const openTree=label=>p.evaluate(label=>[...document.querySelectorAll('#tree button')].find(b=>b.textContent.includes(label)).click(),label);
+ const openTree=label=>goTo(p,label);
  const field=(label,value)=>p.evaluate((label,value)=>{const l=[...document.querySelectorAll('#properties label')].find(x=>x.textContent.startsWith(label));const s=l.querySelector('select');s.value=value;s.dispatchEvent(new Event('change'));},label,value);
  const pick=(part,local)=>p.evaluate((part,local)=>window.dispatchEvent(new CustomEvent('studio-pick',{detail:{part,local}})),part,local);
  await openTree('Achse anlegen');await field('Glied A','ground');await field('Glied B','glied1');
@@ -43,7 +43,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  assert.ok(Math.abs(Math.abs(f.glied2[0])-85)<.5&&Math.abs(f.glied2[1])<.5,'turntable carries the arm about z: '+JSON.stringify(f.glied2));
  assert.deepEqual(f.ground,[0,0,0]);
  // Persisted with the project; the model comes back from the browser database.
- await p.click('#save');await p.reload();await p.waitForSelector('canvas');await p.evaluate(()=>document.querySelector('[data-mechanism]').click());
+  await p.evaluate(()=>window.studioSave());await p.reload();await p.waitForSelector('canvas');await goTo(p,'Modell & Glieder');
  await p.waitForFunction(()=>document.querySelectorAll('#axes input[type=range]').length===2&&document.querySelectorAll('.part-row').length===4,{timeout:30000});
  assert.deepEqual(errors,[]);console.log('Studio model: OBJ robot imported, links formed, two axes detected from cylinders, sliders move the arm live, persisted.');
 }finally{await browser.close();await fs.rm(dir,{recursive:true,force:true});}

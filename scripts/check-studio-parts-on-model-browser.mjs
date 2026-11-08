@@ -2,7 +2,7 @@
 // the pointer and hangs on that link: the slider takes it along, undo works, a reload finds it again. A part sunk into
 // another link is reported, the sweep over the axes runs, the holder downloads as a piece of its own, and a plate is an
 // element of the store like any other.
-import puppeteer from 'puppeteer';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
+import puppeteer from 'puppeteer';import {goTo,phase,menu,example,start} from './studio-ui.mjs';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 const dir=await fs.mkdtemp(path.join(os.tmpdir(),'studio-parts-')),files=path.join(dir,'dl');await fs.mkdir(files);
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,userDataDir:path.join(dir,'profil'),args:['--enable-unsafe-swiftshader']});
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
@@ -11,8 +11,8 @@ const settled=async(p,test)=>{for(let i=0;i<80;i++){const f=await stored(p);if(t
 const dragPart=async(p,card,to)=>{await p.evaluate(s=>{const row=document.querySelector(s),box=row.closest('details');if(box)box.open=true;row.scrollIntoView({block:'center'});},card);const r=await p.$eval(card,e=>{const b=e.getBoundingClientRect();return [b.x+b.width/2,b.y+b.height/2];}),[x,y]=await p.evaluate(a=>window.studioScreen(a),to);await p.mouse.move(...r);await p.mouse.down();await p.mouse.move(r[0]+30,r[1],{steps:3});await p.mouse.move(x,y,{steps:8});await wait(80);await p.mouse.up();await wait(200);};
 const slide=(p,axis,share)=>p.$eval(`input[data-axis="${axis}"]`,(e,s)=>{e.value=String(Number(e.min)+(Number(e.max)-Number(e.min))*s);e.dispatchEvent(new Event('input',{bubbles:true}));},share);
 try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});await p.goto('http://localhost:4001/studio');await p.waitForSelector('[data-demo="robot"]');
- await p.click('[data-demo="robot"]');await p.waitForSelector('[data-part="rpi-pico"]',{timeout:20000});await wait(1200);await p.click('#fit');await wait(400);
- assert.equal(await p.evaluate(()=>document.body.dataset.mode),'mechanism');
+ await example(p,`robot`);await p.waitForSelector('[data-part="rpi-pico"]',{timeout:20000});await wait(1200);await p.click('#fit');await wait(400);
+ assert.equal(await p.evaluate(()=>document.body.dataset.scene),'mechanism');
  // Onto the forearm: it hangs there, lying on the surface.
  await dragPart(p,'[data-part="rpi-pico"]',[-15,0,495]);let f=await settled(p,x=>x.doc.builds?.[0]?.items.length===1);const build=f.doc.builds[0],pico=build.items[0];
  assert.equal(pico.free?.body,'Unterarm',JSON.stringify(pico));assert.equal(build.mechanism,f.doc.mechanisms[0].id);assert.match(await p.$eval('#status',e=>e.textContent),/an Unterarm/);
@@ -44,6 +44,6 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.waitForSelector('[data-field="Platz"]');await p.select('[data-field="Platz"]','auto');f=await settled(p,x=>x.doc.builds[0].items[0].wish?.mode==='auto');
  await dragPart(p,'[data-part="tp4056"]',[80,80,20]);f=await settled(p,x=>x.doc.builds[0].items.length===2);const open=f.doc.builds[0].items.find(i=>i.wish),hand=f.doc.builds[0].items.find(i=>!i.wish);assert.ok(open&&hand);assert.match(await p.$eval('#build-issues',e=>e.textContent),/Nichts/);
  // Reload: mechanism and parts are back.
- await wait(500);await p.reload();await p.waitForSelector('[data-item]',{timeout:20000});assert.equal(await p.evaluate(()=>document.body.dataset.mode),'mechanism');assert.equal(await p.$$eval('[data-plate]',x=>x.length),1);
+ await wait(500);await p.reload();await p.waitForSelector('[data-item]',{timeout:20000});assert.equal(await p.evaluate(()=>document.body.dataset.scene),'mechanism');assert.equal(await p.$$eval('[data-plate]',x=>x.length),1);
  assert.deepEqual(errors,[]);console.log('Studio Teile am Modell: am Unterarm abgelegt, fährt mit, Rückgängig, Halter-STL, Kollision und Fahrweg geprüft, Platte auf der Basis, Reload.');
 }finally{await browser.close();await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}

@@ -38,7 +38,7 @@ type Item='mechanism'|'model'|'axis-new'|'drive-new'|'bearings'|'structure'|`dri
 export type GripOptions={mode:'translate'|'rotate';step:number;angle:number;space:'local'|'world'};
 /** `grip`: attaches the gizmo to a handle (undefined: takes it off a motor handle); `dragging`: the gizmo is held;
  * `free`: steps and grid are off (Alt held). */
-export type EditorHost={/** Takes the properties panel over (a part from the store is selected). */sideProperties?:()=>boolean;/** A page of the mechanism was chosen: nothing from the store stays selected. */deselect?:()=>void;/** Seats of what else is mounted on the links. */extraSeats?:()=>Seat[];doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;free:()=>boolean};
+export type EditorHost={/** Takes the properties panel over (a part from the store is selected). */sideProperties?:()=>boolean;/** Something outside the mechanism (a part) is selected: no page of it is marked. */selectedElsewhere?:()=>boolean;/** A page of the mechanism was chosen: nothing from the store stays selected. */deselect?:()=>void;/** Seats of what else is mounted on the links. */extraSeats?:()=>Seat[];doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;free:()=>boolean};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
 const deg=180/Math.PI;
@@ -304,49 +304,39 @@ export class MechanismEditor{
   if(this.lastFit)out.push(el('p',{className:'muted',textContent:`Zuletzt erkannt: ${this.lastFit.kind==='cylinder'?`Zylinder, Radius ${this.lastFit.radius?.toFixed(2)} mm`:'Kante/Punkte'} · Punkt (${this.lastFit.point.map(n=>n.toFixed(1)).join(', ')}) · Richtung (${this.lastFit.direction.map(n=>n.toFixed(3)).join(', ')})`}));
   return out;
  }
- // ---------- explorer ----------
- renderTree(root:HTMLElement){
-  root.append(el('div',{className:'tree-group',textContent:'Mechanismen'}));
-  for(const m of this.host.doc().mechanisms??[]){
-   const open=el('button',{textContent:`⚙ ${m.label}`});open.dataset.mechanism=m.id;open.setAttribute('aria-selected',String(this.activeId===m.id&&this.item==='mechanism'));open.onclick=()=>{this.enter(m.id);this.host.leave();};
-   root.append(el('div',{className:'tree-row'},open));
-   if(this.activeId!==m.id)continue;
-   const model=m.mechanism.bodies.some(b=>b.display?.kind==='mesh');
-   const sub=(label:string,item:Item)=>{const b=el('button',{textContent:label,className:'tree-sub'});b.setAttribute('aria-selected',String(this.item===item));b.onclick=()=>{this.host.deselect?.();this.item=item;this.renderProperties();this.drawHandles();this.host.leave();};root.append(el('div',{className:'tree-row'},b));};
-   const group=(text:string)=>root.append(el('div',{className:'tree-subgroup',textContent:text}));
-   const drives=m.drives??[];
-   if(model){sub('  🧩 Modell & Glieder','model');group('Achsen');for(const j of m.mechanism.joints)if(!j.id.startsWith('halt-')&&!owned(drives,j.id))sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);sub('  ＋ Achse anlegen','axis-new');
-    group('Antriebe');for(const d of drives)sub(`  ⚡ ${d.id} → ${d.axis}${d.gear?' ✓':''}`,`drive:${d.id}`);sub('  ＋ Antrieb setzen','drive-new');
-    group('Fertigung');sub('  ⊚ Lager & Wellen','bearings');sub('  🕸 Struktur je Glied','structure');group('Weitere Einstellungen');}
-   else{for(const b of m.mechanism.bodies)if(!b.ground)sub(`  ▭ ${b.id}`,`body:${b.id}`);for(const j of m.mechanism.joints)sub(`  ⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);}
-   sub('  Parameter','parameters');sub('  Ein-/Ausgang, Bereich','io');
-   if(model)for(const b of m.mechanism.bodies)if(!b.ground&&b.display?.kind!=='mesh'&&!owned(drives,b.id))sub(`  ▭ ${b.id}`,`body:${b.id}`);
-   for(const e of m.mechanism.elements)if(!owned(drives,e.id))sub(`  ◉ ${e.id}${e.source.kind==='library'?' (Kaufteil)':''}`,`element:${e.id}`);
-   for(const c of m.mechanism.contacts)if(!owned(drives,c.id))sub(`  ⚙ ${c.id} (${c.mode==='follower'?'Läufer':c.kind})`,`contact:${c.id}`);
-   m.mechanism.patterns.forEach((p,i)=>sub(`  ⟷ Muster ${i+1} (${p.kind==='mirror'?'Spiegelung':'Reihe'})`,`pattern:${i}`));
+ // ---------- scene tree ----------
+ /** The open mechanism's things, as far as the phase works on them: ① model and links, ② axes and drives, ③ making. */
+ renderScene(root:HTMLElement,phase:1|2|3){
+  const e=this.entry();if(!e)return;const m=e.mechanism,drives=e.drives??[],model=m.bodies.some(b=>b.display?.kind==='mesh');
+  const sub=(label:string,item:Item)=>{const b=el('button',{textContent:label,className:'tree-sub'});b.dataset.scene=item;b.setAttribute('aria-selected',String(this.item===item&&!this.host.selectedElsewhere?.()));b.onclick=()=>this.open(item);root.append(el('div',{className:'tree-row'},b));};
+  const group=(text:string)=>root.append(el('div',{className:'tree-subgroup',textContent:text}));
+  if(phase===1){
+   if(model)sub('🧩 Modell & Glieder','model');
+   else{sub('⚙ Mechanismus','mechanism');for(const b of m.bodies)if(!b.ground)sub(`▭ ${b.id}`,`body:${b.id}`);for(const x of m.elements)if(!owned(drives,x.id))sub(`◉ ${x.id}${x.source.kind==='library'?' (Kaufteil)':''}`,`element:${x.id}`);for(const c of m.contacts)if(!owned(drives,c.id))sub(`⚙ ${c.id} (${c.mode==='follower'?'Läufer':c.kind})`,`contact:${c.id}`);m.patterns.forEach((p,i)=>sub(`⟷ Muster ${i+1} (${p.kind==='mirror'?'Spiegelung':'Reihe'})`,`pattern:${i}`));sub('Parameter','parameters');}
   }
-  root.append(el('div',{className:'tree-group',textContent:'Neu'}));
-  const add=el('div',{className:'mechanism-add'});
-  const demoButtons=([['robot','▶ Demo: Roboterarm'],['cnc','▶ Demo: CNC-Portal'],['sled','▶ Demo: Schlitten auf Wellenbahn'],['hand','▶ Demo: Handgetriebe (LEGO)'],['planet','▶ Demo: Planetengetriebe (LEGO)'],['planet16','▶ Demo: Planetengetriebe 4 × LEGO z16']] as const).map(([key,label])=>{const b=el('button',{textContent:label,className:'primary'});b.dataset.demo=key;b.onclick=()=>void this.loadDemo(key);return b;});
-  const templateBox=el('details',{className:'templates'},el('summary',{textContent:'Vorlagen (Getriebe-Beispiele)'}));
-  for(const [key,t] of Object.entries(templates)){const b=el('button',{textContent:'+ '+t.label});b.dataset.mechanismTemplate=key;b.onclick=()=>{const id='mech-'+crypto.randomUUID().slice(0,8);this.host.change(()=>{const d=this.host.doc();d.mechanisms=[...(d.mechanisms??[]),{id,label:t.label.replace(' (Vorlage)',''),mechanism:t.build()}];},`${t.label} angelegt`);this.enter(id);this.host.leave();};templateBox.append(b);}
-  const file=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});file.id='model-file';
-  const load=el('button',{textContent:'⬆ 3D-Modell laden (STL, OBJ, GLB)'});load.dataset.mechanismModel='true';load.onclick=()=>file.click();
-  file.onchange=async()=>{const files=[...(file.files??[])];file.value='';if(files.length)await this.importFiles(files);};
-  // A housing for a board on a top-hat rail: no mechanism, the parts come as a ZIP of STLs (structure core, shell mode).
-  const shell=el('button',{textContent:'⬇ Gehäuse: Arduino Uno auf Hutschiene (STL)'});shell.dataset.shellDemo='arduino-uno';shell.onclick=()=>this.buildShell('arduino-uno');
-  add.append(load,file,...demoButtons,shell,templateBox);root.append(add);
+  if(phase===2){
+   group('Achsen');for(const j of m.joints)if(!j.id.startsWith('halt-')&&!owned(drives,j.id))sub(`⟳ ${j.id} · ${jointName(j.joint.kind)}`,`joint:${j.id}`);if(model)sub('＋ Achse anlegen','axis-new');
+   if(model){group('Antriebe');for(const d of drives)sub(`⚡ ${d.id} → ${d.axis}${d.gear?' ✓':''}`,`drive:${d.id}`);sub('＋ Antrieb setzen','drive-new');}else sub('Ein-/Ausgang, Bereich','io');
+  }
+  if(phase===3){if(model){sub('⊚ Lager & Wellen','bearings');sub('🕸 Struktur je Glied','structure');}else root.append(el('p',{className:'muted',textContent:'Lager und Strukturen entstehen aus einem 3D-Modell mit Gliedern.'}));}
  }
- /** Housing for a board (shell mode of the structure core) in the structure worker; downloads base and lid. */
- private buildShell(board:string){
-  this.host.status('Gehäuse wird erzeugt …');const w=new Worker('./mechanics-structure-worker.js');
-  w.onmessage=async({data})=>{w.terminate();if(data.type!=='shell'){this.host.status('Gehäuse: '+(data.message??'Fehler'));return;}
-   const z=new JSZip();for(const p of data.parts)z.file(`${board}-${p.id}.stl`,p.stl);
-   z.file('hinweise.txt',[`${data.board}: Gehäuse für eine 35-mm-Hutschiene (EN 60715).`,...data.parts.map((p:{id:string;mass:number;closed:boolean;print:{overhang:number}})=>`${p.id}: ${p.mass.toFixed(0)} g PLA, ${p.closed?'geschlossenes Netz':'Netz offen!'}, liegt in Druckrichtung (${(p.print.overhang*100).toFixed(0)} % Überhang)`),
-    `Rastzunge: ${data.latch.length} mm lang, ${data.latch.thickness} mm dick, beim Aufrasten ${data.latch.travel.toFixed(1)} mm ausgelenkt, ${(data.latch.strain*100).toFixed(2)} % Dehnung.`,
-    'Montage: 4 Einpressmuttern M3 (Ø4 × 5,7 mm) mit dem Lötkolben in die Dome setzen, Platine mit 4 Schrauben M3×6 darauf; Hutschienenclip mit 4 Schrauben M3×6 von innen durch den Boden; Deckel aufdrücken, bis beide Schnapphaken an den Stirnseiten einrasten (zum Öffnen die Haken nach außen ziehen). Clip mit dem festen Haken zuerst einhängen, dann aufdrücken; zum Lösen an der Lasche ziehen.'].join('\n'));
-   this.download(await z.generateAsync({type:'blob'}),`gehaeuse-${board}.zip`);this.host.status(`Gehäuse für ${data.board} erzeugt: ${data.parts.map((p:{id:string;mass:number})=>`${p.id} ${p.mass.toFixed(0)} g`).join(', ')}.`);};
-  w.postMessage({kind:'shell',board});
+ /** Opens a page of the mechanism. */
+ open(item:string){this.host.deselect?.();this.item=item as Item;this.renderProperties();this.drawHandles();this.host.leave();}
+ get page(){return this.item;}
+ /** The page a phase starts on. */
+ defaultPage(phase:1|2|3):string{const e=this.entry();if(!e)return 'mechanism';const m=e.mechanism,model=m.bodies.some(b=>b.display?.kind==='mesh'),d=(e.drives??[]).find(x=>!x.gear)??e.drives?.[0];
+  if(!model)return phase===2?(m.joints[0]?`joint:${m.joints[0].id}`:'io'):'mechanism';return phase===1?'model':phase===2?(d?`drive:${d.id}`:'axis-new'):'bearings';}
+ /** What is done and what comes next, for the panel „Was fehlt noch“. */
+ todo():{label:string;done:boolean;hint:string;phase:1|2|3;item:string}[]{
+  const e=this.entry();if(!e)return [];const m=e.mechanism;if(!m.bodies.some(b=>b.display?.kind==='mesh'))return [];
+  const drives=this.drives(),links=m.bodies.filter(b=>!b.ground&&!owned(drives,b.id)),filled=links.filter(b=>b.display?.kind==='mesh'&&b.display.parts.length),axes=modelAxes(m,drives),loose=links.filter(b=>m.joints.some(j=>j.id===`halt-${b.id}`));
+  const geared=axes.filter(j=>drives.some(d=>d.axis===j.id&&d.gear)),open=axes.filter(j=>!drives.some(d=>d.axis===j.id)),plan=geared.length===axes.length&&axes.length?this.plan(m):undefined,built=[...this.structures.values()],firstDrive=drives.find(d=>!d.gear)??drives[0];
+  return [
+   {label:'Glieder festgelegt',done:filled.length>0&&filled.length===links.length,hint:!links.length?'„+ Glied“ anlegen, dann im 3D-Fenster die Teile anklicken, die sich mit ihm bewegen.':filled.length<links.length?`Glied ${links.find(b=>!filled.includes(b))!.id} hat noch keine Teile.`:'Alle Glieder haben Teile.',phase:1,item:'model'},
+   {label:'Achsen gesetzt',done:axes.length>0&&!loose.length,hint:loose.length?`${loose.map(b=>b.id).join(', ')} hängt noch fest: Achse anlegen und den Zylinder des Gelenks anklicken.`:axes.length?'Jedes Glied hat eine Achse.':'Noch keine Achse.',phase:2,item:'axis-new'},
+   {label:'Antriebe und Getriebe',done:axes.length>0&&geared.length===axes.length,hint:open.length?`Achse ${open[0].id} hat noch keinen Antrieb.`:geared.length<axes.length?`Antrieb ${drives.find(d=>!d.gear)?.id??''}: „Getriebe finden“ und eine Lösung übernehmen.`:'Jede Achse hat ihr Getriebe.',phase:2,item:open.length?'drive-new':firstDrive?`drive:${firstDrive.id}`:'drive-new'},
+   {label:'Lager geplant',done:!!plan&&plan.lines.every(l=>l.state==='pass'),hint:plan?plan.lines.every(l=>l.state==='pass')?'Alle Wellen gelagert.':'Nicht jede Welle hat Platz für Lager.':'Erst alle Getriebe übernehmen.',phase:3,item:'bearings'},
+   {label:'Strukturen erzeugt',done:built.some(x=>x.positions)&&built.every(x=>x.skipped||x.positions&&x.checks.every(c=>c.state!=='fail')),hint:built.length?'Je Glied als STL herunterladen.':'„Strukturen erzeugen“.',phase:3,item:'structure'}];
  }
  /** A demo: stored like an imported model, links, axes and motors ready; sliders work at once. */
  async loadDemo(key:keyof typeof demos='robot'){
@@ -367,24 +357,6 @@ export class MechanismEditor{
   this.host.change(()=>{const x=this.mechanism()!;for(const b of x.bodies)if(b.id===from)b.id=to;for(const j of x.joints){if(j.a.body===from)j.a.body=to;if(j.b.body===from)j.b.body=to;if(j.id===`halt-${from}`)j.id=`halt-${to}`;}
    for(const e of x.elements)for(const mt of e.mounts)if(mt.body===from)mt.body=to;for(const p of x.patterns)p.source=p.source.map(s=>s===from?to:s);for(const d of this.drives())if(d.body===from)d.body=to;},`Glied umbenannt: ${to}`);
   if(this.brush===from)this.brush=to;if(this.draft.a===from)this.draft.a=to;if(this.draft.b===from)this.draft.b=to;
- }
- /** Step bar for model-based mechanisms: where am I, what next. */
- private steps(m:Mechanism):HTMLElement{
-  const drives=this.drives(),links=m.bodies.filter(b=>!b.ground&&!owned(drives,b.id)),filled=links.filter(b=>b.display?.kind==='mesh'&&b.display.parts.length),axes=modelAxes(m,drives),loose=links.filter(b=>m.joints.some(j=>j.id===`halt-${b.id}`));
-  const geared=axes.filter(j=>drives.some(d=>d.axis===j.id&&d.gear)),open=axes.filter(j=>!drives.some(d=>d.axis===j.id));
-  const plan=geared.length===axes.length&&axes.length?this.plan(m):undefined,built=[...this.structures.values()];
-  const state=[true,filled.length>0&&filled.length===links.length,axes.length>0&&!loose.length,axes.length>0,axes.length>0&&geared.length===axes.length,!!plan&&plan.lines.every(l=>l.state==='pass'),built.some(x=>x.positions)&&built.every(x=>x.skipped||x.positions&&x.checks.every(c=>c.state!=='fail'))];
-  const hints=['Modell ist geladen.',
-   !links.length?'Mit „+ Glied“ ein bewegliches Glied anlegen, dann Teile anklicken.':filled.length<links.length?`Glied ${links.find(b=>!filled.includes(b))!.id} hat noch keine Teile.`:'Alle Glieder haben Teile.',
-   loose.length?`${loose.map(b=>b.id).join(', ')} hängt noch fest – „＋ Achse anlegen“ und den Zylinder des Gelenks anklicken.`:axes.length?'Jedes Glied hat eine Achse.':'Noch keine Achse.',
-   axes.length?'Regler unter der 3D-Ansicht schieben und prüfen, ob alles richtig mitläuft.':'Erst Achsen anlegen.',
-   open.length?`Achse ${open[0].id} hat noch keinen Antrieb – „＋ Antrieb setzen“.`:geared.length<axes.length?`Antrieb ${drives.find(d=>!d.gear)?.id??''}: „Getriebe finden“ und eine Lösung übernehmen.`:'Jede Achse hat ihr Getriebe. Regler schieben: die Getriebe drehen mit.',
-   plan?plan.lines.every(l=>l.state==='pass')?'Alle Wellen gelagert – Lagerliste unter „Lager & Wellen“.':'Nicht jede Welle hat Platz für Lager – „Lager & Wellen“ ansehen.':'Erst alle Getriebe übernehmen.',
-   built.length?'Strukturen erzeugt – je Glied als STL herunterladen.':'„Struktur je Glied“: Strukturen erzeugen lassen.'];
-  const next=state.findIndex(s=>!s),bar=el('ol',{className:'steps'});
-  const firstDrive=drives.find(d=>!d.gear)??drives[0];
-  [['Modell','model'],['Glieder','model'],['Achsen','axis-new'],['Testen','model'],['Antrieb',firstDrive?`drive:${firstDrive.id}`:'drive-new'],['Lager','bearings'],['Struktur','structure']].forEach(([label,item],i)=>{const li=el('li',{textContent:`${state[i]?'✓':i+1} ${label}`});li.dataset.state=state[i]?'done':i===next?'current':'open';li.onclick=()=>{this.item=item as Item;this.renderProperties();};bar.append(li);});
-  const index=next<0?6:next;return el('div',{className:'step-box'},bar,el('p',{className:'step-hint',textContent:'Was jetzt? '+hints[index]}));
  }
  /** New mechanism from model files: every part starts on the frame (Basis). */
  async importFiles(files:File[]){
@@ -501,7 +473,7 @@ export class MechanismEditor{
    ui.number(linear?'Weg je Motorumdrehung [mm/U]':'Untersetzung (Motorumdrehungen je Achsumdrehung)',Math.round(d.target*1000)/1000,n=>{if(n>0&&n<=1000)this.editDrive(id,'Ziel geändert',x=>{x.target=n;});}),
    ui.number('Toleranz [%]',d.tolerance,n=>{if(n>=0&&n<=50)this.editDrive(id,'Toleranz geändert',x=>{x.tolerance=n;});}),
    ui.select('Stufen höchstens',String(d.maxStages??3),[['1','1'],['2','2'],['3','3'],['4','4']],v=>this.editDrive(id,'Stufenzahl geändert',x=>{x.maxStages=Number(v);}))];
-  out.push(el('p',{className:'muted',textContent:'Teile und Paarungen: wie im Katalog ausgewählt (links, Reiter „Katalog“).'}));
+  out.push(el('p',{className:'muted',textContent:'Teile und Paarungen: wie links im Bestand für die Getriebesuche freigegeben.'}));
   // Placement.
   const click=el('button',{textContent:'Auf Fläche klicken'});click.dataset.driveTool=id;click.setAttribute('aria-pressed',String(this.tool?.mode==='motor'));click.onclick=()=>{this.tool=this.tool?.mode==='motor'?undefined:{mode:'motor',drive:id};this.host.status(this.tool?'Fläche am Modell anklicken: der Motor steht darauf, die Welle zeigt von der Fläche weg.':'Werkzeug beendet.');this.renderProperties();};
   const parallel=el('button',{textContent:'Welle parallel zur Achse'});parallel.onclick=()=>this.editDrive(id,'Motorwelle parallel zur Achse',(x,mm)=>{x.frame=parallelTo(mm,x);removeGear(mm,x);placeMotor(mm,x);});
@@ -617,7 +589,7 @@ export class MechanismEditor{
    if(data.type==='progress'){job.text=`${data.link}: ${data.stage} …`;const p=document.getElementById('structure-progress');if(p)p.textContent=job.text;}
    if(data.type==='link'){printed+=held(data);this.structures.set(data.link,{positions:data.positions,stl:data.stl,report:data.report,checks:data.checks,error:data.error,skipped:data.skipped});
     this.view.setOverlay('structure',[...this.structures.entries()].filter(([,x])=>x.positions).map(([link,x])=>({body:link,positions:x.positions!,color:linkColor(m.bodies.findIndex(b=>b.id===link),false)})));render();}
-   if(data.type==='done'){w.terminate();job.state='done';const fails=[...this.structures.values()].filter(x=>x.error||x.checks.some(c=>c.state==='fail')).length;job.text=(fails?`${fails} Glied(er) mit Fehlern.`:`Fertig: ${[...this.structures.values()].filter(x=>x.positions).length} Glied(er) erzeugt und geprüft.`)+(extra.length?` ${printed} von ${extra.length} Haltepunkten der Teile eingebunden.`:'');this.view.hideModel=true;this.view.clearOverlay('none');render();}
+   if(data.type==='done'){w.terminate();job.state='done';const fails=[...this.structures.values()].filter(x=>x.error||x.checks.some(c=>c.state==='fail')).length;job.text=(fails?`${fails} Glied(er) mit Fehlern.`:`Fertig: ${[...this.structures.values()].filter(x=>x.positions).length} Glied(er) erzeugt und geprüft.`)+(extra.length?` ${printed} von ${extra.length} Haltepunkten der Teile eingebunden.`:'');this.view.hideModel=true;this.view.clearOverlay('none');render();this.host.leave();}
    if(data.type==='error'){w.terminate();job.state='error';job.text='Fehlgeschlagen: '+data.message;render();}};
   w.postMessage({mechanism:m,drives:this.drives(),assets,bearings:fab.bearings??{},settings,seats:extra});
   render();
@@ -636,8 +608,7 @@ export class MechanismEditor{
    return [...triple(`${label}: Position [mm]`,f.position,(i,n)=>{const p=[...f.position] as V;p[i]=n;write({...f,position:p});}),...triple(`${label}: Drehung XYZ [°]`,[e.x*deg,e.y*deg,e.z*deg],(i,n)=>{const a=[e.x,e.y,e.z];a[i]=n/deg;write({...f,rotation:new THREE.Quaternion().setFromEuler(new THREE.Euler(a[0],a[1],a[2],'XYZ')).toArray() as Frame['rotation']});})];};
   const remove=(label:string,fn:(m:Mechanism)=>void)=>{const b=el('button',{textContent:label,className:'danger'});b.onclick=()=>{edit(label,fn);this.item='mechanism';};return b;};
   const bodies=m.bodies.map(b=>[b.id,b.id] as [string,string]),joints=m.joints.map(j=>[j.id,`${j.id} (${j.joint.kind})`] as [string,string]);
-  root.append(el('h3',{textContent:`⚙ ${entry.label}`}));if(m.bodies.some(b=>b.display?.kind==='mesh'))root.append(this.steps(m));root.append(el('p',{id:'mechanism-preview',className:'muted'}));this.renderStatus();
-  const back=el('button',{textContent:'← Zur Getriebe-Baugruppe'});back.onclick=()=>{this.exit();this.host.leave();};
+  root.append(el('p',{id:'mechanism-preview',className:'muted'}));this.renderStatus();
 
   if(this.item==='mechanism'){
    root.append(text('Name',entry.label,v=>{if(v)this.host.change(()=>{entry.label=v;},'Mechanismus umbenannt');}),
@@ -647,7 +618,7 @@ export class MechanismEditor{
    const addContact=el('button',{textContent:'+ Kontakt'});addContact.onclick=()=>{const es=m.elements.filter(e=>e.surfaces.length);if(es.length<2){this.host.status('Ein Kontakt braucht zwei Elemente mit Wirkfläche.');return;}const id=`kontakt${m.contacts.length+1}`;edit('Kontakt hinzugefügt',x=>{x.contacts.push({id,kind:'roll',mode:'fixed-axes',a:{element:es[0].id,surface:es[0].surfaces[0].id},b:{element:es[1].id,surface:es[1].surfaces[0].id},params:{offsetA:0,offsetB:0}});});this.item=`contact:${id}`;};
    const addPattern=el('button',{textContent:'+ Muster'});addPattern.onclick=()=>{edit('Muster hinzugefügt',x=>{x.patterns.push({kind:'mirror',plane:identity(),source:[]});});this.item=`pattern:${m.patterns.length}`;};
    const del=el('button',{textContent:'Mechanismus löschen',className:'danger'});del.onclick=()=>{const id=this.activeId;this.exit();this.host.change(()=>{const d=this.host.doc();d.mechanisms=(d.mechanisms??[]).filter(x=>x.id!==id);},'Mechanismus gelöscht');this.host.leave();};
-   root.append(el('div',{className:'button-row'},addBody,addGear,addContact,addPattern),back,del);return;
+   root.append(el('div',{className:'button-row'},addBody,addGear,addContact,addPattern),del);return;
   }
   if(this.item==='model'){
    const meshBodies=m.bodies.filter(b=>b.display?.kind==='mesh'),asset=meshBodies[0]?.display?.kind==='mesh'?this.assets.get(meshBodies[0].display.asset):undefined;

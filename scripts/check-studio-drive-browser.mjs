@@ -1,6 +1,6 @@
 // Drives in the Studio: per demo one motor finds its gear train, the train is adopted, checked for
 // collisions over the axis range, and turns with the axis slider (motor turns = axis travel × ratio).
-import puppeteer from 'puppeteer';import assert from 'node:assert/strict';
+import puppeteer from 'puppeteer';import {goTo,phase,menu,example,start} from './studio-ui.mjs';import assert from 'node:assert/strict';
 const cases=[
  {demo:'robot',drive:'M3',axis:'Ellbogen',move:60,turns:60/360*3},
  {demo:'cnc',drive:'M1',axis:'X',move:40,turns:(40+150)/8},  // X is the input: its slider starts at the range start −150
@@ -15,11 +15,11 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  const press=sel=>p.waitForFunction(sel=>{const b=document.querySelector(sel);if(!b||b.disabled)return false;b.click();return true;},{timeout:20000},sel);
  for(const c of cases.filter(c=>!only.length||only.includes(c.demo))){
   const t0=Date.now();
-  await p.click(`[data-demo="${c.demo}"]`);await ready();
-  assert.equal(await p.$$eval('.steps li',l=>l.length),7,'seven steps');
+  await example(p,`${c.demo}`);await ready();
+  assert.equal(await p.$$eval('#todo li',l=>l.length),5,'fünf Schritte');
   // The tree of the new demo (the old one may still be shown right after the switch).
-  await p.waitForFunction(({id,axis})=>[...document.querySelectorAll('#tree button')].some(b=>b.textContent.includes(`⚡ ${id} → ${axis}`)),{timeout:60000},{id:c.drive,axis:c.axis});
-  await p.evaluate(({id,axis})=>[...document.querySelectorAll('#tree button')].find(b=>b.textContent.includes(`⚡ ${id} → ${axis}`)).click(),{id:c.drive,axis:c.axis});
+  await p.waitForSelector('[data-scene]',{timeout:60000});
+  await goTo(p,`⚡ ${c.drive} → ${c.axis}`);
   await p.waitForFunction(id=>document.querySelector('#properties')?.textContent.includes('Antrieb '+id),{timeout:20000},c.drive);
   await p.waitForSelector(`[data-find-gear="${c.drive}"]`);await press(`[data-find-gear="${c.drive}"]`);
   await p.waitForFunction(()=>['done','error'].includes(document.querySelector('#drive-progress')?.dataset.state),{timeout:180000});
@@ -35,7 +35,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
   const turns=JSON.parse(await p.$eval('#axes-motors',e=>e.dataset.motors))[c.drive];
   assert.ok(Math.abs(Math.abs(turns)-c.turns)<=.06*c.turns+.02,`${c.demo}: motor ${turns} U, erwartet ${c.turns.toFixed(2)}`);
   // A run over the input's range: the input's own train is solved, not held.
-  let run='';if(c.demo==='robot'){await p.click('#motion-run');await p.waitForFunction(()=>/Stellungen|nicht lösbar/.test(document.querySelector('#motion-report').textContent),{timeout:180000});run=await p.$eval('#motion-report',e=>e.textContent);assert.match(run,/Schließfehler \d\.\de-([5-9]|1\d)/,run);await p.click('#motion-close');}
+  let run='';if(c.demo==='robot'){await p.evaluate(()=>{document.getElementById('motion-panel').open=true;});await p.click('#motion-run');await p.waitForFunction(()=>/Stellungen|nicht lösbar/.test(document.querySelector('#motion-report').textContent),{timeout:180000});run=await p.$eval('#motion-report',e=>e.textContent);assert.match(run,/Schließfehler \d\.\de-([5-9]|1\d)/,run);await p.click('#motion-close');}
   console.log(`${c.demo}/${c.drive}: ${found} · ${label} · ${check.slice(4)} · Motor ${turns} U bei ${c.axis}=${c.move} · ${((Date.now()-t0)/1000).toFixed(0)} s${run?' · '+run.slice(0,80):''}`);
  }
  assert.deepEqual(errors,[]);console.log('Studio drives: search, adopt, collision sweep and live sliders work on all demos.');

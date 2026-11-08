@@ -64,10 +64,12 @@ export class TrainEditor{
  key(e:KeyboardEvent){if(e.key==='Delete'&&this.selected){this.remove();return true;}return false;}
  private remove(){const id=this.selected!;this.selected=undefined;this.host.change(()=>{const x=this.train()!;x.wheels=x.wheels.filter(w=>w.id!==id);x.shafts=x.shafts.filter(s=>x.wheels.some(w=>w.shaft===s.id));if(!x.shafts.some(s=>s.id===x.input))delete x.input;if(!x.shafts.some(s=>s.id===x.output))delete x.output;},'Rad entfernt');}
 
- renderTree(root:HTMLElement){
-  const t=this.train();if(!t)return;
+ renderPlaced(root:HTMLElement){
+  const t=this.train();if(!t)return;if(!t.wheels.length)root.append(el('p',{className:'muted',textContent:'Noch keine Räder. Zahnräder aus der Bibliothek in die Ansicht ziehen.'}));
   for(const w of t.wheels){const row=el('button',{textContent:`  ${label(w)}${w.shaft===t.input?' · Eingang':w.shaft===t.output?' · Ausgang':''}`,className:'tree-sub'});row.dataset.wheel=w.id;row.setAttribute('aria-selected',String(this.selected===w.id));row.onclick=()=>{this.selected=w.id;this.host.leave();};root.append(el('div',{className:'tree-row'},row));}
-  root.append(el('div',{className:'tree-group',textContent:'Zahnräder'}));
+ }
+ /** The library of a train: gears, and the planetary stage as a block. */
+ renderStore(root:HTMLElement){
   const list=el('div',{className:'part-store'});
   for(const p of [...legoGears].sort((a,b)=>a.teeth-b.teeth)){const row=el('div',{className:'part-card',title:p.name},el('strong',{textContent:`LEGO z${p.teeth}`}),el('small',{textContent:`${p.name.replace(/^Technic /,'')} · ${p.size[2]} mm breit`}));row.dataset.gear=p.id;row.onpointerdown=e=>{e.preventDefault();this.startNew({teeth:p.teeth,module:1,width:p.size[2],part:p.id},e);};list.append(row);}
   const printed=el('div',{className:'part-card',title:'Zähne und Modul rechts einstellen.'},el('strong',{textContent:'Gedrucktes Stirnrad'}),el('small',{textContent:'Zähne, Modul und Breite einstellbar'}));printed.dataset.gear='gedruckt';printed.onpointerdown=e=>{e.preventDefault();this.startNew({teeth:20,module:1.5,width:10},e);};list.append(printed);root.append(list);
@@ -77,6 +79,11 @@ export class TrainEditor{
   const go=el('button',{textContent:'＋ Planetenstufe anlegen',className:'primary'});go.dataset.planetMake='true';go.onclick=()=>{const name=`Planetengetriebe z${zs}/z${zp}`;this.host.adopt(planetGearbox({id:`planet-${crypto.randomUUID().slice(0,8)}`,label:name,sun:this.sun,planet:this.planet}));};
   root.append(el('details',{className:'templates'},el('summary',{textContent:'Planetenstufe (Sonne, 3 Planeten, Hohlrad)'}),choice('Sonne',this.sun,v=>{this.sun=v;}),choice('Planeten',this.planet,v=>{this.planet=v;}),el('p',{className:'muted',textContent:`Hohlrad z${zr} gedruckt, 1 : ${(1+zr/zs).toFixed(2).replace('.',',')}`}),go));
  }
+ /** The steps of a train: two wheels that mesh, nothing locked, made into a mechanism. */
+ todo(){const t=this.train();if(!t)return [];const found=trainIssues(t);return [
+  {label:'Räder platziert',done:t.wheels.length>=2,hint:'Zwei Zahnräder aus der Bibliothek nebeneinander ziehen: Sie rasten im Achsabstand ein.',phase:1,open:()=>{this.selected=undefined;}},
+  {label:'Alle Räder kämmen',done:t.wheels.length>=2&&!found.length,hint:found[0]?.message??'Alles kämmt.',phase:1,open:()=>{this.selected=found[0]?.wheels[0];}},
+  {label:'Als Mechanismus übernommen',done:false,hint:'In „② Bewegen“ den Antrieb wählen und „Als Mechanismus übernehmen“.',phase:2,open:()=>{this.selected=undefined;}}];}
  renderProperties(root:HTMLElement){
   const t=this.train(),b=this.host.build();if(!t||!b)return;
   const set=(message:string,fn:(x:Train)=>void)=>this.host.change(()=>fn(this.train()!),message);

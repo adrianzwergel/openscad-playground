@@ -1,29 +1,37 @@
-import {defaultCatalog} from './graph/catalog';
-import {renderStock} from './studio-catalog';
-import {compose,identity} from './graph/frames';
-import {terminalDeviation} from './graph/terminals';
-import {registry} from './graph/registry';
-import {solutionMetrics} from './graph/comparison';
+// Mechanics Studio: one project is one device, shown in one 3D scene. The start page opens projects, templates and
+// examples. In a project three phases lead through the work: ① build up (model, links, parts), ② move (axes, drives,
+// gear trains), ③ make (bearings, structures, housings). Left: the library of the phase and the scene's tree; right: the
+// selection and what is still missing. The editors below (mechanism, build, gear train) do the work.
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {TransformControls} from 'three/addons/controls/TransformControls.js';
-import {spaceExample} from './graph/examples';
-import {StudioDetailPreview} from './studio-detail';
-import {constructionHulls} from './graph/construction';
-import type {Mechanism} from './graph/contracts';
-import {StudioHistory,importStudio,serializeStudio,parseStudio,adoptSolution} from './studio-model';
+import {StudioHistory,importStudio,serializeStudio,parseStudio} from './studio-model';
 import type {StudioDocument} from './studio-model';
 import {MotionPanel} from './studio-motion';
 import {MechanismEditor} from './studio-mechanism';
 import type {GripOptions} from './studio-mechanism';
 import {BuildEditor} from './studio-build';
-import {partSeats} from './parts/build';
+import {partSeats,newBuild,newItem} from './parts/build';
+import {partById} from './parts/catalog';
+import {newTrain} from './parts/train';
 import type {Seat} from './kinematics/bearings';
 import {ProjectStore} from './project-store';
 import type {ProjectView} from './project-store';
-const fresh=():StudioDocument=>({version:1,assemblies:[{id:'main',graph:spaceExample()}],routes:[{id:'route-1',assembly:'main',source:'input',target:'output'}]});
-// The project open in this tab lives in a file of the browser's private file system; it is read before anything else
-// is set up, so the first drawing already shows it. The old single save slot moves into a first project once.
+import {renderStock} from './studio-catalog';
+import {defaultCatalog} from './graph/catalog';
+import {demos} from './demos';
+import {templates} from './kinematics/templates';
+
+type Phase=1|2|3;
+type Scene={kind:'mechanism'|'build'|'train';id:string;label:string};
+const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
+const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
+const fresh=():StudioDocument=>({version:1,assemblies:[],routes:[]});
+const phaseNames:Record<Phase,string>={1:'① Aufbauen',2:'② Bewegen',3:'③ Fertigen'};
+
+// ---------- the open project file ----------
+// Read before anything else is set up, so the first drawing already shows it. The old single save slot moves into a
+// first project once.
 const store=await ProjectStore.open();
 let doc=fresh(),loadError='',project={id:'',name:'',readOnly:false},openView:ProjectView|undefined;
 const newProjectId=()=>'p-'+crypto.randomUUID().slice(0,8);
@@ -32,146 +40,169 @@ const newProjectId=()=>'p-'+crypto.randomUUID().slice(0,8);
  if(!ready){try{const saved=localStorage.getItem('mechanics-studio');if(saved&&!list.length)doc=importStudio(saved);}catch(e){loadError=`Gespeichertes Projekt konnte nicht geladen werden: ${e}. Speicher wurde nicht verändert.`;}
   project={id:newProjectId(),name:list.length?`Projekt ${list.length+1}`:'Mein Projekt',readOnly:false};await store.write(project.id,{format:'studio-project-1',name:project.name,updated:new Date().toISOString(),doc:parseStudio(doc)});}
  project.readOnly=!await store.claim(project.id);await store.setActive(project.id);}
-let history=new StudioHistory();let dragBefore:StudioDocument|undefined;
-const route=()=>doc.routes[0],assembly=()=>doc.assemblies.find(a=>a.id===route().assembly)!;
-const graph=()=>assembly().graph,host=document.getElementById('view')!,status=document.getElementById('status')!,list=document.getElementById('objects') as HTMLSelectElement;
-const renderer=new THREE.WebGLRenderer({antialias:true});host.appendChild(renderer.domElement);const scene=new THREE.Scene();scene.background=new THREE.Color('#15212b');scene.add(new THREE.HemisphereLight(0xd9efff,0x344454,2));const keyLight=new THREE.DirectionalLight(0xffffff,3);keyLight.position.set(150,250,300);scene.add(keyLight);const fillLight=new THREE.DirectionalLight(0xb9d6ff,1.5);fillLight.position.set(-200,-100,80);scene.add(fillLight);
-const camera=new THREE.PerspectiveCamera(50,1,.1,10000);camera.position.set(280,240,330);const orbit=new OrbitControls(camera,renderer.domElement);orbit.target.set(50,0,0);orbit.update();
-const transform=new TransformControls(camera,renderer.domElement);scene.add(transform.getHelper());transform.addEventListener('dragging-changed',e=>{orbit.enabled=!e.value;});
-const group=new THREE.Group();scene.add(group);const preview=new THREE.Group();scene.add(preview);let worker:Worker|undefined,revision=0,line:THREE.Line,objects:THREE.Object3D[]=[];
-const hiddenRegions=new Set<string>();const actualOutput=new THREE.Group();scene.add(actualOutput);
-// Motion: the kinematic view replaces the static detail preview while it is open.
-const motion=new MotionPanel(()=>{if(mech.active)return mech.motionSource();const item=[...found,...nearFound].find(f=>f.id===selectedResult);if(item&&!item.nearMiss)return {label:`Lösung ${item.id}`,graph:item.graph,range:{from:0,to:720,samples:73}};if(assembly().adopted)return {label:'Übernommene Baugruppe',graph:graph(),range:{from:0,to:720,samples:73}};return undefined;},
- on=>{detail.group.visible=!on;actualOutput.visible=!on;if(on)preview.visible=false;mech.view.group.visible=!on&&mech.active;},text=>{status.textContent=text;});
+let history=new StudioHistory(),dragBefore:StudioDocument|undefined,phase:Phase=1,sceneKey='',startOpen=false;
+/** A mechanism is being made (a demo, a compiled train, an imported model): the scene follows it once it exists. */
+let followMechanism=false;
 
-// Mechanism mode: a kinematics-1 document replaces the gear assembly in view, explorer and properties.
-const mech=new MechanismEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),sideProperties:()=>{if(!build.holdsProperties)return false;build.renderProperties();return true;},deselect:()=>build.deselect(),extraSeats:():Seat[]=>{const b=doc.builds?.find(x=>x.mechanism===mech.activeId);return b?partSeats(b):[];},status:text=>{status.textContent=text;},leave:()=>{if(mech.active&&build.active)build.exit();motion.close();draw();},fit:()=>document.getElementById('fit')!.click(),grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.motor)transform.detach();},dragging:()=>transform.dragging,free:()=>free});
-const mechRoot=new THREE.Group();scene.add(mechRoot);mechRoot.add(mech.view.group,mech.handles,motion.view.group);
-// Build mode: a plate and parts from the store; z-up like the mechanisms. One mode at a time.
-const build=new BuildEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{if(build.active&&mech.active)mech.exit();motion.close();draw();},fit:()=>document.getElementById('fit')!.click(),canvas:()=>renderer.domElement,ray:e=>hits(e as MouseEvent),orbit:on=>{orbit.enabled=on;},
+// ---------- 3D view ----------
+const host=$('view'),status=$('status');
+const renderer=new THREE.WebGLRenderer({antialias:true});host.appendChild(renderer.domElement);const scene=new THREE.Scene();scene.background=new THREE.Color('#15212b');scene.add(new THREE.HemisphereLight(0xd9efff,0x344454,2));const keyLight=new THREE.DirectionalLight(0xffffff,3);keyLight.position.set(150,250,300);scene.add(keyLight);
+const camera=new THREE.PerspectiveCamera(50,1,.1,10000);camera.position.set(280,240,330);const orbit=new OrbitControls(camera,renderer.domElement);orbit.target.set(0,60,0);orbit.update();
+const transform=new TransformControls(camera,renderer.domElement);scene.add(transform.getHelper());transform.addEventListener('dragging-changed',e=>{orbit.enabled=!e.value;});
+const grid=new THREE.GridHelper(600,30,0x33424e,0x22303a);scene.add(grid);
+// Mechanisms and builds are z-up; the y-up view shows them upright.
+const mechRoot=new THREE.Group();mechRoot.rotation.x=-Math.PI/2;scene.add(mechRoot);
+const motion=new MotionPanel(()=>mech.active?mech.motionSource():undefined,on=>{mech.view.group.visible=!on&&mech.active;},text=>{status.textContent=text;});
+const mech:MechanismEditor=new MechanismEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),
+ sideProperties:()=>{if(!build.holdsProperties)return false;build.renderProperties();return true;},selectedElsewhere:():boolean=>build.holdsProperties,deselect:()=>build.deselect(),
+ extraSeats:():Seat[]=>{const b=doc.builds?.find(x=>x.mechanism===mech.activeId);return b?partSeats(b):[];},
+ status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>fit(),grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.motor)transform.detach();},dragging:()=>transform.dragging,free:()=>free});
+const build:BuildEditor=new BuildEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>fit(),canvas:()=>renderer.domElement,ray:e=>hits(e as MouseEvent),orbit:on=>{orbit.enabled=on;},
  frames:()=>mech.active?mech.framesNow():{},surface:ray=>mech.active?mech.surfaceAt(ray):undefined,model:()=>mech.active?mech.clashContext():undefined,range:()=>mech.posesOverRange(),
- grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.buildGizmo)transform.detach();},dragging:()=>transform.dragging,adopt:d=>{build.exit();void mech.addDemo(d);}});
-mechRoot.add(build.group);
-// The gizmo on a mechanism handle: mode, steps (Alt held: none) and axes as the handle asks.
+ grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.buildGizmo)transform.detach();},dragging:()=>transform.dragging,
+ adopt:d=>void adoptModel(d.label,()=>mech.addDemo(d),2),phase:()=>phase});
+mechRoot.add(mech.view.group,mech.handles,motion.view.group,build.group);
+// The gizmo on a handle: mode, steps (Alt held: none) and axes as the handle asks.
 let steps:{step:number;angle:number}={step:0,angle:0},free=false;
 function snaps(){transform.setTranslationSnap(!free&&steps.step?steps.step:null);transform.setRotationSnap(!free&&steps.angle?steps.angle*Math.PI/180:null);}
 function grip(o:THREE.Object3D,options:GripOptions){setMode(options.mode);transform.setSpace(options.space);steps={step:options.step,angle:options.angle};snaps();if(transform.object!==o)transform.attach(o);}
+function setMode(mode:'translate'|'rotate'){transform.setMode(mode);for(const [id,m] of [['move','translate'],['rotate','rotate']])$(id).setAttribute('aria-pressed',String(mode===m));}
 window.addEventListener('keydown',e=>{if(e.key==='Alt'&&!free){free=true;snaps();e.preventDefault();}});window.addEventListener('keyup',e=>{if(e.key==='Alt'){free=false;snaps();}});window.addEventListener('blur',()=>{free=false;snaps();});
-// Test and script entry: screen position (page pixels) of a point in mechanism coordinates.
+// Test and script entries: a point of the scene on the page; where the first part on a link stands; pick a model part.
 (window as unknown as {studioScreen:(p:[number,number,number])=>[number,number]}).studioScreen=p=>{mechRoot.updateMatrixWorld(true);const v=mechRoot.localToWorld(new THREE.Vector3(...p)).project(camera),r=renderer.domElement.getBoundingClientRect();return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];};
 (window as unknown as {studioPart:()=>number[]|undefined}).studioPart=()=>build.followerAt();
-// Test and script entry: pick a model part by name at a point in model coordinates.
+// Test entry: the document as the old save slot held it (checks read it from there).
+(window as unknown as {studioSave:()=>void}).studioSave=()=>localStorage.setItem('mechanics-studio',serializeStudio(doc));
 window.addEventListener('studio-pick',e=>{const d=(e as CustomEvent).detail;if(!mech.pickByName(d.part,d.local))status.textContent='Teil nicht gefunden: '+d.part;});
-const detail=new StudioDetailPreview((state,message)=>{if(state==='empty')clear(actualOutput);const el=document.getElementById('detail-status')!;el.dataset.state=state;el.textContent=message;(document.getElementById('detail-retry') as HTMLButtonElement).disabled=state==='empty'||state==='loading';});scene.add(detail.group);
-function clear(g:THREE.Group){for(const o of [...g.children]){g.remove(o);o.traverse(child=>{if(child instanceof THREE.Mesh||child instanceof THREE.Line){child.geometry.dispose();const materials=Array.isArray(child.material)?child.material:[child.material];materials.forEach(m=>m.dispose());}});}}
+const ray=new THREE.Raycaster();ray.params.Line={threshold:4};function hits(e:MouseEvent){const r=renderer.domElement.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);return ray;}
+renderer.domElement.addEventListener('pointerdown',e=>{if(e.button!==0||transform.dragging||transform.axis)return;const s=current();if(!s)return;
+ if(s.kind!=='mechanism'){build.pointerDown(e,hits(e));return;}
+ if(build.pointerDown(e,hits(e)))return;const h=mech.click(hits(e));if(h){grip(h,mech.handleOptions(h));mech.selectHandle(h);}else transform.detach();});
+renderer.domElement.addEventListener('pointermove',e=>{if(transform.dragging)return;const s=current();renderer.domElement.style.cursor=(s&&(build.hover(hits(e))||s.kind==='mechanism'&&mech.hover(hits(e))))?'pointer':'default';});
+function fit(){const bounds=new THREE.Box3();scene.updateMatrixWorld(true);for(const g of [mech.view.group,motion.view.group,mech.handles,build.group])if(g.visible&&g.children.length)bounds.union(new THREE.Box3().setFromObject(g));if(bounds.isEmpty())return;const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()).length();orbit.target.copy(center);camera.position.copy(center).add(new THREE.Vector3(.75,.6,.95).normalize().multiplyScalar(Math.max(80,size*1.25)));camera.near=Math.max(.1,size/500);camera.far=size*50+1000;camera.updateProjectionMatrix();orbit.update();}
+$('fit').onclick=fit;
+for(const [id,mode] of [['move','translate'],['rotate','rotate']] as const)$(id).onclick=()=>{if(transform.object?.userData.motor){mech.gripMode(mode);return;}setMode(mode);};
+new ResizeObserver(()=>{const w=host.clientWidth,h=host.clientHeight;if(!w||!h)return;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}).observe(host);
+renderer.setAnimationLoop(()=>{build.follow();catchUp();$('gizmo-tools').hidden=!transform.object;renderer.render(scene,camera);});
 
-function stop(){worker?.terminate();worker=undefined;(document.getElementById('cancel') as HTMLButtonElement).disabled=true;}
-function invalidate(){revision++;stop();motion.close();detail.clear();clear(preview);found=[];nearFound=[];selectedResult=undefined;renderResults();status.textContent='Vorgaben geändert. Erneut suchen.';document.getElementById('search-report')!.textContent='Vorgaben geändert. Erneut suchen.';}
-function draw(){drawView();persist();}
-function drawView(){const selected=list.value;transform.detach();detail.clear();clear(group);clear(preview);objects=[];list.replaceChildren();const g=graph();
- for(const key of ['input','output'] as const){const mesh=new THREE.Mesh(new THREE.CylinderGeometry(3,3,24),new THREE.MeshStandardMaterial({color:key==='input'?0x55dda8:0xffbb55}));mesh.geometry.rotateX(Math.PI/2);mesh.position.fromArray(g[key].target.position);mesh.quaternion.fromArray(g[key].target.rotation);mesh.name=key;group.add(mesh);objects.push(mesh);const axes=new THREE.AxesHelper(22);mesh.add(axes);}
- for(const region of [g.environment?.bounds,...(g.environment?.obstacles??[])].filter(Boolean)){const r=region!,color=r===g.environment?.bounds?0x4488ff:0xff7777;const box=new THREE.BoxGeometry(...r.size),mesh=new THREE.LineSegments(new THREE.EdgesGeometry(box),new THREE.LineBasicMaterial({color}));box.dispose();mesh.position.fromArray(r.frame.position);mesh.quaternion.fromArray(r.frame.rotation);mesh.name='region:'+r.id;mesh.userData.regionId=r.id;mesh.userData.size=r.size;mesh.visible=!hiddenRegions.has(mesh.name);group.add(mesh);objects.push(mesh);
- for(let i=0;i<8;i++){const corner=new THREE.Mesh(new THREE.SphereGeometry(1.8,8,6),new THREE.MeshBasicMaterial({color}));corner.position.set(...r.size.map((n,k)=>n/2*(i&(1<<k)?1:-1)) as [number,number,number]);corner.userData.corner=true;mesh.add(corner);}}
-
- line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([objects[0].position,objects[1].position]),new THREE.LineDashedMaterial({color:0xffffff,dashSize:5,gapSize:3}));line.computeLineDistances();group.add(line);
- objects.forEach(o=>list.add(new Option(objectLabel(o),o.name)));const other=mech.active||build.active;group.visible=!other;mech.view.group.visible=mech.active;build.attach(mech.active?mech.activeId:undefined);build.group.visible=build.active||build.attached;list.parentElement!.hidden=other;mech.renderAxes();
- // Mechanism mode hides the gear search: it belongs to the gear assembly.
- document.getElementById('results-panel')!.hidden=other;document.getElementById('route-section')!.hidden=other;document.getElementById('gear-tools')!.hidden=other;document.body.dataset.mode=build.active?'build':mech.active?'mechanism':'gear';
- document.getElementById('view-hint')!.textContent=build.active?'Teile aus dem Store ziehen · Teil ziehen verschiebt · Alt: ohne Einrasten · R dreht · Entf löscht':mech.active?'Teil anklicken · linke Maus dreht · rechte Maus verschiebt · Mausrad zoomt':'Anschluss anklicken · Raum an Ecke wählen · Rechtsklick auf Verbindung';
- // Models and mechanisms are z-up; the y-up workspace shows them turned upright.
- mechRoot.rotation.x=other?-Math.PI/2:0;mechRoot.updateMatrixWorld(true);if(build.active){detail.clear();renderTree();build.refresh();build.renderProperties();syncHistory();return;}if(mech.active){detail.clear();mech.refresh();renderTree();mech.renderProperties();build.refresh();syncHistory();return;}renderTree();select(objects.find(o=>o.name===selected)??objects[0]);if(assembly().adopted)showPreview(graph());renderCatalog();ratio.value=String(route().ratio??1);document.getElementById('ratio-label')!.textContent=g.output.motion==='translation'?'Vorschub [mm / Eingangsumdrehung]':'Soll-Untersetzung';syncHistory();document.getElementById('route-label')!.textContent=`${route().id}: Eingang → Ausgang`;document.getElementById('assembly-state')!.textContent=assembly().adopted?'Geprüfte Baugruppe übernommen':'Entwurf · noch nicht übernommen';}
-function select(o:THREE.Object3D){list.value=o.name;transform.setMode('translate');transform.setSpace('world');steps={step:0,angle:0};snaps();if(o.visible)transform.attach(o);else transform.detach();renderTree();renderProperties(o);setMode('translate');}
-function syncHistory(){(document.getElementById('undo') as HTMLButtonElement).disabled=!history.canUndo;(document.getElementById('redo') as HTMLButtonElement).disabled=!history.canRedo;}
-function change(edit:()=>void,message:string){const before=structuredClone(doc);try{invalidate();edit();doc=parseStudio(doc);history.record(before,doc);draw();status.textContent=message;}catch(e){doc=before;draw();status.textContent=String(e);}}
-transform.addEventListener('mouseDown',()=>{dragBefore=structuredClone(doc);invalidate();});
-transform.addEventListener('objectChange',()=>{const o=transform.object;if(!o||!dragBefore)return;if(o.userData.buildGizmo){build.onDrag();return;}if(mech.active){mech.onDrag(o);return;}assembly().adopted=false;const g=graph();const frame={position:o.position.toArray() as [number,number,number],rotation:o.quaternion.toArray() as [number,number,number,number]};if(o.name==='input'||o.name==='output')g[o.name].target=frame;else{const r=[g.environment?.bounds,...(g.environment?.obstacles??[])].find(r=>r?.id===o.userData.regionId);if(r){r.frame=frame;const base=dragBefore.assemblies.find(a=>a.id===assembly().id)!.graph;const old=[base.environment?.bounds,...(base.environment?.obstacles??[])].find(r=>r?.id===o.userData.regionId)!;if(transform.mode==='scale')r.size=old.size.map((v,i)=>Math.min(10000,Math.max(1,v*Math.abs(o.scale.getComponent(i))))) as typeof r.size;}}line.geometry.setFromPoints([objects[0].position,objects[1].position]);line.computeLineDistances();});
+// ---------- changes and history ----------
+function syncHistory(){($('undo') as HTMLButtonElement).disabled=!history.canUndo;($('redo') as HTMLButtonElement).disabled=!history.canRedo;}
+function change(edit:()=>void,message:string){const before=structuredClone(doc);try{motion.close();edit();doc=parseStudio(doc);history.record(before,doc);draw();status.textContent=message;}catch(e){doc=before;draw();status.textContent=String(e);}}
+transform.addEventListener('mouseDown',()=>{dragBefore=structuredClone(doc);motion.close();});
+transform.addEventListener('objectChange',()=>{const o=transform.object;if(!o||!dragBefore)return;if(o.userData.buildGizmo){build.onDrag();return;}if(mech.active)mech.onDrag(o);});
 function finishDrag(cancel=false){if(!dragBefore)return;const before=dragBefore;dragBefore=undefined;let failed=false;try{if(cancel)doc=before;else{doc=parseStudio(doc);history.record(before,doc);}}catch(e){doc=before;failed=true;status.textContent=String(e);}draw();if(mech.active)mech.dragEnd(cancel||failed);}
 transform.addEventListener('mouseUp',()=>finishDrag());
-function travelHistory(redo=false){finishDrag();invalidate();doc=redo?history.redo(doc):history.undo(doc);draw();status.textContent=redo?'Wiederhergestellt':'Rückgängig';}
-document.getElementById('undo')!.onclick=()=>travelHistory();document.getElementById('redo')!.onclick=()=>travelHistory(true);
-window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;if((build.active||build.attached)&&!e.ctrlKey&&!e.metaKey&&build.key(e)){e.preventDefault();return;}if(e.key==='Escape'){finishDrag(true);return;}if((e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();travelHistory(e.shiftKey||e.key.toLowerCase()==='y');}});
-list.onchange=()=>select(objects.find(o=>o.name===list.value)!);
-for(const [id,mode] of [['move','translate'],['rotate','rotate'],['size','scale']] as const)document.getElementById(id)!.onclick=()=>{if(transform.object?.userData.motor){if(mode!=='scale')mech.gripMode(mode);return;}if(mode==='scale'&&['input','output'].includes(list.value))return;setMode(mode);};
-document.getElementById('zone')!.onclick=()=>change(()=>{const g=graph();g.version=4;g.environment??={margin:1,obstacles:[]};g.environment.obstacles.push({id:'zone-'+crypto.randomUUID(),frame:{position:[50,0,0],rotation:[0,0,0,1]},size:[20,20,20]});assembly().adopted=false;},'Sperrzone hinzugefügt');
-document.getElementById('save')!.onclick=()=>{try{finishDrag();localStorage.setItem('mechanics-studio',serializeStudio(doc));void saveNow();status.textContent='Projekt gespeichert.';}catch(e){status.textContent=String(e);}};
-document.getElementById('export')!.onclick=()=>{try{finishDrag();const url=URL.createObjectURL(new Blob([serializeStudio(doc)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='mechanics-studio.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent='Studio-Projekt exportiert.';}catch(e){status.textContent=String(e);}};
-const file=document.getElementById('import-file') as HTMLInputElement;
-document.getElementById('import')!.onclick=()=>{finishDrag();file.click();};
-file.onchange=async()=>{const chosen=file.files?.[0],token=revision;file.value='';if(!chosen)return;try{if(chosen.size>2000000)throw Error('Projekt zu groß (max. 2 MB)');const imported=importStudio(await chosen.text());if(token!==revision)throw Error('Projekt zwischenzeitlich geändert; Import erneut starten.');change(()=>{doc=imported;},'Projekt importiert. Import kann rückgängig gemacht werden.');}catch(e){status.textContent=`Import abgelehnt: ${e}`;}};
-function showPreview(g:Mechanism,nearMiss=false){showHulls(g);detail.show(g,nearMiss);const frame=compose(g.bodies.find(b=>b.id===g.output.body)!.frame,g.output.local);const axes=new THREE.AxesHelper(16);axes.position.fromArray(frame.position);axes.quaternion.fromArray(frame.rotation);actualOutput.add(axes);const link=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...g.output.target.position),new THREE.Vector3(...frame.position)]),new THREE.LineDashedMaterial({color:0xffcc66,dashSize:1,gapSize:1}));link.computeLineDistances();actualOutput.add(link);}
-document.getElementById('detail-retry')!.onclick=()=>detail.retry();
-document.getElementById('show-hulls')!.onchange=e=>{preview.visible=(e.target as HTMLInputElement).checked;};preview.visible=false;
-function showHulls(g:Mechanism){clear(preview);for(const h of constructionHulls(g,false).boxes){const m=new THREE.Mesh(new THREE.BoxGeometry(...h.half.map(n=>n*2) as [number,number,number]),new THREE.MeshBasicMaterial({color:0x55dda8,wireframe:true}));m.position.fromArray(h.center);m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(...h.axes.map(a=>new THREE.Vector3(...a)) as [THREE.Vector3,THREE.Vector3,THREE.Vector3]));preview.add(m);}}
-function search(){finishDrag();if(!enabledRules().length){status.textContent='Mindestens eine Paarung im Katalog aktivieren.';return;}stop();detail.clear();clear(preview);const token=revision,w=new Worker('./mechanics-graph-search-worker.js');worker=w;found=[];nearFound=[];selectedResult=undefined;renderResults();(document.getElementById('cancel') as HTMLButtonElement).disabled=false;status.textContent='Suche läuft …';document.getElementById('search-report')!.textContent='Katalogpaarungen, räumliche Anordnungen und Freiräume werden geprüft. Treffer erscheinen sofort.';w.onmessage=({data})=>{if(worker!==w||token!==revision)return;if(data.type==='progress')status.textContent=`Suche läuft · ${data.visited} Rechenschritte · ${found.length} Lösungen`;if(data.type==='near-misses'){nearFound=data.candidates.map((c:any,i:number)=>({graph:c.graph,id:-i-1,token,metrics:solutionMetrics(c.graph),nearMiss:true,score:c.score}));if(selectedResult!==undefined&&selectedResult<0){selectedResult=undefined;detail.clear();clear(preview);}renderResults();}if(data.type==='solution'){found.push({graph:data.graph,id:found.length+1,token,metrics:solutionMetrics(data.graph)});renderResults();if(found.length===1&&selectedResult===undefined)inspectResult(found[0]);}if(data.type==='done'||data.type==='error'){if(data.type==='done'){const r=data.result;document.getElementById('search-report')!.textContent=`${r.solutions.length} Treffer · ${nearFound.length} nahe Kandidaten · ${r.attempts} Startlagen · ${r.visited} / ${(document.getElementById('budget') as HTMLSelectElement).value} Budgeteinheiten. ${r.status==='solution-limit'?'Anzeigelimit von 8 Varianten erreicht.':r.solutions.length?'Suche innerhalb des Budgets beendet.':'Kein geprüfter Treffer in diesem Suchlauf. Das ist kein Nachweis, dass keine Lösung existiert. Budget erhöhen oder Vorgaben prüfen.'}`;}else document.getElementById('search-report')!.textContent=data.message;status.textContent=data.type==='done'?`${data.result.solutions.length} Lösungen · ${data.result.status==='budget'?'Suchbudget erreicht':data.result.status}`:data.message;stop();renderResults();}};w.onerror=()=>{status.textContent='Suchprozess fehlgeschlagen';stop();renderResults();};w.postMessage({graph:graph(),options:{target:route().ratio??1,tolerance:1,minStages:1,maxStages:4,budget:Number((document.getElementById('budget') as HTMLSelectElement).value),axialGap:Math.min(50,Math.max(1,Number((document.getElementById('axial-gap') as HTMLInputElement).value)||1)),beam:120,rules:enabledRules(),catalog:doc.catalog,includeNearMisses:true}});}
-document.getElementById('search')!.onclick=search;document.getElementById('cancel')!.onclick=()=>{stop();renderResults();status.textContent='Abgebrochen';document.getElementById('search-report')!.textContent=`Suche abgebrochen. ${found.length} gültige Treffer und ${nearFound.length} nahe Kandidaten bleiben verfügbar.`;};
-const ray=new THREE.Raycaster();ray.params.Line={threshold:4};function hits(e:MouseEvent){const r=renderer.domElement.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);return ray;}
-function pick(e:MouseEvent){
- // Never raycast a room's triangles: only explicit screen-space corner handles.
- const r=renderer.domElement.getBoundingClientRect();let nearest:THREE.Object3D|undefined,best=11;
- group.updateMatrixWorld(true);
- for(const o of objects.filter(o=>o.userData.regionId&&o.visible))for(const corner of o.children){const point=corner.getWorldPosition(new THREE.Vector3()).project(camera);if(point.z<-1||point.z>1)continue;const distance=Math.hypot(e.clientX-r.left-(point.x+1)*r.width/2,e.clientY-r.top-(1-point.y)*r.height/2);if(distance<best){best=distance;nearest=o;}}
- const port=hits(e).intersectObjects(objects.filter(o=>!o.userData.regionId),false)[0];return port?.object??nearest;
+function travelHistory(redo=false){finishDrag();motion.close();doc=redo?history.redo(doc):history.undo(doc);draw();status.textContent=redo?'Wiederhergestellt':'Rückgängig';}
+$('undo').onclick=()=>travelHistory();$('redo').onclick=()=>travelHistory(true);
+window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement||e.target instanceof HTMLSelectElement)return;if(current()&&!e.ctrlKey&&!e.metaKey&&build.key(e)){e.preventDefault();return;}if(e.key==='Escape'){finishDrag(true);return;}if((e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();travelHistory(e.shiftKey||e.key.toLowerCase()==='y');}});
+
+// ---------- scenes and phases ----------
+/** What a project can show: its mechanisms, and builds and gear trains that stand alone. */
+function scenes():Scene[]{return [...(doc.mechanisms??[]).map(m=>({kind:'mechanism' as const,id:m.id,label:m.label})),...(doc.builds??[]).filter(b=>!b.mechanism).map(b=>({kind:b.train?'train' as const:'build' as const,id:b.id,label:b.label}))];}
+const keyOf=(s:Scene)=>`${s.kind}:${s.id}`;
+function current():Scene|undefined{const all=scenes();return all.find(s=>keyOf(s)===sceneKey)??all[0];}
+/** Phases a scene has: a build has nothing to move, a gear train is made in its mechanism. */
+const phasesOf=(s:Scene):Phase[]=>s.kind==='mechanism'?[1,2,3]:s.kind==='build'?[1,3]:[1,2];
+function enterScene(s:Scene){if(s.kind==='mechanism'){if(build.activeId)build.exit();if(mech.activeId!==s.id)mech.enter(s.id);}else{if(mech.activeId)mech.exit();if(build.activeId!==s.id)build.enter(s.id);}}
+function setPhase(p:Phase){const s=current();if(!s)return;phase=phasesOf(s).includes(p)?p:phasesOf(s)[0];build.deselect();
+ if(s.kind==='mechanism'){enterScene(s);mech.open(mech.defaultPage(phase));return;}if(s.kind==='build'){const b=doc.builds?.find(x=>x.id===s.id);if(phase===3&&b?.plates[0])build.selectPlate(b.plates[0].id);else build.overview();}draw();}
+function openScene(s:Scene,p?:Phase){sceneKey=keyOf(s);startOpen=false;enterScene(s);setPhase(p??1);}
+for(const b of document.querySelectorAll<HTMLButtonElement>('#phases [data-phase]'))b.onclick=()=>setPhase(Number(b.dataset.phase) as Phase);
+
+function draw(){drawView();persist();}
+function drawView(){
+ if(followMechanism&&mech.activeId){const m=scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);if(m){sceneKey=keyOf(m);followMechanism=false;}}
+ const s=current();document.body.dataset.view=!s||startOpen?'start':'project';
+ if(!s){mech.exit();build.exit();transform.detach();}
+ if(!s||startOpen){renderStart();renderHeader(s);syncHistory();return;}
+ enterScene(s);if(!phasesOf(s).includes(phase))phase=phasesOf(s)[0];document.body.dataset.scene=s.kind;document.body.dataset.phase=String(phase);
+ mech.view.group.visible=s.kind==='mechanism'&&!motion.active;build.attach(s.kind==='mechanism'?s.id:undefined);build.group.visible=true;
+ if(s.kind==='mechanism'){mech.refresh();mech.renderAxes($('axes'));}build.refresh();
+ $('view-hint').textContent=s.kind==='mechanism'?(phase===1?'Teile aus der Bibliothek auf das Modell ziehen · Modellteile anklicken, um sie einem Glied zuzuweisen':'Linke Maus dreht · rechte Maus verschiebt · Mausrad zoomt · Regler unten bewegen die Achsen'):s.kind==='train'?'Zahnräder aus der Bibliothek ziehen: Sie rasten im Achsabstand ein · Alt: ohne Einrasten':'Teile aus der Bibliothek ziehen · R dreht · Entf löscht · Alt: ohne Einrasten';
+ renderHeader(s);renderLeft(s);renderRight(s);syncHistory();
 }
-renderer.domElement.addEventListener('pointerdown',e=>{hideMenu();if(e.button!==0||transform.dragging||transform.axis)return;if(build.active){build.pointerDown(e,hits(e));return;}if(build.attached&&build.pointerDown(e,hits(e)))return;if(mech.active){const h=mech.click(hits(e));if(h){grip(h,mech.handleOptions(h));mech.selectHandle(h);}else transform.detach();return;}const hit=pick(e);if(hit)select(hit);else transform.detach();});
-renderer.domElement.addEventListener('pointermove',e=>{if(!transform.dragging)renderer.domElement.style.cursor=(build.active||build.attached&&build.hover(hits(e))?build.hover(hits(e)):mech.active?mech.hover(hits(e)):pick(e))?'pointer':'default';});
-const menu=document.getElementById('context-menu')!;function hideMenu(){menu.hidden=true;}
-renderer.domElement.addEventListener('contextmenu',e=>{e.preventDefault();if(hits(e).intersectObject(line).length){menu.hidden=false;menu.style.left=Math.min(e.clientX,window.innerWidth-340)+'px';menu.style.top=Math.min(e.clientY,window.innerHeight-60)+'px';}});
-document.getElementById('context-search')!.onclick=()=>{hideMenu();search();};window.addEventListener('pointerdown',e=>{if(!menu.contains(e.target as Node)&&e.target!==renderer.domElement)hideMenu();});
-new ResizeObserver(()=>{const w=host.clientWidth,h=host.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}).observe(host);renderer.setAnimationLoop(()=>{build.follow();renderer.render(scene,camera);});
-
-function objectLabel(o:THREE.Object3D){return o.name==='input'?'↗ Eingang':o.name==='output'?'↘ Ausgang':o.userData.regionId===graph().environment?.bounds?.id?'□ Bauraum':`◇ ${o.userData.regionId}`;}
-function setMode(mode:'translate'|'rotate'|'scale'){transform.setMode(mode);for(const [id,m] of [['move','translate'],['rotate','rotate'],['size','scale']])document.getElementById(id)!.setAttribute('aria-pressed',String(mode===m));(document.getElementById('size') as HTMLButtonElement).disabled=!transform.object?.userData.regionId;}
-function renderTree(){const root=document.getElementById('tree')!;root.replaceChildren();if(build.active){build.renderTree(root);return;}if(mech.active){const back=document.createElement('button');back.textContent='← Getriebe-Baugruppe';back.onclick=()=>{mech.exit();draw();};root.appendChild(back);build.renderList(root);mech.renderTree(root);build.renderParts(root);return;}const label=document.createElement('div');label.className='tree-group';label.textContent=`Baugruppe: ${assembly().id}`;root.appendChild(label);for(const o of objects){const b=document.createElement('button');b.textContent=objectLabel(o);b.dataset.object=o.name;b.setAttribute('aria-selected',String(list.value===o.name));b.onclick=()=>select(o);const row=document.createElement('div');row.className='tree-row';row.appendChild(b);if(o.userData.regionId){const toggle=document.createElement('input');toggle.type='checkbox';toggle.checked=o.visible;toggle.dataset.regionVisibility=o.userData.regionId;toggle.setAttribute('aria-label',objectLabel(o)+' anzeigen');toggle.onchange=()=>{o.visible=toggle.checked;toggle.checked?hiddenRegions.delete(o.name):hiddenRegions.add(o.name);if(!o.visible&&transform.object===o)transform.detach();};row.appendChild(toggle);}root.appendChild(row);}const b=document.createElement('button');b.textContent=`⇢ ${route().id} · Eingang → Ausgang`;b.onclick=()=>{transform.detach();document.getElementById('ratio')!.focus();};root.appendChild(b);const meta=document.createElement('p');meta.className='muted';meta.textContent=`${doc.assemblies.length} Baugruppe(n), ${doc.routes.length} Route(n). Aktiv: erste Route.`;root.appendChild(meta);build.renderList(root);mech.renderTree(root);}
-function renderProperties(o:THREE.Object3D){const root=document.getElementById('properties')!;root.replaceChildren();const title=document.createElement('h3');title.textContent=objectLabel(o);root.appendChild(title);
- const region=()=>[graph().environment?.bounds,...(graph().environment?.obstacles??[])].find(r=>r?.id===o.userData.regionId);
- function fields(label:string,values:number[],write:(i:number,n:number)=>void){const heading=document.createElement('h2');heading.textContent=label;root.appendChild(heading);const row=document.createElement('div');row.className='triple';values.forEach((v,i)=>{const l=document.createElement('label');l.textContent='XYZ'[i];const input=document.createElement('input');input.type='number';input.step='0.1';input.value=String(Number(v.toFixed(3)));input.setAttribute('aria-label',`${label} ${'XYZ'[i]}`);input.onchange=()=>{const n=Number(input.value);if(input.value===''||!Number.isFinite(n)||Math.abs(n)>10000){renderProperties(o);status.textContent='Bitte einen Wert zwischen −10000 und 10000 eingeben.';return;}change(()=>{write(i,n);assembly().adopted=false;},'Eigenschaft geändert');};l.appendChild(input);row.appendChild(l);});root.appendChild(row);}
- const frame=()=>region()?.frame??graph()[o.name as 'input'|'output'].target;
- fields('Position [mm]',frame().position,(i,n)=>frame().position[i]=n);
- if(o.name==='output'){
-  const modeLabel=document.createElement('label');modeLabel.textContent='Ausgangsbewegung';const mode=document.createElement('select');mode.id='output-motion';mode.add(new Option('Drehachse','rotation'));mode.add(new Option('Lineare Achse','translation'));mode.value=graph().output.motion??'rotation';mode.onchange=()=>change(()=>{const g=graph();g.version=Math.max(2,g.version) as typeof g.version;g.output.motion=mode.value as 'rotation'|'translation';if(mode.value==='translation')g.output.stroke??=100;else delete g.output.stroke;assembly().adopted=false;},'Ausgangsbewegung geändert');modeLabel.appendChild(mode);root.appendChild(modeLabel);
-  if(graph().output.motion==='translation'){const label=document.createElement('label');label.textContent='Hub [mm]';const input=document.createElement('input');input.id='output-stroke';input.type='number';input.min='1';input.max='500';input.value=String(graph().output.stroke);input.onchange=()=>{const n=Number(input.value);if(!Number.isFinite(n)||n<1||n>500){input.value=String(graph().output.stroke);return;}change(()=>{graph().output.stroke=n;assembly().adopted=false;},'Hub geändert');};label.appendChild(input);root.appendChild(label);}
-
-  const heading=document.createElement('h2');heading.textContent='Zieltoleranz';root.appendChild(heading);
-  for(const [key,text,max] of [['position','Positionsradius [mm]',100],['angle','Drehung [°]',45]] as const){const label=document.createElement('label');label.textContent=text;const input=document.createElement('input');input.type='number';input.min='0';input.max=String(max);input.step='0.1';input.value=String(graph().output.tolerance?.[key]??0);input.id='tolerance-'+key;input.onchange=()=>{const n=Number(input.value);if(input.value===''||!Number.isFinite(n)||n<0||n>max){input.value=String(graph().output.tolerance?.[key]??0);status.textContent=`Toleranz muss zwischen 0 und ${max} liegen.`;return;}change(()=>{graph().output.tolerance={position:0,angle:0,...graph().output.tolerance,[key]:n};assembly().adopted=false;},'Zieltoleranz geändert');};label.appendChild(input);root.appendChild(label);}
-  const hint=document.createElement('p');hint.className='muted';hint.textContent='0 = exakt. Position als räumlicher Radius; Drehung als maximale Abweichung des Anschlussrahmens. Bauraum und Sperrzonen bleiben verbindlich.';root.appendChild(hint);
- }
- const euler=new THREE.Euler().setFromQuaternion(o.quaternion,'XYZ');fields('Drehung XYZ [°]',[euler.x,euler.y,euler.z].map(THREE.MathUtils.radToDeg),(i,n)=>{const angles=[euler.x,euler.y,euler.z];angles[i]=THREE.MathUtils.degToRad(n);frame().rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(...angles as [number,number,number],'XYZ')).toArray();});
- if(region()){fields('Größe [mm]',region()!.size,(i,n)=>{if(n<=0)throw Error('Größe muss positiv sein');region()!.size[i]=n;});const remove=document.createElement('button');remove.textContent='Raum entfernen';remove.onclick=()=>change(()=>{const env=graph().environment!;if(env.bounds?.id===o.userData.regionId)delete env.bounds;else env.obstacles=env.obstacles.filter(r=>r.id!==o.userData.regionId);assembly().adopted=false;},'Raum entfernt');root.appendChild(remove);}
+function renderHeader(s:Scene|undefined){
+ $('project-name').textContent=project.name;document.title=`${project.name} · Mechanics Studio`;
+ for(const b of document.querySelectorAll<HTMLButtonElement>('#phases [data-phase]')){const p=Number(b.dataset.phase) as Phase,has=!!s&&!startOpen&&phasesOf(s).includes(p);b.disabled=!has;b.setAttribute('aria-pressed',String(has&&p===phase));b.title=has?'':s?.kind==='build'?'Ein Aufbau ohne Modell bewegt sich nicht.':s?.kind==='train'?'Das Getriebe wird gefertigt, sobald es ein Mechanismus ist.':'';}
+ $('projects').setAttribute('aria-pressed',String(!s||startOpen));
 }
-const names:Record<string,string>={'lego-bevel-90':'LEGO 90°-Kegelräder','lego-worm':'LEGO Schnecken','lego-spur':'LEGO Parallelachsen','external-spur':'Stirnräder','bevel-mesh':'Kegelräder','worm-mesh':'Schnecke / Schneckenrad','gt2-belt':'GT2-Zahnriemen','screw-nut':'Spindel / Mutter','rack-drive':'Ritzel / Zahnstange'};
-const enabledRules=()=>[...registry.rules.values()].filter(r=>r.search&&!doc.catalog?.excludedRules.includes(r.id)).map(r=>r.id);
-function renderCatalog(){renderStock(doc.catalog??defaultCatalog(),names,graph().output.stroke,edit=>change(()=>{doc.catalog??=defaultCatalog();edit(doc.catalog);},'Katalog aktualisiert. Nächste Suche nutzt diese Vorgaben; Projekt speichern zum Behalten.'));}
-document.getElementById('catalog-filter')!.oninput=renderCatalog;
-for(const tab of ['explorer','catalog'])document.getElementById('tab-'+tab)!.onclick=()=>{for(const key of ['explorer','catalog']){document.getElementById(key)!.hidden=key!==tab;document.getElementById('tab-'+key)!.setAttribute('aria-pressed',String(key===tab));}};
-document.getElementById('bounds')!.onclick=()=>change(()=>{const g=graph();g.version=4;g.environment??={margin:1,obstacles:[]};if(g.environment.bounds)throw Error('Bauraum existiert bereits; im Explorer auswählen.');g.environment.bounds={id:'workspace-'+crypto.randomUUID(),frame:{position:[50,0,0],rotation:[0,0,0,1]},size:[240,240,240]};assembly().adopted=false;},'Bauraum angelegt');
-document.getElementById('fit')!.onclick=()=>{const bounds=new THREE.Box3();scene.updateMatrixWorld(true);for(const g of [mech.view.group,motion.view.group,mech.handles,build.group])if(g.visible&&g.children.length)bounds.union(new THREE.Box3().setFromObject(g));if(!other())for(const o of objects.filter(o=>o.visible))bounds.union(new THREE.Box3().setFromObject(o));if(detail.group.children.length)bounds.union(new THREE.Box3().setFromObject(detail.group));else if(preview.visible&&preview.children.length)bounds.union(new THREE.Box3().setFromObject(preview));const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()).length();orbit.target.copy(center);camera.position.copy(center).add(new THREE.Vector3(1,.85,1.2).normalize().multiplyScalar(Math.max(100,size*1.3)));orbit.update();};
-type Found={graph:Mechanism;id:number;token:number;metrics:ReturnType<typeof solutionMetrics>;nearMiss?:boolean;score?:number};let found:Found[]=[],nearFound:Found[]=[],selectedResult:number|undefined;
-function inspectResult(item:Found){selectedResult=item.id;showPreview(item.graph,!!item.nearMiss);renderResults();status.textContent=`${item.nearMiss?'Ziel nicht erreicht · Kandidat':'Vorschau Lösung'} ${Math.abs(item.id)} · Detailgeometrie · Projekt unverändert`;}
-function renderResults(){const root=document.getElementById('results')!;root.replaceChildren();document.getElementById('result-count')!.textContent=String(found.length)+(nearFound.length?` + ${nearFound.length} nahe`:'');if(!found.length&&!nearFound.length){const empty=document.createElement('p');empty.className='muted';empty.textContent=worker?'Suche läuft. Geprüfte Lösungen erscheinen hier.':'Keine aktuellen Suchergebnisse. „Mechanik finden“ starten.';root.appendChild(empty);return;}const sort=(document.getElementById('result-sort') as HTMLSelectElement).value as 'volume'|'stages'|'parts';for(const item of [...[...found].sort((a,b)=>a.metrics[sort]-b.metrics[sort]||a.id-b.id),...nearFound]){if(item===nearFound[0]){const heading=document.createElement('h3');heading.textContent='Ziel nicht erreicht – bis zu 3 nächste Kandidaten';root.appendChild(heading);const hint=document.createElement('p');hint.className='muted';hint.textContent='Nächste im bisherigen Suchlauf, keine globale Bestgarantie. Sortiert nach Überschreitung der Zieltoleranz: Position und Winkel (30 mm Bezugsradius). Übersetzung und Freiräume sind geprüft.';root.appendChild(hint);}const row=document.createElement('article');row.dataset.resultId=String(item.id);if(item.nearMiss)row.dataset.nearMiss='true';row.setAttribute('aria-selected',String(selectedResult===item.id));const description=document.createElement('div');description.className='description';description.textContent=`${item.nearMiss?'Ziel nicht erreicht · Kandidat':'Lösung'} ${Math.abs(item.id)} · ${item.graph.relations.map(r=>names[r.rule]??r.rule).join(' → ')}`;const small=document.createElement('small');small.textContent=`${item.metrics.volume.toFixed(1)} cm³ Hüllraum · ${item.metrics.stages} Stufen · ${item.metrics.parts} Elemente/Wellen`;const deviation=terminalDeviation(compose(item.graph.bodies.find(b=>b.id===item.graph.output.body)!.frame,item.graph.output.local),item.graph.output);small.textContent+=` · Zielabweichung ${deviation.position.toFixed(3)} / ${deviation.positionLimit} mm, ${deviation.angle.toFixed(3)} / ${deviation.angleLimit}°`;description.appendChild(small);const view=document.createElement('button');view.textContent='Ansehen';view.dataset.studioPreview=String(item.id);view.onclick=()=>inspectResult(item);const adopt=document.createElement('button');adopt.textContent='Übernehmen';adopt.dataset.studioAdopt='true';adopt.onclick=()=>{if(item.token!==revision)return;change(()=>{doc=adoptSolution(doc,route().id,item.graph);},'Lösung übernommen');};row.append(description,view);if(!item.nearMiss)row.appendChild(adopt);root.appendChild(row);}}
-document.getElementById('result-sort')!.onchange=renderResults;
+function renderLeft(s:Scene){
+ const lib=$('library'),tree=$('tree');lib.replaceChildren();tree.replaceChildren();
+ const all=scenes();if(all.length>1){const row=el('div',{className:'scene-switch'});for(const x of all){const b=el('button',{textContent:(x.kind==='mechanism'?'⚙ ':x.kind==='train'?'⚙ Getriebe: ':'▦ ')+x.label});b.dataset.sceneSwitch=keyOf(x);b.setAttribute('aria-pressed',String(keyOf(x)===keyOf(s)));b.onclick=()=>openScene(x,x.kind===s.kind?phase:undefined);row.append(b);}tree.append(row);}
+ let title='';
+ if(phase===1){title=s.kind==='train'?'Bibliothek: Zahnräder':'Bibliothek: Teile';build.renderStore(lib);}
+ else if(phase===2&&s.kind==='mechanism'){title='Bestand für die Getriebesuche';lib.append(stockBox());renderCatalog();}
+ $('library-box').hidden=!title;$('library-title').textContent=title;
+ if(s.kind==='mechanism'){mech.renderScene(tree,phase);if(phase===1)build.renderPlaced(tree);}else build.renderPlaced(tree);
+}
+function renderRight(s:Scene){
+ if(s.kind==='mechanism'){if(build.holdsProperties)build.renderProperties();else mech.renderProperties();}else build.renderProperties();
+ const box=$('todo'),items=s.kind==='mechanism'?mech.todo().map(t=>({...t,go:()=>{phase=t.phase;mech.open(t.item);}})):build.todo().map(t=>({...t,phase:t.phase as Phase,go:()=>{phase=t.phase as Phase;t.open();draw();}}));box.replaceChildren();$('todo-box').hidden=!items.length;
+ const next=items.find(t=>!t.done);
+ for(const t of items){const li=el('li',{});li.dataset.state=t.done?'done':t===next?'current':'open';const b=el('button',{textContent:`${t.done?'✓':phaseNames[t.phase].slice(0,1)} ${t.label}`});b.dataset.todo=t.label;b.onclick=()=>{t.go();};li.append(b);if(t===next)li.append(el('p',{textContent:t.hint}));box.append(li);}
+ if(!next&&items.length)box.append(el('p',{className:'state-pass',textContent:'✓ Alles erledigt.'}));
+}
+// The search's stock: what the gear search may use (phase ②).
+function stockBox(){return el('div',{id:'stock'},el('p',{className:'muted',textContent:'Die Getriebesuche nutzt nur freigegebene Teile. Mit „Nur Bestand“ nur, was du hier hinzufügst.'}),el('input',{id:'catalog-filter',type:'search',placeholder:'Teil suchen'}),el('label',{className:'check'},el('input',{id:'catalog-whitelist',type:'checkbox'}),'Nur Bestand verwenden'),el('div',{id:'catalog-cart'}),el('button',{id:'catalog-clear-filters',textContent:'Alles freigeben'}),el('p',{id:'search-types',className:'muted'}),el('div',{id:'catalog-items'}));}
+function renderCatalog(){if(!$('catalog-items'))return;$('catalog-filter').oninput=renderCatalog;renderStock(doc.catalog??defaultCatalog(),{},undefined,edit=>change(()=>{doc.catalog??=defaultCatalog();edit(doc.catalog);},'Bestand aktualisiert: Die nächste Getriebesuche nutzt ihn.'));}
 
-const ratio=document.getElementById('ratio') as HTMLInputElement;ratio.onchange=()=>{const v=Number(ratio.value);if(v>0&&v<=1000)change(()=>{route().ratio=v;assembly().adopted=false;},'Soll-Untersetzung geändert');else ratio.value=String(route().ratio??1);};
+// ---------- start page ----------
+/** New content for the open project, or a new project if this one has content already. */
+async function intoProject(label:string){if(scenes().length||!project.id){await createProject(label);}else if(project.name!==label&&/^(Mein Projekt|Projekt \d+|Neues Projekt)$/.test(project.name)){project.name=label;savedState='';}}
+async function adoptModel(label:string,make:()=>Promise<void>,p:Phase=1){followMechanism=true;await make();followMechanism=false;const s=scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);if(s)openScene(s,p);void label;}
+async function startWith(label:string,content:(d:StudioDocument)=>Scene|Promise<Scene|void>|void,p:Phase=1){await intoProject(label);let made:Scene|void=undefined;const before=structuredClone(doc);try{made=await content(doc);doc=parseStudio(doc);history.record(before,doc);}catch(e){doc=before;status.textContent=String(e);}const s=made??scenes().at(-1);if(s)openScene(s,p);else draw();void renderProjects();}
+const modelFile=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});modelFile.id='model-file';document.body.append(modelFile);
+modelFile.onchange=async()=>{const files=[...(modelFile.files??[])];modelFile.value='';if(!files.length)return;await intoProject(files[0].name.replace(/\.(stl|obj|glb|gltf)$/i,''));followMechanism=true;await mech.importFiles(files);followMechanism=false;const s=scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);if(s)openScene(s,1);void renderProjects();};
+function renderStart(){
+ const root=$('start');root.replaceChildren();
+ const card=(title:string,text:string,data:Record<string,string>,go:()=>void)=>{const b=el('button',{className:'start-card'},el('strong',{textContent:title}),el('small',{textContent:text}));Object.assign(b.dataset,data);b.onclick=go;return b;};
+ const newBuildIn=(d:StudioDocument,label:string,plates:boolean,train=false):Scene=>{const id=(train?'getriebe-':'aufbau-')+crypto.randomUUID().slice(0,8),b={...newBuild(id,label),...(plates?{}:{plates:[]}),...(train?{plates:[],train:newTrain()}:{})};d.builds=[...(d.builds??[]),b];return {kind:train?'train':'build',id,label};};
+ root.append(el('h1',{textContent:'Mechanics Studio'}),el('p',{className:'muted',textContent:'Ein Projekt ist ein Gerät: Modell, Teile, Getriebe und alles, was gedruckt wird.'}),
+  el('h2',{textContent:'Neues Projekt'}),el('div',{className:'start-grid'},
+   card('Aus 3D-Modell','STL, OBJ oder GLB laden, Glieder und Achsen festlegen, Antriebe und Strukturen erzeugen.',{newModel:'true'},()=>modelFile.click()),
+   card('Teile auf einer Bodenplatte','Elektronik und Motoren platzieren, Halter, Bohrungen und Gehäuse erzeugen.',{newBuild:'true'},()=>void startWith('Bodenplatte',d=>newBuildIn(d,'Bodenplatte',true))),
+   card('Teile frei im Raum','Teile in den Raum stellen, ein Baum-Netz trägt sie.',{newFree:'true'},()=>void startWith('Aufbau im Raum',d=>newBuildIn(d,'Aufbau im Raum',false))),
+   card('Getriebe aus Zahnrädern','Zahnräder ziehen, sie rasten ein; daraus wird ein Mechanismus mit Lagern und Gestell.',{newTrain:'true'},()=>void startWith('Getriebe',d=>newBuildIn(d,'Getriebe',false,true)))),
+  el('h2',{textContent:'Beispiele'}),el('div',{className:'start-grid'},
+   ...([['robot','Roboterarm','Drei Drehachsen mit NEMA-Motoren.'],['cnc','CNC-Portal','Drei Linearachsen mit Spindeln.'],['sled','Schlitten auf Wellenbahn','Ein Wagen auf einer gebogenen Bahn.'],['hand','Handgetriebe (LEGO)','z16 → z40 in Gleitlagern, von Hand gedreht.'],['planet','Planetengetriebe (LEGO)','Sonne z16, drei z40, Hohlrad gedruckt, 1 : 7.'],['planet16','Planetengetriebe 4 × LEGO z16','Hohlrad z48, 1 : 4.']] as const).map(([key,title,text])=>card(title,text,{demo:key},()=>void startWith(title,async()=>{followMechanism=true;await mech.addDemo(demos[key]());followMechanism=false;return scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);}))),
+   card('Arduino Uno im Gehäuse','Eine Platine auf einer Platte, das Gehäuse folgt aus ihren Steckern.',{example:'case'},()=>void startWith('Arduino Uno im Gehäuse',d=>{const s=newBuildIn(d,'Arduino Uno im Gehäuse',true),b=d.builds!.find(x=>x.id===s.id)!;b.items.push({...newItem('uno',partById('arduinouno3')!,[0,0]),plate:b.plates[0].id});return s;},3)),
+   ...Object.entries(templates).map(([key,t])=>card(t.label.replace(' (Vorlage)',''),'Kinematik-Beispiel: Körper, Gelenke und Kontakte.',{mechanismTemplate:key},()=>void startWith(t.label.replace(' (Vorlage)',''),d=>{const id='mech-'+crypto.randomUUID().slice(0,8),label=t.label.replace(' (Vorlage)','');d.mechanisms=[...(d.mechanisms??[]),{id,label,mechanism:t.build()}];return {kind:'mechanism',id,label};})))),
+  el('h2',{textContent:'Deine Projekte'}));
+ const list=el('div',{className:'project-list',id:'project-list'});root.append(list);void store.settled().catch(()=>{}).then(()=>store.list()).then(all=>{list.replaceChildren(...all.map(p=>{const open=el('button',{className:'project-open',textContent:p.id===project.id?project.name:p.name});open.dataset.openProject=p.id;open.setAttribute('aria-current',String(p.id===project.id));open.onclick=()=>void switchProject(p.id).then(()=>{startOpen=false;draw();});return el('div',{className:'project-row'},open,el('small',{textContent:p.updated?new Date(p.updated).toLocaleString('de-DE',{dateStyle:'medium',timeStyle:'short'}):''}));}));});
+ if(current()){const back=el('button',{textContent:`← Zurück zu „${project.name}“`,className:'primary'});back.dataset.backToProject='true';back.onclick=()=>{startOpen=false;draw();};root.prepend(back);}
+}
+$('projects').onclick=()=>{startOpen=!startOpen||!current();finishDrag();draw();};
+
 // ---------- project files ----------
 // Every change lands in the open file a moment later; switching saves first. Undo belongs to the open file.
-const saveState=document.getElementById('save-state')!,projectList=document.getElementById('project') as HTMLSelectElement;
+const saveState=$('save-state');
 let saveTimer:ReturnType<typeof setTimeout>|undefined,savedState='';
-const other=()=>mech.active||build.active,projectView=():ProjectView=>build.activeId?{build:build.activeId}:mech.activeId?{mechanism:mech.activeId}:{};
-const fileState=()=>serializeStudio(doc)+JSON.stringify(projectView());
-function persist(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>void saveNow(),300);}
-async function saveNow(){clearTimeout(saveTimer);if(project.readOnly||dragBefore)return;let state:string;try{state=fileState();}catch{return;}if(state===savedState)return;savedState=state;saveState.textContent='Speichert …';
+const projectView=():ProjectView=>({...(current()?{scene:keyOf(current()!)}:{}),phase});
+const fileState=()=>serializeStudio(doc)+JSON.stringify(projectView())+project.name;
+// At most 0.3 s after a change: drawing goes on while a preview solves, so waiting for quiet could wait forever.
+let lastSave=-Infinity,pending=false;
+// A save goes out at once, or at most 0.3 s after the last one: by timer, by the next change, or by the drawing loop
+// (timers can stall in a page that is still starting).
+function persist(){if(performance.now()-lastSave>300){void saveNow();return;}pending=true;saveTimer??=setTimeout(()=>void saveNow(),300);}
+const catchUp=()=>{if(pending&&performance.now()-lastSave>300)void saveNow();};
+async function saveNow(){clearTimeout(saveTimer);saveTimer=undefined;pending=false;lastSave=performance.now();if(project.readOnly||dragBefore)return;let state:string;try{state=fileState();}catch{return;}if(state===savedState)return;savedState=state;saveState.textContent='Speichert …';
  try{await store.write(project.id,{format:'studio-project-1',name:project.name,updated:new Date().toISOString(),doc:parseStudio(doc),view:projectView()});saveState.textContent=store.persistent?'Gespeichert':'Nur im Speicher: dieser Browser hat kein Dateisystem';}catch(e){savedState='';saveState.textContent=`Nicht gespeichert: ${e}`;}}
-async function renderProjects(){const list=await store.list();projectList.replaceChildren(...list.map(p=>new Option(p.name,p.id)));projectList.value=project.id;document.title=`${project.name} · Mechanics Studio`;}
-function restoreView(v:ProjectView|undefined){if(v?.build&&doc.builds?.some(b=>b.id===v.build))build.enter(v.build);else if(v?.mechanism&&doc.mechanisms?.some(m=>m.id===v.mechanism))mech.enter(v.mechanism);}
+async function renderProjects(){if(document.body.dataset.view==='start')renderStart();renderHeader(current());}
+function restoreView(v:ProjectView|undefined){const s=scenes().find(x=>keyOf(x)===v?.scene)??(v?.mechanism?scenes().find(x=>x.kind==='mechanism'&&x.id===v.mechanism):v?.build?scenes().find(x=>x.id===v.build):undefined);if(s)sceneKey=keyOf(s);phase=(v?.phase as Phase)??1;const c=current();if(c){enterScene(c);if(c.kind==='mechanism')mech.open(mech.defaultPage(phasesOf(c).includes(phase)?phase:1));}}
 async function switchProject(id:string){
  finishDrag();await saveNow();await store.settled().catch(()=>{});
- let f;try{f=await store.read(id);f={...f,doc:parseStudio(f.doc)};}catch(e){status.textContent=`Projekt konnte nicht geöffnet werden: ${e}`;projectList.value=project.id;return;}
- const free=await store.claim(id);invalidate();mech.exit();build.exit();history=new StudioHistory();doc=f.doc;project={id,name:f.name,readOnly:!free};await store.setActive(id);restoreView(f.view);drawView();syncHistory();savedState=fileState();saveState.textContent=free?'Gespeichert':'Nur Ansicht';await renderProjects();status.textContent=free?`Projekt ${f.name} geöffnet.`:`${f.name} ist in einem anderen Tab offen: Änderungen hier werden nicht gespeichert.`;
+ let f;try{f=await store.read(id);f={...f,doc:parseStudio(f.doc)};}catch(e){status.textContent=`Projekt konnte nicht geöffnet werden: ${e}`;return;}
+ const free=await store.claim(id);motion.close();mech.exit();build.exit();history=new StudioHistory();doc=f.doc;project={id,name:f.name,readOnly:!free};sceneKey='';phase=1;await store.setActive(id);restoreView(f.view);drawView();syncHistory();savedState=fileState();saveState.textContent=free?'Gespeichert':'Nur Ansicht';await renderProjects();status.textContent=free?`Projekt ${f.name} geöffnet.`:`${f.name} ist in einem anderen Tab offen: Änderungen hier werden nicht gespeichert.`;
 }
 async function createProject(name:string,content=fresh()){const id=newProjectId();await store.write(id,{format:'studio-project-1',name,updated:new Date().toISOString(),doc:parseStudio(content)});await switchProject(id);}
-projectList.onchange=()=>void switchProject(projectList.value);
-document.getElementById('project-new')!.onclick=()=>{const name=prompt('Name des neuen Projekts','Neues Projekt')?.trim();if(name)void createProject(name);};
-document.getElementById('project-rename')!.onclick=()=>{const name=prompt('Neuer Name',project.name)?.trim();if(!name||name===project.name)return;project.name=name;savedState='';void saveNow().then(renderProjects);};
-document.getElementById('project-delete')!.onclick=()=>{if(!confirm(`Projekt „${project.name}“ endgültig löschen?`))return;void (async()=>{const gone=project.id;savedState=fileState();await store.remove(gone);const rest=(await store.list()).filter(p=>p.id!==gone);if(rest[0])await switchProject(rest[0].id);else await createProject('Mein Projekt');await renderProjects();})();};
-window.addEventListener('pagehide',()=>void saveNow());
-restoreView(openView);renderCatalog();draw();renderResults();savedState=fileState();void renderProjects();if(new URLSearchParams(location.search).has('tour')){const s=document.createElement('script');s.src='./tour.js';document.body.append(s);}
-saveState.textContent=project.readOnly?'Nur Ansicht':'Gespeichert';if(project.readOnly)status.textContent=`${project.name} ist in einem anderen Tab offen: Änderungen hier werden nicht gespeichert.`;if(loadError)status.textContent=loadError;
+$('project-rename').onclick=()=>{($('menu') as HTMLDetailsElement).open=false;const name=prompt('Neuer Name',project.name)?.trim();if(!name||name===project.name)return;project.name=name;savedState='';void saveNow().then(renderProjects);};
+$('project-delete').onclick=()=>{($('menu') as HTMLDetailsElement).open=false;if(!confirm(`Projekt „${project.name}“ endgültig löschen?`))return;void (async()=>{const gone=project.id;savedState=fileState();await store.remove(gone);const rest=(await store.list()).filter(p=>p.id!==gone);if(rest[0])await switchProject(rest[0].id);else await createProject('Mein Projekt');startOpen=true;draw();})();};
+$('export').onclick=()=>{($('menu') as HTMLDetailsElement).open=false;try{finishDrag();const url=URL.createObjectURL(new Blob([serializeStudio(doc)],{type:'application/json'})),a=el('a',{href:url,download:`${project.name.replace(/[^\wäöüÄÖÜß-]+/g,'_')}.json`});a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent='Projekt als Datei exportiert.';}catch(e){status.textContent=String(e);}};
+const importFile=$('import-file') as HTMLInputElement;
+$('import').onclick=()=>{($('menu') as HTMLDetailsElement).open=false;finishDrag();importFile.click();};
+importFile.onchange=async()=>{const chosen=importFile.files?.[0];importFile.value='';if(!chosen)return;try{if(chosen.size>2000000)throw Error('Projekt zu groß (max. 2 MB)');const imported=importStudio(await chosen.text());await createProject(chosen.name.replace(/\.json$/i,''),imported);startOpen=false;draw();status.textContent='Projekt importiert.';}catch(e){status.textContent=`Import abgelehnt: ${e}`;}};
+window.addEventListener('pagehide',()=>{try{if(!project.readOnly&&fileState()!==savedState)store.stash(project.id,{format:'studio-project-1',name:project.name,updated:new Date().toISOString(),doc:parseStudio(doc),view:projectView()});}catch{/* nothing to keep */}void saveNow();});
+
+restoreView(openView);draw();savedState=fileState();saveState.textContent=project.readOnly?'Nur Ansicht':'Gespeichert';
+if(project.readOnly)status.textContent=`${project.name} ist in einem anderen Tab offen: Änderungen hier werden nicht gespeichert.`;if(loadError)status.textContent=loadError;
+if(new URLSearchParams(location.search).has('tour')){const s=document.createElement('script');s.src='./tour.js';document.body.append(s);}

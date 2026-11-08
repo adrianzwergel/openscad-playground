@@ -18,7 +18,7 @@ export function renderStock(c:SearchCatalog,names:Record<string,string>,stroke:n
  const whitelist=document.getElementById('catalog-whitelist') as HTMLInputElement;whitelist.checked=c.whitelist;whitelist.onchange=()=>edit(c=>{c.whitelist=whitelist.checked;});
  document.getElementById('catalog-clear-filters')!.onclick=()=>edit(c=>{c.excludedRules=[];c.whitelist=false;for(const p of c.parts){delete p.allowed;delete p.listed;delete p.quantity;}});
  const permitted=c.parts.filter(p=>partAllowed(c,p)).length;
- document.getElementById('search-types')!.textContent=`${permitted} / ${c.parts.length} Teile freigegeben · ${c.whitelist?'Warenkorb aktiv':'Gesamtkatalog mit Einzelfiltern'}. Typen: ${catalogKinds.filter(k=>k.rules.some(id=>!c.excludedRules.includes(id))).map(k=>k.title).join(', ')||'keine'}. Spindel und Zahnstange benötigen einen linearen Ausgang.`;
+ document.getElementById('search-types')!.textContent=`${permitted} / ${c.parts.length} Teile freigegeben · ${c.whitelist?'nur Bestand':'Gesamtkatalog mit Einzelfiltern'}. Typen: ${catalogKinds.filter(k=>k.rules.some(id=>!c.excludedRules.includes(id))).map(k=>k.title).join(', ')||'keine'}. Spindel und Zahnstange benötigen einen linearen Ausgang.`;
  void names;
  const details=(key:string,title:string)=>{const d=document.createElement('details'),s=document.createElement('summary');d.dataset.key=key;d.open=opened.has(key);s.textContent=title;d.append(s);return d;};
  const checkbox=(parent:HTMLElement,text:string,value:boolean,action:(value:boolean)=>void)=>{const l=document.createElement('label'),i=document.createElement('input');i.type='checkbox';i.checked=value;i.onchange=()=>action(i.checked);l.append(i,document.createTextNode(' '+text));parent.append(l);return i;};
@@ -29,7 +29,7 @@ export function renderStock(c:SearchCatalog,names:Record<string,string>,stroke:n
   const qty=document.createElement('input');qty.type='number';qty.min='0';qty.max='10000';qty.step='1';qty.placeholder='∞';qty.value=p.quantity===undefined?'':String(p.quantity);qty.setAttribute('aria-label','Stückzahl '+label.textContent);qty.onchange=()=>edit(c=>{const part=c.parts.find(x=>x.id===p.id)!;if(qty.value==='')delete part.quantity;else part.quantity=Number(qty.value);});
   const remove=document.createElement('button');remove.textContent='×';remove.setAttribute('aria-label',label.textContent+' entfernen');remove.onclick=()=>edit(c=>{const part=c.parts.find(x=>x.id===p.id)!;delete part.listed;delete part.quantity;});row.append(label,qty,remove);cart.append(row);
  }
- if(!cart.children.length)cart.textContent=c.whitelist?'Warenkorb leer – keine Teile freigegeben.':'Warenkorb leer – gesamter Katalog verfügbar.';
+ if(!cart.children.length)cart.textContent=c.whitelist?'Bestand leer – keine Teile freigegeben.':'Bestand leer: Die Suche darf alles verwenden.';
  // Parts of each kind: those its rules can place (by the stock definition, so edited parts stay in their group).
  const keyOf=new Map(base.parts.map(p=>[p.id,partKey(p.family,p.params)])),kinds=[...catalogKinds.map(k=>{const keys=new Set<string>();for(const id of k.rules){const rule=registry.rules.get(id);if(!rule?.search)continue;for(const choice of rule.search.catalog({stroke}))for(const e of choice.elements)keys.add(partKey(e.family,e.params));}
    return {...k,has:(p:SearchCatalog['parts'][number])=>keys.has(keyOf.get(p.id)!)||k.rules.includes('gt2-belt')&&p.family==='gt2-belt'};}),
@@ -60,7 +60,7 @@ export function renderStock(c:SearchCatalog,names:Record<string,string>,stroke:n
     const quantity=field('Stückzahl (leer = unbegrenzt)',p.quantity===undefined?'':String(p.quantity),'number','quantity');quantity.min='0';quantity.max='10000';quantity.step='1';quantity.parentElement!.className='catalog-full';
     const fields=Object.entries(p.params).map(([k,v])=>{const i=field(labels[k]??k,String(v),'number',k);i.required=true;return [k,i] as const;});
     const toggles=document.createElement('div');toggles.className='catalog-toggles';
-    const excluded=checkbox(toggles,'Teil von der Suche ausschließen',p.allowed===false,()=>{}),listed=checkbox(toggles,'Im Warenkorb',p.listed===true,()=>{});
+    const excluded=checkbox(toggles,'Teil von der Suche ausschließen',p.allowed===false,()=>{}),listed=checkbox(toggles,'Im Bestand',p.listed===true,()=>{});
     const error=document.createElement('p');error.className='catalog-error';error.setAttribute('role','alert');
     const actions=document.createElement('div');actions.className='catalog-actions';
     const save=document.createElement('button');save.type='submit';save.textContent='Änderungen speichern';save.className='primary';
@@ -79,7 +79,7 @@ export function renderStock(c:SearchCatalog,names:Record<string,string>,stroke:n
     form.onsubmit=e=>{e.preventDefault();try{const next=structuredClone(c),part=next.parts.find(x=>x.id===p.id)!;part.name=name.value.trim();part.params=Object.fromEntries(fields.map(([k,i])=>[k,Number(i.value)]));part.allowed=!excluded.checked;part.listed=listed.checked;if(quantity.value==='')delete part.quantity;else part.quantity=Number(quantity.value);parseCatalog(next);edit(c=>{c.parts[c.parts.findIndex(x=>x.id===p.id)]=part;if(part.listed)c.whitelist=true;});dialog.close();}catch(e){error.textContent=e instanceof Error?e.message:String(e);}};
     dialog.showModal();try{preview=new CatalogPreview(previewHost,previewStatus);updatePreview();}catch(e){previewStatus.textContent='3D-Vorschau nicht verfügbar: '+String(e);}name.focus();
    };
-   const add=document.createElement('button');add.textContent=p.listed?'✓':'+';add.title='In den Warenkorb';add.setAttribute('aria-label',title.textContent+' hinzufügen');add.dataset.addPart=p.id;add.onclick=()=>edit(c=>{const part=c.parts.find(x=>x.id===p.id)!;part.quantity=part.listed?(part.quantity??0)+1:1;part.listed=true;part.allowed=true;c.whitelist=true;});row.append(description,button,add);group.append(row);
+   const add=document.createElement('button');add.textContent=p.listed?'✓':'+';add.title='In den Bestand';add.setAttribute('aria-label',title.textContent+' hinzufügen');add.dataset.addPart=p.id;add.onclick=()=>edit(c=>{const part=c.parts.find(x=>x.id===p.id)!;part.quantity=part.listed?(part.quantity??0)+1:1;part.listed=true;part.allowed=true;c.whitelist=true;});row.append(description,button,add);group.append(row);
   }
   root.append(group);
  }

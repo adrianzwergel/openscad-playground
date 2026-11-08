@@ -1,14 +1,14 @@
 // Studio drive page: a found train can be previewed in the 3D view without adopting it; the results stay listed
 // (also after leaving the page and coming back) until one is adopted; a preview can be ended; adopting takes it in.
-import puppeteer from 'puppeteer';import assert from 'node:assert/strict';
+import puppeteer from 'puppeteer';import {goTo,phase,menu,example,start} from './studio-ui.mjs';import assert from 'node:assert/strict';
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--enable-unsafe-swiftshader']});
 try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});
  await p.goto('http://localhost:4001/studio');await p.waitForSelector('canvas');await p.evaluate(()=>localStorage.removeItem('mechanics-studio'));await p.reload();await p.waitForSelector('canvas');
  const ready=()=>p.waitForFunction(()=>document.querySelector('#mechanism-preview')?.dataset.state==='ok',{timeout:120000});
  const press=sel=>p.waitForFunction(sel=>{const b=document.querySelector(sel);if(!b||b.disabled)return false;b.click();return true;},{timeout:20000},sel);
- const open=label=>p.waitForFunction(label=>{const b=[...document.querySelectorAll('#tree button')].find(x=>x.textContent.includes(label));if(!b)return false;b.click();return true;},{timeout:20000},label);
- const saved=async()=>{await p.evaluate(()=>document.getElementById('save').click());return p.evaluate(()=>JSON.parse(localStorage.getItem('mechanics-studio')).mechanisms[0].drives.find(d=>d.id==='M3'));};
- await p.click('[data-demo="robot"]');await ready();
+ const open=label=>goTo(p,label);
+ const saved=async()=>{await p.evaluate(()=>window.studioSave());return p.evaluate(()=>JSON.parse(localStorage.getItem('mechanics-studio')).mechanisms[0].drives.find(d=>d.id==='M3'));};
+ await example(p,`robot`);await ready();
  await open('⚡ M3 →');await press('[data-find-gear="M3"]');
  await p.waitForFunction(()=>document.querySelector('#drive-progress')?.dataset.state==='done',{timeout:180000});
  const count=await p.$$eval('[data-adopt]',l=>l.length);assert.ok(count>=2,`mehrere Getriebe gefunden: ${count}`);

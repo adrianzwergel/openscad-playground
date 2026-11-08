@@ -35,7 +35,8 @@ export type BuildHost={doc:()=>StudioDocument;change:(edit:()=>void,message:stri
  /** The open mechanism: frames of its links as shown, the surface under a ray, what a collision check needs. */frames:()=>Record<string,Frame>;surface:(ray:THREE.Raycaster)=>Surface|undefined;model:()=>{m:Mechanism;drives:Drive[];assets:Assets}|undefined;
  /** Link frames over every axis' way. */range:()=>Promise<{axis:string;value:number;frames:Record<string,Frame>}[]>;
  /** The gizmo on a handle (undefined: off it); whether it is held. */grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;
- /** A finished train or block becomes a mechanism. */adopt:(d:Demo)=>void;};
+ /** A finished train or block becomes a mechanism. */adopt:(d:Demo)=>void;
+ /** The Studio's phase: 1 builds up, 3 makes (printing files, housings, the net). Without one, everything shows. */phase?:()=>number;};
 type Drag={item?:BuildItem;plate?:PlateNode;isNew:boolean;offset:[number,number];moved:boolean;over:boolean;start:[number,number]};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
@@ -210,36 +211,38 @@ export class BuildEditor{
  }
 
  // ---------- explorer ----------
- /** The builds that stand alone, whatever mode the Studio is in. */
- renderList(root:HTMLElement){
-  root.append(el('div',{className:'tree-group',textContent:'Aufbauten'}));
-  for(const b of this.host.doc().builds??[]){if(b.mechanism)continue;const open=el('button',{textContent:`▦ ${b.label}`});open.dataset.build=b.id;open.setAttribute('aria-selected',String(this.activeId===b.id));open.onclick=()=>{this.enter(b.id);this.host.leave();};root.append(el('div',{className:'tree-row'},open));}
-  const gear=el('button',{textContent:'＋ Neues Getriebe',className:'primary'});gear.dataset.newTrain='true';gear.onclick=()=>{const id='getriebe-'+crypto.randomUUID().slice(0,8),n=(this.host.doc().builds?.filter(b=>b.train).length??0)+1;this.host.change(()=>{const d=this.host.doc();d.builds=[...(d.builds??[]),{...newBuild(id,`Getriebe ${n}`),plates:[],train:newTrain()}];},'Getriebe angelegt: Zahnräder aus dem Store in die Ansicht ziehen.');this.enter(id);this.host.leave();};
-  root.append(gear);
-  const open=el('button',{textContent:'＋ Neuer Aufbau (frei im Raum)',className:'primary'});open.dataset.newFree='true';open.onclick=()=>{const id='aufbau-'+crypto.randomUUID().slice(0,8),n=(this.host.doc().builds?.filter(b=>!b.mechanism).length??0)+1;this.host.change(()=>{const d=this.host.doc();d.builds=[...(d.builds??[]),{...newBuild(id,`Aufbau ${n}`),plates:[]}];},'Aufbau angelegt: Teile in den Raum ziehen, mit dem Griff anheben, dann die Struktur erzeugen.');this.enter(id);this.host.leave();};
-  root.append(open);
-  const add=el('button',{textContent:'＋ Neuer Aufbau (Bodenplatte)',className:'primary'});add.dataset.newBuild='true';add.onclick=()=>{const id='aufbau-'+crypto.randomUUID().slice(0,8),n=(this.host.doc().builds?.filter(b=>!b.mechanism).length??0)+1;this.host.change(()=>{const d=this.host.doc();d.builds=[...(d.builds??[]),newBuild(id,`Aufbau ${n}`)];},'Aufbau angelegt: Teile aus dem Store auf die Platte ziehen.');this.enter(id);this.host.leave();};
-  root.append(add);
- }
- renderTree(root:HTMLElement){
-  const back=el('button',{textContent:'← Zurück'});back.onclick=()=>{this.exit();this.host.leave();};root.append(back,el('div',{className:'tree-group',textContent:this.build()?.label??''}));this.renderParts(root);
- }
- /** Plates, parts and the store: on its own, or below the mechanism's tree. */
- renderParts(root:HTMLElement){
-  if(this.isTrain){this.trains.renderTree(root);return;}
+/** What is in the build: overview, plates, parts. In a mechanism the parts on its model. */
+ renderPlaced(root:HTMLElement){
+  if(this.isTrain){this.trains.renderPlaced(root);return;}
   const b=this.build();if(this.attached)root.append(el('div',{className:'tree-group',textContent:'Teile am Modell'}));
   const pick=(item?:string,plate?:string)=>{this.selected=item;this.plateId=plate;this.refresh();this.host.leave();};
-  if(this.active){const row=el('button',{textContent:'🕸 Übersicht & Baum-Netz'});row.dataset.overview='true';row.setAttribute('aria-selected',String(!this.selected&&!this.plateId));row.onclick=()=>pick();root.append(el('div',{className:'tree-row'},row));}
+  if(this.active){const row=el('button',{textContent:'▦ Übersicht'});row.dataset.overview='true';row.setAttribute('aria-selected',String(!this.selected&&!this.plateId));row.onclick=()=>pick();root.append(el('div',{className:'tree-row'},row));}
   for(const n of b?.plates??[]){const row=el('button',{textContent:'▭ Bodenplatte'});row.dataset.plate=n.id;row.setAttribute('aria-selected',String(!this.selected&&this.plateId===n.id));row.onclick=()=>pick(undefined,n.id);root.append(el('div',{className:'tree-row'},row));}
-  for(const i of b?.items??[]){const row=el('button',{textContent:`  ${partOf(b!,i).label}${i.free?.body?` → ${i.free.body}`:''}`,className:'tree-sub'});row.dataset.item=i.id;row.setAttribute('aria-selected',String(this.selected===i.id));row.onclick=()=>pick(i.id);root.append(el('div',{className:'tree-row'},row));}
-  root.append(el('div',{className:'tree-group',textContent:'Teile-Store'}));
+  for(const i of b?.items??[]){const row=el('button',{textContent:`${partOf(b!,i).label}${i.free?.body?` → ${i.free.body}`:''}`,className:'tree-sub'});row.dataset.item=i.id;row.setAttribute('aria-selected',String(this.selected===i.id));row.onclick=()=>pick(i.id);root.append(el('div',{className:'tree-row'},row));}
+  if(this.attached&&!b?.items.length)root.append(el('p',{className:'muted',textContent:'Noch keine. Teile aus der Bibliothek auf das Modell ziehen.'}));
+ }
+ /** The library: parts, plates, own parts (or the gears of a train). */
+ renderStore(root:HTMLElement){
+  if(this.isTrain){this.trains.renderStore(root);return;}
   const filter=el('input',{type:'search',placeholder:'Teil suchen',value:this.filter});filter.id='part-filter';filter.setAttribute('aria-label','Teile suchen');
   const list=el('div',{className:'part-store'});filter.oninput=()=>{this.filter=filter.value;this.fillStore(list);};root.append(filter,list);this.fillStore(list);
   const c=this.custom,form=el('details',{className:'templates'},el('summary',{textContent:'Eigenes Teil aus Maßen'}));
   const field=(label:string,key:'length'|'width'|'height'|'x'|'y'|'d')=>{const input=el('input',{type:'number',step:'0.1',value:String(c[key])});input.dataset.custom=key;input.onchange=()=>{c[key]=Number(input.value);};return el('label',{},label,input);};
   const name=el('input',{type:'text',value:c.label});name.dataset.custom='label';name.oninput=()=>{c.label=name.value;};
-  const make=el('button',{textContent:'Teil anlegen'});make.dataset.customMake='true';make.onclick=()=>{const label=c.label.trim();if(!label||!(c.length>0&&c.width>0&&c.height>0)){this.host.status('Teil braucht Name, Länge, Breite und Höhe.');return;}const holes=c.d>0&&c.x>0&&c.y>0?[[-c.x/2,-c.y/2],[c.x/2,-c.y/2],[c.x/2,c.y/2],[-c.x/2,c.y/2]].map(at=>({at:at as [number,number],d:c.d})):[];const part={...boxPart({id:'eigen-'+crypto.randomUUID().slice(0,8),label,group:'Eigene Teile',size:[c.length,c.width],height:c.height,holes,source:'Eigene Maße'}),checked:true};this.host.change(()=>{this.ensure().parts.push(part);},`${label} steht im Store.`);};
+  const make=el('button',{textContent:'Teil anlegen'});make.dataset.customMake='true';make.onclick=()=>{const label=c.label.trim();if(!label||!(c.length>0&&c.width>0&&c.height>0)){this.host.status('Teil braucht Name, Länge, Breite und Höhe.');return;}const holes=c.d>0&&c.x>0&&c.y>0?[[-c.x/2,-c.y/2],[c.x/2,-c.y/2],[c.x/2,c.y/2],[-c.x/2,c.y/2]].map(at=>({at:at as [number,number],d:c.d})):[];const part={...boxPart({id:'eigen-'+crypto.randomUUID().slice(0,8),label,group:'Eigene Teile',size:[c.length,c.width],height:c.height,holes,source:'Eigene Maße'}),checked:true};this.host.change(()=>{this.ensure().parts.push(part);},`${label} steht in der Bibliothek.`);};
   form.append(el('label',{},'Name',name),field('Länge [mm]','length'),field('Breite [mm]','width'),field('Höhe [mm]','height'),field('Lochabstand X [mm]','x'),field('Lochabstand Y [mm]','y'),field('Loch-Ø [mm] (0: keine)','d'),make);root.append(form);
+ }
+ /** Opens the overview (nothing selected): where the carrier is made. */
+ overview(){this.selected=undefined;this.plateId=undefined;}
+ /** Selects a plate (its page holds printing files and the housing). */
+ selectPlate(id:string){this.selected=undefined;this.plateId=id;}
+ /** The steps of a build on its own: parts in, nothing in the way, a carrier made. */
+ todo(){const b=this.build();if(!b)return [];
+  if(b.train)return this.trains.todo();
+  const found=this.allIssues(b),free=!b.plates.length,net=!!this.net.positions&&this.net.key===this.netKey(b);
+  return [{label:'Teile platziert',done:b.items.length>0,hint:'Teile aus der Bibliothek in die Ansicht ziehen.',phase:1,open:()=>this.overview()},
+   {label:'Nichts im Weg',done:b.items.length>0&&!found.length,hint:found[0]?.message??'Alles frei.',phase:1,open:()=>{this.selected=found[0]?.items[0];}},
+   free?{label:'Träger erzeugt',done:net,hint:'Unter „Übersicht“ das Baum-Netz erzeugen.',phase:3,open:()=>this.overview()}:{label:'Druckdateien',done:false,hint:'Bodenplatte wählen: Platte als STL oder Gehäuse als ZIP.',phase:3,open:()=>{this.selected=undefined;this.plateId=b.plates[0].id;}}];
  }
  private fillStore(list:HTMLElement){
   list.replaceChildren();const q=this.filter.toLowerCase(),b=this.build(),all=[...parts,...(b?.parts??[])].filter(p=>!q||`${p.label} ${p.group}`.toLowerCase().includes(q));
@@ -259,7 +262,9 @@ export class BuildEditor{
   const i=b.items.find(x=>x.id===this.selected),n=b.plates.find(p=>p.id===this.plateId);
   if(this.active&&!i){const name=el('input',{type:'text',value:b.label});name.setAttribute('aria-label','Name des Aufbaus');name.onchange=()=>{const v=name.value.trim();if(v)edit('Aufbau umbenannt',x=>{x.label=v;});};root.append(el('label',{},'Name',name));}
   if(i)this.itemPage(root,b,i,number,select,edit);else if(n)this.platePage(root,b,n,number,select,edit);
-  if(this.active&&!i)this.netPanel(root,b,number,select);
+  const making=(this.host.phase?.()??3)===3;
+  if(this.active&&!i&&making&&!b.plates.length)this.netPanel(root,b,number,select);
+  if(this.active&&!i&&!making)root.append(el('p',{className:'muted',textContent:b.plates.length?'Druckdateien für Platte und Gehäuse gibt es in „③ Fertigen“.':'Das Baum-Netz, das die Teile trägt, entsteht in „③ Fertigen“.'}));
   const list=shopping(b);if(list.length&&!i){root.append(heading('Stückliste'));for(const l of list)root.append(el('p',{className:'muted',textContent:`${l.count} × ${l.label}`}));}
   root.append(heading('Prüfung'),this.report(this.allIssues(b)));
   if(this.attached){const go=el('button',{textContent:'Über den Fahrweg prüfen'});go.dataset.sweepParts='true';go.onclick=()=>void this.sweep();root.append(go);if(this.sweepText)root.append(el('p',{id:'build-sweep',className:this.sweepText.startsWith('✓')?'state-pass':'state-warn',textContent:this.sweepText}));}
@@ -305,13 +310,15 @@ export class BuildEditor{
   if(p.mount.on)root.append(number('Ø Eckbohrung [mm]',p.mount.d,v=>plate('Eckbohrung geändert',x=>{x.mount.d=Math.max(.2,v);}),'0.1'),number('Abstand vom Rand [mm]',p.mount.inset,v=>plate('Eckbohrung geändert',x=>{x.mount.inset=Math.max(0,v);})));
   p.holes.forEach(h=>{const row=el('div',{className:'hole-row'}),field=(label:string,value:number,write:(v:number)=>void)=>{const input=el('input',{type:'number',step:'0.5',value:String(value)});input.dataset.plateHole=label;input.setAttribute('aria-label',label);input.onchange=()=>write(Number(input.value));return input;},set=(fn:(y:PlateNode['holes'][number])=>void)=>plate('Bohrung geändert',x=>{const y=x.holes.find(z=>z.id===h.id);if(y)fn(y);}),del=el('button',{textContent:'✕',title:'Bohrung löschen',className:'danger'});del.onclick=()=>plate('Bohrung gelöscht',x=>{x.holes=x.holes.filter(z=>z.id!==h.id);});row.append(field('X',h.at[0],v=>set(y=>{y.at[0]=v;})),field('Y',h.at[1],v=>set(y=>{y.at[1]=v;})),field('Ø',h.d,v=>set(y=>{y.d=Math.max(.2,v);})),del);root.append(row);});
   const add=el('button',{textContent:'＋ Bohrung'});add.dataset.addHole='true';add.onclick=()=>plate('Bohrung hinzugefügt',x=>{x.holes.push({id:'b-'+crypto.randomUUID().slice(0,8),at:[(r.x0+r.x1)/2,(r.y0+r.y1)/2],d:4});});
-  const stl=el('button',{textContent:'⬇ Platte als STL',className:'primary'});stl.dataset.plateStl='true';stl.onclick=()=>this.exportSheet(flat,b.label);
+  const making=(this.host.phase?.()??3)===3,stl=el('button',{textContent:'⬇ Platte als STL',className:'primary'});stl.dataset.plateStl='true';stl.onclick=()=>this.exportSheet(flat,b.label);
   if(b.items.some(i=>i.plate===n.id&&i.wish)){const go=el('button',{textContent:'✨ Plätze neu suchen'});go.dataset.solve='true';go.onclick=()=>edit('Plätze gesucht',x=>{solveBuild(x);});root.append(go);}
+  const drop=el('button',{textContent:'Platte entfernen',className:'danger'});drop.dataset.removePlate='true';drop.onclick=()=>{this.plateId=undefined;edit('Platte entfernt',x=>{x.items=x.items.filter(i=>i.plate!==n.id);x.plates=x.plates.filter(y=>y.id!==n.id);});};
+  if(!making){root.append(add,drop,el('p',{className:'muted',textContent:'Platte als STL und Gehäuse: in „③ Fertigen“.'}));return;}
+  root.append(heading('Druckdateien'),stl);
   const h=p.housing??defaultCase,housing=(key:keyof typeof defaultCase,v:number)=>plate('Gehäuse geändert',x=>{x.housing={...(x.housing??defaultCase),[key]:v};}),blocked=caseBlockers(flat);
   root.append(heading('Gehäuse'),number('Wand [mm]',h.wall,v=>housing('wall',Math.max(.8,v)),'0.2'),number('Deckel [mm]',h.lid,v=>housing('lid',Math.max(.8,v)),'0.2'),number('Luft über den Teilen [mm]',h.top,v=>housing('top',Math.max(0,v))),number('Passung Deckel [mm]',h.fit,v=>housing('fit',Math.max(0,v)),'0.05'));
   if(blocked.length)root.append(el('p',{className:'state-warn',textContent:`${partOf(flat,blocked[0]).label} passt nicht hinein: Motoren und Teile unter der Platte bleiben draußen.`}));
   const show=el('input',{type:'checkbox',checked:this.showCase});show.dataset.caseShow='true';show.onchange=()=>{this.showCase=show.checked;this.refresh();};const zip=el('button',{textContent:'📦 Gehäuse als ZIP',className:'primary'});zip.dataset.caseZip='true';zip.disabled=!!blocked.length||!flat.items.length;zip.onclick=()=>void this.exportCase(flat,b.label);root.append(el('label',{className:'check'},show,'In der Ansicht zeigen'),zip);
-  const drop=el('button',{textContent:'Platte entfernen',className:'danger'});drop.dataset.removePlate='true';drop.onclick=()=>{this.plateId=undefined;edit('Platte entfernt',x=>{x.items=x.items.filter(i=>i.plate!==n.id);x.plates=x.plates.filter(y=>y.id!==n.id);});};root.append(add,stl,drop);
  }
  /** The structure as the carrier: holders become anchors, feet stand under the build. */
  private netPanel(root:HTMLElement,b:Build,number:NumberField,select:SelectField){

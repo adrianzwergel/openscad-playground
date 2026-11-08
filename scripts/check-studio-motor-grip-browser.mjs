@@ -1,15 +1,15 @@
 // Studio drive page: the motor has a grip in the 3D view. Dragging it moves the flange on its carrying link (in steps),
 // drops the old train and searches one for the new place; undo puts it back. A motor placed inside another link is
 // shown as a clash and no search starts.
-import puppeteer from 'puppeteer';import assert from 'node:assert/strict';
+import puppeteer from 'puppeteer';import {goTo,phase,menu,example,start} from './studio-ui.mjs';import assert from 'node:assert/strict';
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--enable-unsafe-swiftshader']});
 try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});
  await p.goto('http://localhost:4001/studio');await p.waitForSelector('canvas');await p.evaluate(()=>localStorage.removeItem('mechanics-studio'));await p.reload();await p.waitForSelector('canvas');
  const ready=()=>p.waitForFunction(()=>document.querySelector('#mechanism-preview')?.dataset.state==='ok',{timeout:120000});
- const open=label=>p.waitForFunction(label=>{const b=[...document.querySelectorAll('#tree button')].find(x=>x.textContent.includes(label));if(!b)return false;b.click();return true;},{timeout:20000},label);
- const saved=async()=>{await p.evaluate(()=>document.getElementById('save').click());const doc=await p.evaluate(()=>JSON.parse(localStorage.getItem('mechanics-studio')));return {doc,d:doc.mechanisms[0].drives.find(d=>d.id==='M3')};};
+ const open=label=>goTo(p,label);
+ const saved=async()=>{await p.evaluate(()=>window.studioSave());const doc=await p.evaluate(()=>JSON.parse(localStorage.getItem('mechanics-studio')));return {doc,d:doc.mechanisms[0].drives.find(d=>d.id==='M3')};};
  const gripState=()=>p.waitForFunction(()=>{const g=document.querySelector('#drive-grip');return g?.dataset.state&&g.dataset.flange?{state:g.dataset.state,text:g.textContent,flange:JSON.parse(g.dataset.flange)}:false;},{timeout:60000}).then(h=>h.jsonValue());
- await p.click('[data-demo="robot"]');await ready();await open('⚡ M3 →');await ready();
+ await example(p,`robot`);await ready();await open('⚡ M3 →');await ready();
  const start=await gripState(),before=(await saved()).d;assert.equal(start.state,'ok',`Motor anfangs frei: ${start.text}`);
  // Drag the gizmo's centre (moves in the view plane) by 90 px to the right.
  const drag=async flange=>{const [x,y]=await p.evaluate(f=>window.studioScreen(f),flange);
