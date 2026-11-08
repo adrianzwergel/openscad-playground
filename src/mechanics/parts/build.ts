@@ -12,6 +12,8 @@ import {compose,identity,inverse,cross,scale,unit,quaternionFromBasis,axisAngle}
 import type {Seat} from '../kinematics/bearings.ts';
 import type {Train} from './train.ts';
 import {parseTrain} from './train.ts';
+import type {Group} from './groups.ts';
+import {parseGroups} from './groups.ts';
 
 type P2=[number,number];
 /** A place in space: `frame` on the link `body`, or in the world without one. */
@@ -21,13 +23,13 @@ export type Free={frame:Frame;body?:string};
 export type Wish={mode:'zone'|'auto';center:number[];size:number[];goal:'middle'|'axis'};
 /** On a plate (`plate`): `at`, `angle`, `side` place it. Otherwise `free` does: its frame is the part frame.
  * `holes`: edits of the part's holes by index (other Ø, or left out). `plugsOff`: plugs nobody uses, by label. */
-export type BuildItem={id:string;part:string;at:P2;angle:number;side:'top'|'bottom';clearance:number;holder:{kind:string;params:Record<string,number>};holes?:Record<string,{d?:number;off?:boolean}>;plugsOff?:string[];plate?:string;free?:Free;wish?:Wish;/** Real mass (g), where the estimate is not good enough. */mass?:number};
+export type BuildItem={id:string;part:string;at:P2;angle:number;side:'top'|'bottom';clearance:number;holder:{kind:string;params:Record<string,number>};holes?:Record<string,{d?:number;off?:boolean}>;plugsOff?:string[];plate?:string;free?:Free;wish?:Wish;/** Real mass (g), where the estimate is not good enough. */mass?:number;/** The group it sits in. */group?:string};
 export type PlateHole={id:string;at:P2;d:number};
 /** `auto`: the outline wraps the parts with `margin`; `fixed`: `size` around `center`. */
 export type Plate={mode:'auto'|'fixed';size:P2;center:P2;margin:number;thickness:number;corner:number;holes:PlateHole[];mount:{on:boolean;d:number;inset:number};/** The housing's numbers, where they differ from the defaults. */housing?:{wall:number;lid:number;top:number;fit:number}};
-export type PlateNode=Plate&{id:string;free:Free};
+export type PlateNode=Plate&{id:string;free:Free;/** The group it sits in. */group?:string};
 /** `mechanism`: the mechanism it belongs to; without one it stands alone. */
-export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];parts:Part[];grid:number;mechanism?:string;/** A gear train instead of plates and parts. */train?:Train};
+export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];parts:Part[];grid:number;mechanism?:string;/** The wheels and shafts of the build. */train?:Train;/** Groups of plates, parts and wheels (parts/groups.ts). */groups?:Group[]};
 /** One plate with what sits on it: all the planar logic below works on this. */
 export type Sheet={plate:Plate;items:BuildItem[];parts:Part[];grid:number};
 export type Rect={corners:P2[]};
@@ -46,7 +48,7 @@ const parseFree=(f:Free|undefined):Free=>{const q=f?.frame;if(!q||!Array.isArray
 const parseWish=(w:Wish):Wish=>{if(w.mode!=='zone'&&w.mode!=='auto'||w.goal!=='middle'&&w.goal!=='axis'||!Array.isArray(w.center)||!Array.isArray(w.size)||![...w.center,...w.size].every(Number.isFinite))throw Error('Aufbau: Wunsch ungültig');return structuredClone(w);};
 function parsePlate(p:PlateNode):PlateNode{
  if(!p||p.mode!=='auto'&&p.mode!=='fixed'||!Array.isArray(p.holes)||p.holes.length>500)throw Error('Aufbau: Platte ungültig');
- return {id:text(p.id,'Platte'),free:parseFree(p.free),mode:p.mode,size:pair(p.size,10,2000,'Plattengröße'),center:pair(p.center,-5000,5000,'Plattenmitte'),margin:num(p.margin,0,200,'Rand'),thickness:num(p.thickness,.4,50,'Plattendicke'),corner:num(p.corner,0,100,'Eckenradius'),holes:p.holes.map(h=>({id:text(h.id,'Bohrung'),at:pair(h.at,-5000,5000,'Bohrung'),d:num(h.d,.2,200,'Bohrung')})),mount:{on:!!p.mount?.on,d:num(p.mount?.d,.2,50,'Eckbohrung'),inset:num(p.mount?.inset,0,100,'Eckbohrung')},...(p.housing?{housing:{wall:num(p.housing.wall,.4,20,'Wand'),lid:num(p.housing.lid,.4,20,'Deckel'),top:num(p.housing.top,0,200,'Luft oben'),fit:num(p.housing.fit,0,2,'Passung')}}:{})};
+ return {id:text(p.id,'Platte'),free:parseFree(p.free),mode:p.mode,size:pair(p.size,10,2000,'Plattengröße'),center:pair(p.center,-5000,5000,'Plattenmitte'),margin:num(p.margin,0,200,'Rand'),thickness:num(p.thickness,.4,50,'Plattendicke'),corner:num(p.corner,0,100,'Eckenradius'),holes:p.holes.map(h=>({id:text(h.id,'Bohrung'),at:pair(h.at,-5000,5000,'Bohrung'),d:num(h.d,.2,200,'Bohrung')})),mount:{on:!!p.mount?.on,d:num(p.mount?.d,.2,50,'Eckbohrung'),inset:num(p.mount?.inset,0,100,'Eckbohrung')},...(p.housing?{housing:{wall:num(p.housing.wall,.4,20,'Wand'),lid:num(p.housing.lid,.4,20,'Deckel'),top:num(p.housing.top,0,200,'Luft oben'),fit:num(p.housing.fit,0,2,'Passung')}}:{}),...(typeof p.group==='string'?{group:p.group}:{})};
 }
 /** Checks a stored build; hand-made parts travel with it. Builds of one plate from before become plate `platte`. */
 export function parseBuild(value:unknown):Build{
@@ -54,8 +56,11 @@ export function parseBuild(value:unknown):Build{
  if(!b||typeof b!=='object'||!Array.isArray(b.plates)||b.plates.length>32||!Array.isArray(b.items)||b.items.length>200)throw Error('Ungültiger Aufbau');
  const own=Array.isArray(b.parts)?b.parts.map(x=>structuredClone(x)):[],plates=b.plates.map(parsePlate);if(new Set(plates.map(p=>p.id)).size!==plates.length)throw Error('Aufbau: Platte doppelt');
  const items=b.items.map(i=>{if(!partById(i.part,own))throw Error(`Aufbau: Teil ${i.part} fehlt im Katalog`);if(i.side!=='top'&&i.side!=='bottom')throw Error('Aufbau: Seite ungültig');if(i.plate?!plates.some(p=>p.id===i.plate):!i.free)throw Error('Aufbau: Teil ohne Lage');
-  return {id:text(i.id,'Teil'),part:i.part,at:pair(i.at,-5000,5000,'Position'),angle:num(i.angle,-720,720,'Drehung'),side:i.side,clearance:num(i.clearance,0,100,'Abstand'),holder:{kind:text(i.holder?.kind,'Halter'),params:structuredClone(i.holder?.params??{})},...(i.holes?{holes:structuredClone(i.holes)}:{}),...(i.plugsOff?{plugsOff:[...i.plugsOff]}:{}),...(i.plate?{plate:i.plate}:{free:parseFree(i.free)}),...(i.wish?{wish:parseWish(i.wish)}:{}),...(i.mass!==undefined?{mass:num(i.mass,0,1e6,'Masse')}:{})};});
- return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(b.train?{train:parseTrain(b.train)}:{})};
+  return {id:text(i.id,'Teil'),part:i.part,at:pair(i.at,-5000,5000,'Position'),angle:num(i.angle,-720,720,'Drehung'),side:i.side,clearance:num(i.clearance,0,100,'Abstand'),holder:{kind:text(i.holder?.kind,'Halter'),params:structuredClone(i.holder?.params??{})},...(i.holes?{holes:structuredClone(i.holes)}:{}),...(i.plugsOff?{plugsOff:[...i.plugsOff]}:{}),...(i.plate?{plate:i.plate}:{free:parseFree(i.free)}),...(i.wish?{wish:parseWish(i.wish)}:{}),...(i.mass!==undefined?{mass:num(i.mass,0,1e6,'Masse')}:{}),...(typeof i.group==='string'?{group:i.group}:{})};});
+ const groups=parseGroups(b.groups),known=new Set((groups??[]).map(g=>g.id)),train=b.train?parseTrain(b.train):undefined;
+ // A member whose group is gone stands alone.
+ for(const x of [...items,...plates,...(train?.wheels??[])])if(x.group!==undefined&&!known.has(x.group))delete x.group;
+ return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(train?{train}:{}),...(groups?.length?{groups}:{})};
 }
 export const partOf=(b:{parts:Part[]},i:BuildItem)=>partById(i.part,b.parts)!;
 export const newItem=(id:string,part:Part,at:P2):BuildItem=>({id,part:part.id,at,angle:0,side:part.body>0?'top':'bottom',clearance:2,holder:defaultHolder(part)});

@@ -16,7 +16,7 @@ import type {Demo} from '../demos.ts';
 export const legoGears=legoParts.filter(p=>p.search&&p.teeth>0&&p.mount==='cross');
 export type Shaft={id:string;at:[number,number]};
 /** `part`: a LEGO gear by id; without one a printed spur gear of `module`. */
-export type Wheel={id:string;shaft:string;z:number;teeth:number;module:number;width:number;part?:string};
+export type Wheel={id:string;shaft:string;z:number;teeth:number;module:number;width:number;part?:string;/** The group it sits in. */group?:string};
 /** `input`, `output`: shafts. `drive`: what turns the input. `grid`: mm steps of a wheel standing alone, `angle`: degree
  * steps of a wheel around the one it meshes with (0: free). `target`: a meshing wheel's shaft lands only on points of the
  * mm grid where the mesh distance is exact. */

@@ -15,6 +15,7 @@ import {partSeats,newBuild,newItem} from './parts/build';
 import {partById} from './parts/catalog';
 import type {Seat} from './kinematics/bearings';
 import {ProjectStore} from './project-store';
+import {BlockStore} from './block-store';
 import type {ProjectView} from './project-store';
 import {renderStock} from './studio-catalog';
 import {defaultCatalog} from './graph/catalog';
@@ -41,7 +42,7 @@ const phaseNames:Record<Phase,string>={1:'① Aufbauen',2:'② Bewegen',3:'③ F
 // ---------- the open project file ----------
 // Read before anything else is set up, so the first drawing already shows it. The old single save slot moves into a
 // first project once.
-const store=await ProjectStore.open();
+const store=await ProjectStore.open(),blocks=await BlockStore.open();
 let firstRun=false,doc=fresh(),loadError='',project={id:'',name:'',readOnly:false},openView:ProjectView|undefined;
 const newProjectId=()=>'p-'+crypto.randomUUID().slice(0,8);
 {const list=await store.list(),wanted=await store.active().catch(()=>undefined),id=list.find(p=>p.id===wanted)?.id??list[0]?.id;let ready=false;
@@ -69,13 +70,17 @@ const mech:MechanismEditor=new MechanismEditor({doc:()=>doc,change:(edit,message
 const build:BuildEditor=new BuildEditor({doc:()=>doc,change:(edit,message)=>change(edit,message),status:text=>{status.textContent=text;},leave:()=>{motion.close();draw();},fit:()=>fit(),canvas:()=>renderer.domElement,ray:e=>hits(e as MouseEvent),orbit:on=>{orbit.enabled=on;},
  frames:()=>mech.active?mech.framesNow():{},surface:ray=>mech.active?mech.surfaceAt(ray):undefined,model:()=>mech.active?mech.clashContext():undefined,range:()=>mech.posesOverRange(),
  grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.buildGizmo)transform.detach();},dragging:()=>transform.dragging,
+ mode:()=>transform.mode==='rotate'?'rotate':'translate',blocks:()=>blocks.all,saveBlock:async x=>{await blocks.add(x);},removeBlock:async id=>{await blocks.remove(id);},
  adopt:(d,consume)=>void adoptModel(()=>mech.addDemo(d,consume?x=>{for(const b of x.builds??[])if(!b.mechanism)delete b.train;}:undefined),2),phase:()=>phase,loadModel:()=>modelFile.click()});
 mechRoot.add(mech.view.group,mech.handles,motion.view.group,build.group);
 // The gizmo on a handle: mode, steps (Alt held: none) and axes as the handle asks.
 let steps:{step:number;angle:number}={step:0,angle:0},free=false;
 function snaps(){transform.setTranslationSnap(!free&&steps.step?steps.step:null);transform.setRotationSnap(!free&&steps.angle?steps.angle*Math.PI/180:null);}
-function grip(o:THREE.Object3D,options:GripOptions){setMode(options.mode);transform.setSpace(options.space);steps={step:options.step,angle:options.angle};snaps();if(transform.object!==o)transform.attach(o);}
-function setMode(mode:'translate'|'rotate'){transform.setMode(mode);for(const [id,m] of [['move','translate'],['rotate','rotate']])$(id).setAttribute('aria-pressed',String(mode===m));}
+let gripAxis:GripOptions['rotateAxis'];
+/** A handle that turns about one axis shows only that ring. */
+function showAxes(){const only=transform.mode==='rotate'?gripAxis:undefined;transform.showX=!only||only==='X';transform.showY=!only||only==='Y';transform.showZ=!only||only==='Z';}
+function grip(o:THREE.Object3D,options:GripOptions){gripAxis=options.rotateAxis;setMode(options.mode);transform.setSpace(options.space);steps={step:options.step,angle:options.angle};snaps();if(transform.object!==o)transform.attach(o);}
+function setMode(mode:'translate'|'rotate'){transform.setMode(mode);showAxes();for(const [id,m] of [['move','translate'],['rotate','rotate']])$(id).setAttribute('aria-pressed',String(mode===m));}
 window.addEventListener('keydown',e=>{if(e.key==='Alt'&&!free){free=true;snaps();e.preventDefault();}});window.addEventListener('keyup',e=>{if(e.key==='Alt'){free=false;snaps();}});window.addEventListener('blur',()=>{free=false;snaps();});
 // Test and script entries: a point of the scene on the page; where the first part on a link stands; pick a model part.
 (window as unknown as {studioScreen:(p:[number,number,number])=>[number,number]}).studioScreen=p=>{mechRoot.updateMatrixWorld(true);const v=mechRoot.localToWorld(new THREE.Vector3(...p)).project(camera),r=renderer.domElement.getBoundingClientRect();return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];};
@@ -103,7 +108,7 @@ function finishDrag(cancel=false){if(!dragBefore)return;const before=dragBefore;
 transform.addEventListener('mouseUp',()=>finishDrag());
 function travelHistory(redo=false){finishDrag();motion.close();doc=redo?history.redo(doc):history.undo(doc);draw();status.textContent=redo?'Wiederhergestellt':'Rückgängig';}
 $('undo').onclick=()=>travelHistory();$('redo').onclick=()=>travelHistory(true);
-window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement||e.target instanceof HTMLSelectElement)return;if(current()&&!e.ctrlKey&&!e.metaKey&&build.key(e)){e.preventDefault();return;}if(e.key==='Escape'){finishDrag(true);return;}if((e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();travelHistory(e.shiftKey||e.key.toLowerCase()==='y');}});
+window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement||e.target instanceof HTMLSelectElement)return;if(current()&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='g'){e.preventDefault();build.groupSelection();return;}if(current()&&!e.ctrlKey&&!e.metaKey&&build.key(e)){e.preventDefault();return;}if(e.key==='Escape'){finishDrag(true);return;}if((e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();travelHistory(e.shiftKey||e.key.toLowerCase()==='y');}});
 
 // ---------- scenes and phases ----------
 /** What a project can show: its mechanisms, and builds and gear trains that stand alone. */

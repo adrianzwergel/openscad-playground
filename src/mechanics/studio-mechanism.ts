@@ -35,7 +35,7 @@ import type {MotionSolution} from './kinematics-view';
 
 type Item='mechanism'|'model'|'axis-new'|'drive-new'|'bearings'|'structure'|`drive:${string}`|'parameters'|'io'|`body:${string}`|`joint:${string}`|`pattern:${number}`|`element:${string}`|`contact:${string}`;
 /** How the 3D view's move/turn gizmo sits on a handle: steps in mm and degrees (0: free), axes along the handle. */
-export type GripOptions={mode:'translate'|'rotate';step:number;angle:number;space:'local'|'world'};
+export type GripOptions={mode:'translate'|'rotate';step:number;angle:number;space:'local'|'world';/** Turning only about this axis of the handle. */rotateAxis?:'X'|'Y'|'Z'};
 /** `grip`: attaches the gizmo to a handle (undefined: takes it off a motor handle); `dragging`: the gizmo is held;
  * `free`: steps and grid are off (Alt held). */
 export type EditorHost={/** Takes the properties panel over (a part from the store is selected). */sideProperties?:()=>boolean;/** Something outside the mechanism (a part) is selected: no page of it is marked. */selectedElsewhere?:()=>boolean;/** A page of the mechanism was chosen: nothing from the store stays selected. */deselect?:()=>void;/** Seats of what else is mounted on the links. */extraSeats?:()=>Seat[];doc:()=>StudioDocument;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;fit:()=>void;grip:(o:THREE.Object3D|undefined,options?:GripOptions)=>void;dragging:()=>boolean;free:()=>boolean};

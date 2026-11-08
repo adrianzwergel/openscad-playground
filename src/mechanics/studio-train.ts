@@ -7,6 +7,7 @@ import {legoParts} from './graph/lego-parts';
 import {legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
 import type {Train,Wheel} from './parts/train';
 import type {Build} from './parts/build';
+import {joinShaft} from './parts/groups';
 import {planetGearbox,along} from './demos';
 import type {Demo} from './demos';
 import {driveCatalog} from './kinematics/drive';
@@ -20,7 +21,7 @@ const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unkno
 const heading=(text:string)=>el('h2',{textContent:text});
 const shapes=new Map<string,Promise<THREE.BufferGeometry>>();
 function modelOf(id:string){let g=shapes.get(id);if(!g){g=new STLLoader().loadAsync(`./mechanics-assets/ldraw/meshes/${id}.stl`).then(x=>{x.computeVertexNormals();return x;});shapes.set(id,g);}return g;}
-const label=(w:Wheel)=>`${w.part?'LEGO':'Gedruckt'} z${w.teeth}${w.part?'':` m${w.module}`}`;
+export const label=(w:Wheel)=>`${w.part?'LEGO':'Gedruckt'} z${w.teeth}${w.part?'':` m${w.module}`}`;
 const deg=(a:number)=>`${Math.round(a*10)/10}°`.replace('.',',');
 /** The two grids: mm for a wheel standing alone, degrees around the wheel it meshes with. */
 const gridOf=(t:Train|undefined)=>({mm:t?.grid??1,angle:t?.angle??DEFAULT_ANGLE,target:!!t?.target&&(t?.grid??1)>0});
@@ -38,18 +39,18 @@ export class TrainEditor{
  reset(){this.selected=undefined;this.drag=undefined;}
  /** The train as seen while dragging. */
  private shown():Train|undefined{const d=this.drag,t=this.train()??(d?.over?newTrain():undefined);if(!t||!d?.over)return t;const id=d.shaft??d.wheel.shaft,shafts=t.shafts.some(s=>s.id===id)?t.shafts.map(s=>s.id===id&&!d.shaft?{...s,at:d.at}:s):[...t.shafts,{id,at:d.at}];return {...t,shafts,wheels:[...t.wheels.filter(w=>w.id!==d.wheel.id),{...d.wheel,shaft:id}]};}
- draw(group:THREE.Group){
-  const t=this.shown();if(!t)return;const bad=new Set(trainIssues(t).flatMap(x=>x.wheels)),on=new Set(meshes(t).flat().map(w=>w.id));
+ draw(group:THREE.Group,lit:ReadonlySet<string>=new Set(),override?:Train){
+  const t=override??this.shown();if(!t)return;const bad=new Set(trainIssues(t).flatMap(x=>x.wheels)),on=new Set(meshes(t).flat().map(w=>w.id));
   for(const s of t.shafts){const list=t.wheels.filter(w=>w.shaft===s.id);if(!list.length)continue;const lo=Math.min(...list.map(w=>w.z-w.width/2))-8,hi=Math.max(...list.map(w=>w.z+w.width/2))+8,color=s.id===t.input?0x63cbb3:s.id===t.output?0xffb347:0xc9d4db,m=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.4,hi-lo,16),new THREE.MeshStandardMaterial({color,roughness:.5}));m.position.set(s.at[0],(lo+hi)/2,s.at[1]);m.userData.shaft=s.id;group.add(m);}
   for(const w of t.wheels){const s=t.shafts.find(x=>x.id===w.shaft)!,holder=new THREE.Group();holder.position.set(s.at[0],w.z,s.at[1]);holder.quaternion.set(...along.y);holder.userData.wheel=w.id;
-   const color=bad.has(w.id)?0xff5a55:w.id===this.selected?0xffffff:on.has(w.id)?0x8fb6d9:0xa9b4bd,material=new THREE.MeshStandardMaterial({color,roughness:.55}),geometry=w.part?this.loaded.get(w.part):undefined;
+   const color=bad.has(w.id)?0xff5a55:w.id===this.selected||lit.has(w.id)?0xffffff:on.has(w.id)?0x8fb6d9:0xa9b4bd,material=new THREE.MeshStandardMaterial({color,roughness:.55}),geometry=w.part?this.loaded.get(w.part):undefined;
    if(geometry){const m=new THREE.Mesh(geometry,material);m.userData.shared=true;holder.add(m);}
    else{const m=new THREE.Mesh(new THREE.CylinderGeometry(pitchOf(w),pitchOf(w),w.width,48).rotateX(Math.PI/2),material);holder.add(m);const rim=new THREE.Mesh(new THREE.RingGeometry(pitchOf(w),outerOf(w),48),new THREE.MeshBasicMaterial({color,side:THREE.DoubleSide,transparent:true,opacity:.6}));rim.position.z=w.width/2;holder.add(rim);
     if(w.part)void modelOf(w.part).then(g=>{this.loaded.set(w.part!,g);this.onChange();}).catch(()=>this.host.status(`LEGO-Modell fehlt: ${w.part}`));}
    group.add(holder);}
  }
- private point(e:{clientX:number;clientY:number}):[number,number]|undefined{const root=this.host.root();root.updateWorldMatrix(true,false);const r=this.host.ray(e).ray.clone().applyMatrix4(root.matrixWorld.clone().invert()),hit=r.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),new THREE.Vector3());return hit?[hit.x,hit.z]:undefined;}
- private wheelAt(ray:THREE.Raycaster,group:THREE.Group){group.updateWorldMatrix(true,true);let o:THREE.Object3D|null|undefined=ray.intersectObjects(group.children,true)[0]?.object;while(o&&!o.userData.wheel)o=o.parent;return o?.userData.wheel as string|undefined;}
+ point(e:{clientX:number;clientY:number}):[number,number]|undefined{const root=this.host.root();root.updateWorldMatrix(true,false);const r=this.host.ray(e).ray.clone().applyMatrix4(root.matrixWorld.clone().invert()),hit=r.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),new THREE.Vector3());return hit?[hit.x,hit.z]:undefined;}
+ wheelAt(ray:THREE.Raycaster,group:THREE.Group){group.updateWorldMatrix(true,true);let o:THREE.Object3D|null|undefined=ray.intersectObjects(group.children,true)[0]?.object;while(o&&!o.userData.wheel)o=o.parent;return o?.userData.wheel as string|undefined;}
  hover(ray:THREE.Raycaster,group:THREE.Group){return !!this.wheelAt(ray,group);}
  pointerDown(e:PointerEvent,ray:THREE.Raycaster,group:THREE.Group){
   const t=this.train(),id=this.wheelAt(ray,group),w=t?.wheels.find(x=>x.id===id);this.selected=id;this.host.leave();if(!t||!w)return;
@@ -71,15 +72,11 @@ export class TrainEditor{
   this.host.change(()=>{const x=this.host.ensure(),target=d.shaft??d.wheel.shaft;let wheel=x.wheels.find(w=>w.id===d.wheel.id);if(!wheel){wheel={...d.wheel,shaft:target};x.wheels.push(wheel);}const old=wheel.shaft;wheel.z=d.wheel.z;wheel.shaft=target;
    const s=x.shafts.find(y=>y.id===target);if(s){if(!d.shaft)s.at=d.at;}else x.shafts.push({id:target,at:d.at});
    if(old!==target&&!x.wheels.some(w=>w.shaft===old))x.shafts=x.shafts.filter(y=>y.id!==old);
-   x.input??=target;if(target!==x.input)x.output=x.output&&x.shafts.some(y=>y.id===x.output)?x.output:target;},d.shaft?`${label(d.wheel)} sitzt auf der Welle.`:`${label(d.wheel)} ${d.isNew?'platziert':'verschoben'}${partnerText(t,d)}.`);
+   const bb=this.host.build();if(bb)joinShaft(bb,wheel);x.input??=target;if(target!==x.input)x.output=x.output&&x.shafts.some(y=>y.id===x.output)?x.output:target;},d.shaft?`${label(d.wheel)} sitzt auf der Welle.`:`${label(d.wheel)} ${d.isNew?'platziert':'verschoben'}${partnerText(t,d)}.`);
  }
  key(e:KeyboardEvent){if(e.key==='Delete'&&this.selected){this.remove();return true;}return false;}
  private remove(){const id=this.selected!;this.selected=undefined;this.host.change(()=>{const x=this.train()!;x.wheels=x.wheels.filter(w=>w.id!==id);x.shafts=x.shafts.filter(s=>x.wheels.some(w=>w.shaft===s.id));if(!x.shafts.some(s=>s.id===x.input))delete x.input;if(!x.shafts.some(s=>s.id===x.output))delete x.output;},'Rad entfernt');}
 
- renderPlaced(root:HTMLElement){
-  const t=this.train();if(!t)return;
-  for(const w of t.wheels){const row=el('button',{textContent:`  ${label(w)}${w.shaft===t.input?' · Eingang':w.shaft===t.output?' · Ausgang':''}`,className:'tree-sub'});row.dataset.wheel=w.id;row.setAttribute('aria-selected',String(this.selected===w.id));row.onclick=()=>{this.host.pick();this.selected=w.id;this.host.leave();};root.append(el('div',{className:'tree-row'},row));}
- }
  /** The library of a train: gears, and the planetary stage as a block. */
  renderStore(root:HTMLElement){
   const g=gridOf(this.train()),grid=(text:string,key:'grid'|'angle',value:number,options:[number,string][])=>{const s=el('select');s.dataset.field=text;for(const [v,l] of options)s.add(new Option(l,String(v)));s.value=String(value);s.onchange=()=>this.host.change(()=>{this.host.ensure()[key]=Number(s.value);},`${text}: ${s.selectedOptions[0].text}`);return el('label',{},text,s);};

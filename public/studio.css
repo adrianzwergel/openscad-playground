@@ -139,3 +139,6 @@ ul.bom{margin:4px 0;padding-left:18px;color:#c8d6df;font-size:12px}
 details.store-group{margin-top:4px}details.store-group>summary{cursor:pointer;font-size:12px;color:#adbdc7;padding:3px 0}
 button.part-card{display:block;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit}button.part-card:disabled{opacity:.5;cursor:not-allowed}button.part-card:disabled:hover{border-color:#34434e}
 .part-store details>p.muted,details.store-group>p.muted{font-size:11px;margin:2px 0 4px}
+/* Groups: own blocks in the library carry a delete button; the tree hint stays small. */
+.block-card{position:relative;padding-right:28px}.block-card>button{position:absolute;right:4px;top:4px;padding:0 6px;min-height:0;font-size:12px}
+#tree .tree-hint{font-size:11px;margin:6px 0 0}

@@ -40,6 +40,22 @@ Beispiel, Zahnräder übernommen), hängt der Aufbau sich an ihn; ein leerer Auf
 Projekt einen Aufbau zum Hineinziehen. Das hält `unify` in `studio.ts` nach jeder Änderung und beim Öffnen ein.
 Übernommene Zahnräder werden der Mechanismus, im Aufbau bleiben sie nicht stehen.
 
+### Gruppen
+
+Strg-Klick in der Ansicht oder im Szenenbaum wählt mehrere Dinge, Strg+G (oder „Gruppieren“) macht daraus eine Gruppe.
+Gruppen sind gemischt (Räder, Teile, Platten) und dürfen in Gruppen stecken; im Baum sind sie Ordner. Eine Platte bringt die
+Teile auf ihr mit, ein Rad die Räder auf seiner Welle: eine Welle ist ein Stück.
+
+- **Fest:** Die Abstände bleiben. Ziehst du ein Rad oder Teil der Gruppe, kommt die ganze Gruppe mit; ein Rad rastet dabei
+  wie ein einzelnes an Räder außerhalb ein (Winkelraster, Zielraster). Gezogen wird die äußerste feste Gruppe.
+- **Frei:** Die Gruppe ordnet nur; jedes Stück bewegt sich einzeln.
+- **Griff:** Eine gewählte Gruppe trägt den Griff in ihrer Mitte. Drehen geht mit Rädern nur um die Wellenrichtung, sonst um
+  die Senkrechte.
+- **Bibliothek:** „In die Bibliothek legen“ (nur feste Gruppen) speichert sie unter „Eigene Bausteine“ für jedes Projekt
+  (OPFS `/bausteine`). Hineinziehen setzt sie auf den Boden unter dem Zeiger, ein Klick daneben.
+
+Die Logik steht in `parts/groups.ts` (geprüft von `scripts/parts/check-groups.mjs`), die Bedienung in `studio-build.ts`.
+
 ### Phasen
 
 Alle drei sind immer offen. Was eine Phase für das Projekt nicht hat, sagt der Szenenbaum.
