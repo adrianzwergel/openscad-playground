@@ -11,7 +11,11 @@ Antriebe übernommen. Die Expertenansicht ist aus dem Studio nicht mehr verlinkt
 
 - **＋ Neues Projekt:** leer. Ist das offene Projekt noch leer und trägt einen allgemeinen Namen, wird es genommen statt
   ein zweites anzulegen.
-- **Beispiele:** Roboterarm, CNC-Portal, Schlitten, Handgetriebe, zwei Planetengetriebe, Arduino Uno im Gehäuse und die
+- **Beispiele aus Bauteilen** (`parts/examples.ts`): Zahnstangen-Schlitten, Spindel-Lineareinheit, Riemenantrieb GT2,
+  Planetenstufe mit fester Sonne, Drehgeber auf der Welle, Schwenkarm. Sie sind aus denselben Wellen, Rädern, Teilen und
+  Verbindungen gebaut, die man von Hand setzt: alles darin lässt sich anklicken und ändern, Regler und ③ (Lager, Struktur)
+  gelten wie in jedem Projekt.
+- **Weitere Beispiele:** Roboterarm, CNC-Portal, Schlitten, Handgetriebe, zwei Planetengetriebe, Arduino Uno im Gehäuse und die
   Kinematik-Vorlagen. Jedes Beispiel wird ein eigenes Projekt.
 - **Deine Projekte:** öffnen. Umbenennen, Exportieren, Importieren und Löschen stehen im Menü `⋯`.
 

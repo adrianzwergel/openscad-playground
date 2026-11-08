@@ -13,6 +13,7 @@ import type {GripOptions} from './studio-mechanism';
 import {BuildEditor} from './studio-build';
 import {partSeats,newBuild,newItem} from './parts/build';
 import {deriveMechanism} from './parts/derive';
+import {buildExamples} from './parts/examples';
 import {placeMotor} from './kinematics/drive';
 import {partById} from './parts/catalog';
 import type {Seat} from './kinematics/bearings';
@@ -189,7 +190,7 @@ const projectEmpty=()=>!doc.mechanisms?.some(m=>!m.derived)&&(doc.builds??[]).ev
  * project. `here`: always the open one. */
 async function intoProject(label:string,here=false){if(!project.id||!here&&!projectEmpty()){await createProject(label);}else if(project.name!==label&&generic(project.name)){project.name=label;savedState='';}}
 async function adoptModel(make:()=>Promise<void>,p:Phase=1){followMechanism=true;await make();followMechanism=false;const s=scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);if(s)openScene(s,p);}
-async function startWith(label:string,content:(d:StudioDocument)=>Scene|Promise<Scene|void>|void,p:Phase=1){await intoProject(label);let made:Scene|void=undefined;const before=structuredClone(doc);try{made=await content(doc);doc=parseStudio(unify(doc));history.record(before,doc);}catch(e){doc=before;status.textContent=String(e);}const s=(made&&scenes().find(x=>keyOf(x)===keyOf(made as Scene)))??scenes().at(-1);if(s)openScene(s,p);else draw();void renderProjects();}
+async function startWith(label:string,content:(d:StudioDocument)=>Scene|Promise<Scene|void>|void,p:Phase=1){await intoProject(label);let made:Scene|void=undefined;const before=structuredClone(doc);try{made=await content(doc);doc=parseStudio(derive(unify(doc)));history.record(before,doc);}catch(e){doc=before;status.textContent=String(e);}const s=(made&&scenes().find(x=>keyOf(x)===keyOf(made as Scene)))??scenes().at(-1);if(s)openScene(s,p);else draw();void renderProjects();}
 const modelFile=el('input',{type:'file',accept:'.stl,.obj,.glb,.gltf',multiple:true,hidden:true});modelFile.id='model-file';document.body.append(modelFile);
 // Into the open project: the library offers it only while the project has no mechanism.
 modelFile.onchange=async()=>{const files=[...(modelFile.files??[])];modelFile.value='';if(!files.length)return;await intoProject(files[0].name.replace(/\.(stl|obj|glb|gltf)$/i,''),true);await adoptModel(()=>mech.importFiles(files),1);void renderProjects();};
@@ -203,6 +204,7 @@ function renderStart(){
    card('＋ Neues Projekt','Leer. Aus der Bibliothek holen, was das Gerät braucht.',{newProject:'true'},()=>void (async()=>{if(!projectEmpty()||!generic(project.name))await createProject('Neues Projekt');startOpen=false;const s=current();if(s)openScene(s,1);else draw();void renderProjects();})())),
   el('h2',{textContent:'Beispiele'}),el('p',{className:'muted',textContent:'Fertige Projekte zum Ansehen und Ändern: Jedes wird ein eigenes Projekt.'}),el('div',{className:'start-grid'},
    ...([['robot','Roboterarm','Drei Drehachsen mit NEMA-Motoren.'],['cnc','CNC-Portal','Drei Linearachsen mit Spindeln.'],['sled','Schlitten auf Wellenbahn','Ein Wagen auf einer gebogenen Bahn.'],['hand','Handgetriebe (LEGO)','z16 → z40 in Gleitlagern, von Hand gedreht.'],['planet','Planetengetriebe (LEGO)','Sonne z16, drei z40, Hohlrad gedruckt, 1 : 7.'],['planet16','Planetengetriebe 4 × LEGO z16','Hohlrad z48, 1 : 4.']] as const).map(([key,title,text])=>card(title,text,{demo:key},()=>void startWith(title,async()=>{followMechanism=true;await mech.addDemo(demos[key]());followMechanism=false;return scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);}))),
+   ...buildExamples.map(x=>card(x.title,x.text,{example:x.key},()=>void startWith(x.title,d=>{const s=partsOf(d);x.make(d.builds!.find(y=>y.id===s.id)!);return s;},1))),
    card('Arduino Uno im Gehäuse','Eine Platine auf einer Platte, das Gehäuse folgt aus ihren Steckern.',{example:'case'},()=>void startWith('Arduino Uno im Gehäuse',d=>{const s=partsOf(d),b=d.builds!.find(x=>x.id===s.id)!,plate=newBuild('','').plates[0];b.plates.push(plate);b.items.push({...newItem('uno',partById('arduinouno3')!,[0,0]),plate:plate.id});return s;},3)),
    ...Object.entries(templates).map(([key,t])=>card(t.label.replace(' (Vorlage)',''),'Kinematik-Beispiel: Körper, Gelenke und Kontakte.',{mechanismTemplate:key},()=>void startWith(t.label.replace(' (Vorlage)',''),d=>{const id='mech-'+crypto.randomUUID().slice(0,8),label=t.label.replace(' (Vorlage)','');d.mechanisms=[...(d.mechanisms??[]),{id,label,mechanism:t.build()}];return {kind:'mechanism',id,label};})))),
   el('h2',{textContent:'Deine Projekte'}));
