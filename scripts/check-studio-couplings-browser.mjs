@@ -32,5 +32,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  assert.equal(nut.free.body,`welle:${screw.id}`);assert.equal(nut.free.joint.kind,'mutter');
  const nb=await p.evaluate(k=>window.studioPart(k),`teil:${nut.id}`);await p.waitForSelector(`input[data-input="${screw.id}"]`);await slide(p,`input[data-input="${screw.id}"]`,720);await wait(400);const na=await p.evaluate(k=>window.studioPart(k),`teil:${nut.id}`);
  assert.ok(Math.abs(na[1]-nb[1]-16)<1e-3&&Math.abs(na[0]-nb[0])<1e-6,`Mutter wandert 16 mm: ${nb} → ${na}`);
- assert.deepEqual(errors,[]);console.log('Studio Kopplungen: Zahnstange am z16 (50,3 mm/U), Teil darauf fährt −4π mm, Spindel als Eingang, Mutter wandert 16 mm in zwei Umdrehungen.');
+ // ③: the rack and the nut are guided on rods with linear bearings, the lead screw borne.
+ await p.click('#phases [data-phase="3"]');await p.waitForSelector('[data-derived="bearings"]',{timeout:20000});await p.click('[data-derived="bearings"]');await p.waitForFunction(()=>/LM8UU/.test(document.getElementById('properties').textContent),{timeout:30000});
+ assert.deepEqual(errors,[]);console.log('Studio Kopplungen: Zahnstange am z16 (50,3 mm/U), Teil darauf fährt −4π mm, Spindel als Eingang, Mutter wandert 16 mm in zwei Umdrehungen, in ③ mit Linearlagern geführt.');
 }finally{await browser.close();await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}

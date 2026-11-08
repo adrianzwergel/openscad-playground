@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {legoParts} from './graph/lego-parts';
-import {inputsOf,outputsOf,setEnds,motion,trainNotes,nodeOf,rackMeshes,rackBody,legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
+import {inputsOf,outputsOf,setEnds,motion,trainNotes,nodeOf,rackMeshes,rackBody,beltLength,legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
 import type {Train,Wheel,Rack,Shaft} from './parts/train';
 import type {Build} from './parts/build';
 import {joinShaft} from './parts/groups';
@@ -24,7 +24,7 @@ const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unkno
 const heading=(text:string)=>el('h2',{textContent:text});
 const shapes=new Map<string,Promise<THREE.BufferGeometry>>();
 function modelOf(id:string){let g=shapes.get(id);if(!g){g=new STLLoader().loadAsync(`./mechanics-assets/ldraw/meshes/${id}.stl`).then(x=>{x.computeVertexNormals();return x;});shapes.set(id,g);}return g;}
-export const label=(w:Wheel)=>`${w.part?'LEGO':'Gedruckt'} z${w.teeth}${w.part?'':` m${w.module}`}`;
+export const label=(w:Wheel)=>w.pulley?`GT2 z${w.teeth}`:`${w.part?'LEGO':'Gedruckt'} z${w.teeth}${w.part?'':` m${w.module}`}`;
 const deg=(a:number)=>`${Math.round(a*10)/10}°`.replace('.',',');
 /** The two grids: mm for a wheel standing alone, degrees around the wheel it meshes with. */
 const gridOf=(t:Train|undefined)=>({mm:t?.grid??1,angle:t?.angle??DEFAULT_ANGLE,target:!!t?.target&&(t?.grid??1)>0});
@@ -60,11 +60,16 @@ export class TrainEditor{
   this.bars.clear();
   for(const s of t.shafts){const list=t.wheels.filter(w=>w.shaft===s.id),screw=s.kind==='spindel';if(!list.length&&!screw)continue;const lo=list.length?Math.min(...list.map(w=>w.z-w.width/2))-8:(s.z??0)-(s.length??200)/2,hi=list.length?Math.max(...list.map(w=>w.z+w.width/2))+8:(s.z??0)+(s.length??200)/2,color=inputsOf(t).some(i=>i.shaft===s.id)?0x63cbb3:outputsOf(t).includes(s.id)?0xffb347:screw?0xc8a24a:0xc9d4db,r=screw?(s.d??8)/2:2.4,m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,hi-lo,16),new THREE.MeshStandardMaterial({color,roughness:.5}));m.position.set(s.at[0],(lo+hi)/2,s.at[1]);m.userData.shaft=s.id;group.add(m);}
   for(const w of t.wheels){const s=t.shafts.find(x=>x.id===w.shaft)!,holder=new THREE.Group();holder.position.set(s.at[0],w.z,s.at[1]);holder.quaternion.set(...along.y);holder.userData.wheel=w.id;const spin=new THREE.Group();holder.add(spin);this.spins.set(w.id,spin);
-   const color=bad.has(w.id)?0xff5a55:w.id===this.selected||lit.has(w.id)?0xffffff:on.has(w.id)?0x8fb6d9:0xa9b4bd,material=new THREE.MeshStandardMaterial({color,roughness:.55}),geometry=w.part?this.loaded.get(w.part):undefined;
-   if(geometry){const m=new THREE.Mesh(geometry,material);m.userData.shared=true;spin.add(m);}
+   const color=bad.has(w.id)?0xff5a55:w.id===this.selected||lit.has(w.id)?0xffffff:w.pulley?0xd9a066:on.has(w.id)?0x8fb6d9:0xa9b4bd,material=new THREE.MeshStandardMaterial({color,roughness:.55}),geometry=w.part?this.loaded.get(w.part):undefined;
+   if(w.pulley){const r=pitchOf(w),hub=new THREE.Mesh(new THREE.CylinderGeometry(r,r,w.width,40).rotateX(Math.PI/2),material);spin.add(hub);for(const z of [-1,1]){const flange=new THREE.Mesh(new THREE.CylinderGeometry(r+1.5,r+1.5,1,40).rotateX(Math.PI/2),material);flange.position.z=z*(w.width/2+.5);spin.add(flange);}const mark=new THREE.Mesh(new THREE.BoxGeometry(r*.9,1.2,w.width+2.2),new THREE.MeshBasicMaterial({color:0x553311}));mark.position.x=r*.45;spin.add(mark);}
+   else if(geometry){const m=new THREE.Mesh(geometry,material);m.userData.shared=true;spin.add(m);}
    else{const m=new THREE.Mesh(new THREE.CylinderGeometry(pitchOf(w),pitchOf(w),w.width,48).rotateX(Math.PI/2),material);spin.add(m);const rim=new THREE.Mesh(new THREE.RingGeometry(pitchOf(w),outerOf(w),48),new THREE.MeshBasicMaterial({color,side:THREE.DoubleSide,transparent:true,opacity:.6}));rim.position.z=w.width/2;spin.add(rim);
     if(w.part)void modelOf(w.part).then(g=>{this.loaded.set(w.part!,g);this.onChange();}).catch(()=>this.host.status(`LEGO-Modell fehlt: ${w.part}`));}
    group.add(holder);}
+  // Belts: the loop round both pulleys, the straight runs on their outer tangents.
+  for(const belt of t.belts??[]){const a=t.wheels.find(w=>w.id===belt.a),b=t.wheels.find(w=>w.id===belt.b);if(!a||!b||a.shaft===b.shaft)continue;const ca=t.shafts.find(s=>s.id===a.shaft)!.at,cb=t.shafts.find(s=>s.id===b.shaft)!.at,ra=pitchOf(a),rb=pitchOf(b),d=Math.hypot(cb[0]-ca[0],cb[1]-ca[1]);if(d<=Math.abs(ra-rb))continue;
+   const th=Math.atan2(cb[1]-ca[1],cb[0]-ca[0]),be=Math.acos((ra-rb)/d),pts:THREE.Vector3[]=[],arc=(c:[number,number],r:number,from:number,to:number)=>{for(let k=0;k<=24;k++){const u=from+(to-from)*k/24;pts.push(new THREE.Vector3(c[0]+r*Math.cos(u),(a.z+b.z)/2,c[1]+r*Math.sin(u)));}};
+   arc(ca,ra,th+be,th+2*Math.PI-be);arc(cb,rb,th-be,th+be);const line=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x222222}));line.userData.belt=belt.id;group.add(line);}
   // Racks: a bar whose teeth lie on the pitch line, its back away from the wheel in it.
   const into=rackMeshes(t);for(const r of t.racks??[]){const m=into.find(x=>x.rack.id===r.id),s=m?t.shafts.find(x=>x.id===m.wheel.shaft):undefined,across=r.dir==='x'?1:0,side=s&&s.at[across]>r.at[across]?-1:1,thick=2.25*r.module+4,off=side*(thick/2-r.module);
    const bar=new THREE.Group();bar.userData.rack=r.id;const color=r.id===this.rackSel||lit.has(r.id)?0xffffff:m?0x9fd6a8:0xa9b4bd,material=new THREE.MeshStandardMaterial({color,roughness:.55}),size:[number,number,number]=r.dir==='x'?[r.length,r.width,thick]:[thick,r.width,r.length],box=new THREE.Mesh(new THREE.BoxGeometry(...size),material);box.position.set(r.dir==='x'?0:off,0,r.dir==='x'?off:0);bar.add(box);
@@ -125,7 +130,7 @@ export class TrainEditor{
    if(!ins.length)ins=[{shaft:target,drive:driveFor(wheel)}];else if(!outs.length&&!ins.some(i=>i.shaft===target))outs=[target];setEnds(x,ins,outs);},d.shaft?`${label(d.wheel)} sitzt auf der Welle.`:`${label(d.wheel)} ${d.isNew?'platziert':'verschoben'}${partnerText(t,d)}.`);
  }
  key(e:KeyboardEvent){if(e.key==='Delete'&&this.selected){this.remove();return true;}return false;}
- private remove(){const id=this.selected!;this.selected=undefined;this.host.change(()=>{const x=this.train()!;x.wheels=x.wheels.filter(w=>w.id!==id);x.shafts=x.shafts.filter(s=>s.kind==='spindel'||x.wheels.some(w=>w.shaft===s.id));const known=(s:string)=>x.shafts.some(y=>y.id===s);setEnds(x,inputsOf(x).filter(i=>known(i.shaft)),outputsOf(x).filter(known));},'Rad entfernt');}
+ private remove(){const id=this.selected!;this.selected=undefined;this.host.change(()=>{const x=this.train()!;x.wheels=x.wheels.filter(w=>w.id!==id);if(x.belts){x.belts=x.belts.filter(g=>g.a!==id&&g.b!==id);if(!x.belts.length)delete x.belts;}x.shafts=x.shafts.filter(s=>s.kind==='spindel'||x.wheels.some(w=>w.shaft===s.id));const known=(s:string)=>x.shafts.some(y=>y.id===s);setEnds(x,inputsOf(x).filter(i=>known(i.shaft)),outputsOf(x).filter(known));},'Rad entfernt');}
 
  /** The library of a train: gears, and the planetary stage as a block. */
  renderStore(root:HTMLElement){
@@ -137,6 +142,7 @@ export class TrainEditor{
   const printed=el('div',{className:'part-card',title:'Zähne und Modul rechts einstellen.'},el('strong',{textContent:'Gedrucktes Stirnrad'}),el('small',{textContent:'Zähne, Modul und Breite einstellbar'}));printed.dataset.gear='gedruckt';printed.onpointerdown=e=>{e.preventDefault();this.startNew({teeth:20,module:1.5,width:10},e);};list.append(printed);root.append(list);
   const rack=el('div',{className:'part-card',title:'An ein Zahnrad ziehen: Sie legt sich an seinen Teilkreis und schiebt, wenn es dreht.'},el('strong',{textContent:'Zahnstange (gedruckt)'}),el('small',{textContent:'Modul wie das Rad, Länge einstellbar · Drehen → Schieben'}));rack.dataset.rack='neu';rack.onpointerdown=e=>{e.preventDefault();this.startPiece('rack',e);};
   const screw=el('div',{className:'part-card',title:'In die Ansicht ziehen; eine Spindelmutter darauf ziehen, sie wandert mit.'},el('strong',{textContent:'Gewindespindel TR8'}),el('small',{textContent:'8 mm Steigung je Umdrehung · Drehen → Schieben'}));screw.dataset.spindle='neu';screw.onpointerdown=e=>{e.preventDefault();this.startPiece('spindle',e);};
+  for(const z of [16,20,40]){const p=el('div',{className:'part-card',title:'Zwei Scheiben auf verschiedene Wellen, dann bei einer „Riemen zu …“ wählen.'},el('strong',{textContent:`GT2-Riemenscheibe z${z}`}),el('small',{textContent:`Teilkreis Ø ${(2*z/Math.PI).toFixed(1).replace('.',',')} mm · 6 mm Riemen`}));p.dataset.gear=`gt2-${z}`;p.onpointerdown=e=>{e.preventDefault();this.startNew({teeth:z,module:1,width:6,pulley:true},e);};list.append(p);}
   list.append(rack,screw);
   root.append(el('div',{className:'tree-group',textContent:'Bausteine'}));
   const choice=(text:string,value:string,write:(v:string)=>void)=>{const s=el('select');s.dataset.planet=text;for(const p of legoGears)s.add(new Option(`LEGO z${p.teeth}`,p.id));s.value=value;s.onchange=()=>{write(s.value);this.host.leave();};return el('label',{},text,s);};
@@ -187,7 +193,11 @@ export class TrainEditor{
    // The angle around a neighbour; in a rigid group only around one outside it.
    const pair=shaftMode?undefined:meshes(t).find(p=>p.some(x=>x.id===w.id)&&(!unit||p.some(x=>!unit.wheels.has(x.id)))),near=pair?partnerOf({...t,wheels:t.wheels.filter(x=>pair.includes(x))},w):undefined;
    if(near){const step=gridOf(t).angle;root.append(number(`Winkel am ${label(near.wheel)} [°]`,near.angle,n=>{const at=around(near.centre,near.distance,((n%360)+360)%360);if(unit)move([at[0]-s.at[0],0,at[1]-s.at[1]],'um das Rad außerhalb gedreht');else shaft(a=>{a[0]=at[0];a[1]=at[1];});},String(step||1)),el('p',{className:'muted',textContent:unit?'Setzt die ganze Gruppe so, dass dieses Rad unter dem Winkel am Rad außerhalb kämmt. 0° waagerecht, 90° darüber.':'Dreht die Welle um das Nachbarrad, der Achsabstand bleibt. 0° waagerecht, 90° darüber.'}));}
-   if(shaftMode)void 0;else if(!w.part&&unit)root.append(el('p',{className:'muted',textContent:`Zähne z${w.teeth}, Modul ${w.module}, ${w.width} mm breit: in der festen Gruppe gesperrt, weil sie den Achsabstand ändern. Zum Ändern die Gruppe auf „frei“ stellen.`}));
+   if(!shaftMode&&w.pulley){root.append(number('Zähne',w.teeth,n=>wheel('Zähne geändert',y=>{y.teeth=Math.max(10,Math.round(n));}),'1'));
+    const mates=t.wheels.filter(x=>x.pulley&&x.shaft!==w.shaft),belt=(t.belts??[]).find(g=>g.a===w.id||g.b===w.id),other=belt?(belt.a===w.id?belt.b:belt.a):'',to=el('select');to.dataset.field='Riemen zu';to.add(new Option('kein Riemen',''));for(const x of mates)to.add(new Option(`${label(x)} (Welle bei ${Math.round(t.shafts.find(s=>s.id===x.shaft)!.at[0])} / ${Math.round(t.shafts.find(s=>s.id===x.shaft)!.at[1])})`,x.id));to.value=other;
+    to.onchange=()=>set(to.value?'Riemen gelegt':'Riemen entfernt',x=>{x.belts=(x.belts??[]).filter(g=>g.a!==w.id&&g.b!==w.id);if(to.value)x.belts.push({id:'riemen-'+crypto.randomUUID().slice(0,8),a:w.id,b:to.value});if(!x.belts.length)delete x.belts;});root.append(el('label',{},'Riemen zu',to));
+    if(belt){const L=beltLength(t,belt);if(L)root.append(el('p',{id:'belt-length',className:'muted',textContent:`Riemen GT2 6 mm: ${L.length.toFixed(1).replace('.',',')} mm lang${L.stock?` · nächste Standardlänge ${L.stock} mm${Math.abs(L.stock-L.length)>.5?' (Achsabstand anpassen oder Spanner)':''}`:''}.`}));}}
+   else if(shaftMode)void 0;else if(!w.part&&unit)root.append(el('p',{className:'muted',textContent:`Zähne z${w.teeth}, Modul ${w.module}, ${w.width} mm breit: in der festen Gruppe gesperrt, weil sie den Achsabstand ändern. Zum Ändern die Gruppe auf „frei“ stellen.`}));
    else if(!w.part)root.append(number('Zähne',w.teeth,n=>wheel('Zähne geändert',y=>{y.teeth=Math.max(6,Math.round(n));}),'1'),number('Modul',w.module,n=>wheel('Modul geändert',y=>{y.module=Math.max(.3,n);}),'0.25'),number('Breite [mm]',w.width,n=>wheel('Breite geändert',y=>{y.width=Math.max(1,n);})));
    // Ends of the shaft: several inputs and outputs in a train; a shaft is one or the other.
    const isIn=ins.find(i=>i.shaft===s.id),isOut=outs.includes(s.id),ends=(message:string,fn:(i:typeof ins,o:string[])=>[typeof ins,string[]])=>set(message,x=>{const [i,o]=fn(inputsOf(x),outputsOf(x));setEnds(x,i,o);});

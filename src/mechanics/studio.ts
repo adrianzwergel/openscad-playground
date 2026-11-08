@@ -118,7 +118,8 @@ window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e
  * bearings and structures in ③ work on it. It is no scene, the gears stay where they are made. */
 function derive(d:StudioDocument){
  const real=(d.mechanisms??[]).filter(m=>!m.derived),lone=(d.builds??[]).find(b=>!b.mechanism),t=lone?.train,old=(d.mechanisms??[]).find(m=>m.derived);let next:typeof old;
- if(!real.length&&lone&&t?.wheels.length&&!trainIssues(t).length)try{const made=trainMechanism(t,'Getriebe',false,`abgeleitet-${lone.id}`);mech.useAsset(made.asset);for(const x of made.drives)placeMotor(made.mechanism,x);
+ const nuts=(lone?.items??[]).filter(i=>i.free?.joint?.kind==='mutter'&&i.free.body?.startsWith('welle:')).map(i=>({id:i.id,shaft:i.free!.body!.slice(6),along:i.free!.frame.position[1],lead:i.free!.joint!.lead??8,min:i.free!.joint!.min,max:i.free!.joint!.max}));
+ if(!real.length&&lone&&t&&(t.wheels.length||t.shafts.some(s=>s.kind==='spindel'))&&!trainIssues(t).length)try{const made=trainMechanism(t,'Getriebe',false,`abgeleitet-${lone.id}`,nuts);mech.useAsset(made.asset);for(const x of made.drives)placeMotor(made.mechanism,x);
   next={id:`getriebe-${lone.id}`,label:'Getriebe',derived:lone.id,mechanism:made.mechanism,drives:made.drives,...(old?.fabrication??made.fabrication?{fabrication:old?.fabrication??made.fabrication}:{})};}catch{/* not a mechanism yet: ③ says why */}
  d.mechanisms=[...real,...(next?[next]:[])];if(!d.mechanisms.length)delete d.mechanisms;return d;}
 const derivedId=()=>doc.mechanisms?.find(m=>m.derived)?.id;

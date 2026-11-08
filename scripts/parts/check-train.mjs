@@ -1,7 +1,7 @@
 // Gear trains built by hand: what meshes, the ratio, snapping, what is refused; the compiled mechanism turns at the
 // ratio, closes, gets its bearings and its structures like the gearbox demos.
 import assert from 'node:assert/strict';
-import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,trainMechanism,trainNotes,motion,shaftFrames,rackMeshes,rackBody,legoGears,parseTrain,gridPoints} from '../../src/mechanics/parts/train.ts';
+import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,trainMechanism,trainNotes,motion,shaftFrames,rackMeshes,rackBody,beltLength,legoGears,parseTrain,gridPoints} from '../../src/mechanics/parts/train.ts';
 import {solve} from '../../src/mechanics/kinematics/solver.ts';
 import {heldTrains} from '../../src/mechanics/kinematics/drive.ts';
 import {planBearings,applyBearings} from '../../src/mechanics/kinematics/bearings.ts';
@@ -51,6 +51,18 @@ for(const [name,x,ratio] of [['einstufig',t,2.5],['zweistufig',two,6.25],['Zwisc
 {const r=newTrain();r.shafts.push({id:'a',at:[0,0]},{id:'b',at:[40,-16]});r.wheels.push(wheel('p1','a',16),wheel('p2','b',16));r.racks=[{id:'z',at:[0,-8],dir:'x',z:0,length:120,module:1,width:8,min:-50,max:50}];r.inputs=[{shaft:'a',drive:'lego-achse'}];r.outputs=['b'];
  assert.equal(rackMeshes(r).length,2);const m=motion(r,{a:90});assert.ok(Math.abs(m.angle.get(rackBody('z'))+4*Math.PI)<1e-9,'Zahnstange schiebt');assert.ok(Math.abs(m.angle.get('b')+90)<1e-9,'Ritzel gegenüber gegenläufig');
  assert.ok(Math.abs(shaftFrames(r,{a:90})[rackBody('z')].position[0]+4*Math.PI)<1e-9);assert.equal(shaftFrames(r,{a:3600})[rackBody('z')].position[0],-50,'am Anschlag');assert.equal(parseTrain(JSON.parse(JSON.stringify(r))).racks.length,1);}
+// A GT2 belt z20 → z40 at 100 mm: 1 : 2 the same way; 260,4 mm long, the next loop is 280 mm; it closes in the derived mechanism.
+{const r=newTrain();r.shafts.push({id:'a',at:[0,0]},{id:'b',at:[100,0]});r.wheels.push({id:'p1',shaft:'a',z:0,teeth:20,module:1,width:6,pulley:true},{id:'p2',shaft:'b',z:0,teeth:40,module:1,width:6,pulley:true});r.belts=[{id:'g',a:'p1',b:'p2'}];r.inputs=[{shaft:'a',drive:'nema17'}];r.outputs=['b'];
+ assert.deepEqual(meshes(r),[],'Scheiben kämmen nicht');assert.deepEqual(trainIssues(r),[]);assert.equal(ratioOf(r),2);const L=beltLength(r,r.belts[0]);assert.ok(Math.abs(L.length-(260+(20/Math.PI)**2/100))<1e-9);assert.equal(L.stock,280);
+ const d=trainMechanism(r,'Riemen',false,'test-riemen'),m=d.mechanism;assert.equal(m.contacts.filter(c=>c.kind==='belt').length,1);for(const v of [0,90]){const h=await solve({...structuredClone(m),range:{from:v,to:v,samples:1}},{yield:false,fixed:heldTrains(d.drives,{Abtrieb:v})});assert.ok(h.checks.every(c=>c.state!=='fail'),h.checks.map(c=>c.message).join(' | '));}
+ const plan=planBearings(m,d.drives,id=>id===d.asset.id?d.asset:undefined,{});assert.ok(plan.lines.every(l=>l.state==='pass'),plan.lines.map(l=>l.message).join(' | '));console.log(`Riemen: 1 : 2, ${L.length.toFixed(1)} mm → ${L.stock} mm, ${plan.seats.length} Sitze`);
+ const skew=structuredClone(r);skew.wheels[1].z=20;assert.ok(trainIssues(skew).some(x=>/schräg/.test(x.message)));}
+// Derived for ③: a lead screw with its nut, and a pinion with its rack: carriages on prismatic joints with linear bearings.
+for(const [name,train,nuts,axis] of [['Spindel',(()=>{const r=newTrain();r.shafts.push({id:'s',at:[0,40],kind:'spindel',lead:8,d:8,length:200,z:0});r.inputs=[{shaft:'s',drive:'nema17'}];return r;})(),[{id:'m',shaft:'s',along:0,lead:8,min:-80,max:80}],'Abtrieb'],
+ ['Zahnstange',(()=>{const r=newTrain();r.shafts.push({id:'a',at:[0,0]});r.wheels.push(wheel('p1','a',16));r.racks=[{id:'z',at:[0,-8],dir:'x',z:0,length:120,module:1,width:8,min:-40,max:40}];r.inputs=[{shaft:'a',drive:'lego-achse'}];return r;})(),[],'Abtrieb']]){
+ const d=trainMechanism(train,name,false,'test-'+name,nuts),m=d.mechanism;assert.ok(m.joints.some(j=>j.joint.kind==='prismatic'),name+': Schiebegelenk');
+ for(const v of [0,360]){const h=await solve({...structuredClone(m),range:{from:v,to:v,samples:1}},{yield:false,fixed:heldTrains(d.drives,{[axis]:v})});assert.deepEqual(h.checks.filter(c=>c.state==='fail').map(c=>c.message),[],`${name} bei ${v}°`);}
+ const plan=planBearings(m,d.drives,id=>id===d.asset.id?d.asset:undefined,d.fabrication?.bearings??{});assert.ok(plan.seats.some(s=>s.kind==='linear'),name+': Linearlager '+plan.seats.map(s=>s.kind).join(','));console.log(`${name}: ${plan.seats.length} Sitze (${[...new Set(plan.seats.map(s=>s.kind))].join(', ')})`);}
 // Derived live: two inputs, two chains, two drives; the shafts stay where the Studio shows them; it closes and is borne.
 const dual=structuredClone(t);dual.shafts.push({id:'c',at:[0,80]},{id:'d',at:[28,80]});dual.wheels.push(wheel('w7','c',16),wheel('w8','d',40));dual.inputs=[{shaft:'a',drive:'lego-achse'},{shaft:'c',drive:'lego-achse'}];dual.outputs=['b','d'];delete dual.input;delete dual.output;
 {const d=trainMechanism(dual,'Zwei',false,'test-zwei'),m=d.mechanism;assert.deepEqual(d.drives.map(x=>x.axis),['Abtrieb-1','Abtrieb-2']);assert.deepEqual(m.bodies.find(x=>x.id==='Abtrieb-2').frame.position,[28,0,80]);

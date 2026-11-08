@@ -58,6 +58,12 @@ Mates in Onshape. Logik: `parts/links.ts`, `parts/train.ts`; geprüft von `scrip
   **Spindelmutter** (Bibliothek „Mechanik“) auf ihr gezogen sitzt auf der Achse und wandert je Umdrehung um die Steigung,
   ohne sich mitzudrehen (Verbindungsart „Spindelmutter“). Teile, die mit einer Zahnstange oder Mutter verbunden sind,
   fahren mit. Logik: `rackMeshes`/`rates` in `parts/train.ts`, `mutter` in `parts/links.ts`.
+- **Riemen:** GT2-Riemenscheiben (Bibliothek „Zahnräder“, z16/z20/z40) kämmen nicht mit Zahnrädern. Auf der Seite einer
+  Scheibe „Riemen zu …“ eine andere wählen: Beide drehen gleichsinnig im Verhältnis der Zähne; die Seite nennt die
+  Riemenlänge und die nächste Standardlänge.
+- **③ für alles, was am Getriebe hängt:** Der abgeleitete Mechanismus enthält Zahnräder, Riemen, Gewindespindeln (Lager)
+  sowie Zahnstangen und Spindelmuttern als Schlitten auf Schiebegelenken; die Lagerplanung führt sie auf Stangen mit
+  Linearlagern (LM8UU). Teile mit eigener Dreh- oder Schiebeverbindung, die nicht am Getriebe hängen, gehen noch nicht ein.
 - Im Szenenbaum stehen unten unter **Verbindungen** alle Wellen, Losräder und nicht festen Teile mit ihrer Verbindung.
 
 **Gruppen** ordnen nur, wie Baugruppen im CAD-Browser. Eine **starre** Gruppe hält beim Bearbeiten ihre Abstände: Ziehst
