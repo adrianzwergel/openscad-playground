@@ -1,4 +1,4 @@
-// Studio: groups. Two wheels Strg-clicked in the tree and grouped with Strg+G make a rigid group with its ratio; dragging
+// Studio: groups. Two wheels Strg-clicked in the tree and grouped with Strg+G make a Träger with its ratio; dragging
 // its z40 in the view moves the whole group, which snaps onto a wheel outside it and keeps its own distance; undo takes
 // it back. Groups nest and dissolve. A rigid group goes into the library and comes out in another project with the same
 // ratio, and the library is still there after a reload.
@@ -19,8 +19,8 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await dragGear(p,16,[0,0,0]);await settled(p,x=>x.doc.builds[0].train.wheels.length===1);await dragGear(p,40,[30,0,2]);let f=await settled(p,x=>x.doc.builds[0].train.wheels.length===2);
  // Strg-click both, Strg+G: one rigid group with the ratio of its two wheels.
  await p.click('[data-wheel]');await wait(150);const second=await p.$$eval('[data-wheel]',x=>x[1].dataset.wheel);await ctrlClick(p,`[data-wheel="${second}"]`);await p.waitForFunction(()=>/Auswahl \(2\)/.test(document.getElementById('properties').textContent));
- await p.keyboard.down('Control');await p.keyboard.press('g');await p.keyboard.up('Control');f=await settled(p,x=>x.doc.builds[0].groups?.length===1);const g=f.doc.builds[0].groups[0];assert.equal(g.rigid,true);assert.ok(f.doc.builds[0].train.wheels.every(w=>w.group===g.id));
- await p.waitForSelector('#group-ratio');assert.match(await p.$eval('#group-ratio',e=>e.textContent),/1 Eingriff in der Gruppe · Übersetzung 1 : 2,50/);
+ await p.keyboard.down('Control');await p.keyboard.press('g');await p.keyboard.up('Control');f=await settled(p,x=>x.doc.builds[0].groups?.length===1);const g=f.doc.builds[0].groups[0];assert.equal(g.kind,'traeger','zwei Wellen: ein Träger');assert.ok(f.doc.builds[0].train.wheels.every(w=>w.group===g.id));
+ await p.waitForSelector('#group-ratio');assert.match(await p.$eval('#group-ratio',e=>e.textContent),/1 Eingriff in der Gruppe · LEGO z16 → LEGO z40 1 : 2,50/);
  // A z16 outside the group, far left.
  await dragGear(p,16,[-80,0,0]);f=await settled(p,x=>x.doc.builds[0].train.wheels.length===3);let t=f.doc.builds[0].train;const out=t.wheels.find(w=>!w.group),z40=t.wheels.find(w=>w.teeth===40),z16=t.wheels.find(w=>w.group&&w.teeth===16);assert.deepEqual(shaftOf(t,out),[-80,0]);
  // Drag the group's z40 by its rim to above the outside z16: the whole group follows and snaps there.
@@ -38,12 +38,18 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  assert.equal(await p.$$eval(`[data-group="${g.id}"]`,x=>x[0].style.paddingLeft!==''),true,'eingerückt im Baum');
  await p.click('[data-group-dissolve]');f=await settled(p,x=>x.doc.builds[0].groups?.length===1);assert.equal(f.doc.builds[0].groups[0].parent,undefined);
  // Free: then the group no longer holds its distances while dragging; set back to fixed.
- await p.click(`[data-group="${g.id}"]`);await p.waitForSelector('[data-field="Abstände"]');await p.select('[data-field="Abstände"]','frei');await settled(p,x=>x.doc.builds[0].groups[0].rigid===false);await p.waitForSelector('[data-field="Abstände"]');await p.select('[data-field="Abstände"]','fest');await settled(p,x=>x.doc.builds[0].groups[0].rigid===true);
+ await p.click(`[data-group="${g.id}"]`);await p.waitForSelector('[data-field="Art"]');await p.select('[data-field="Art"]','ordnung');await settled(p,x=>x.doc.builds[0].groups[0].kind==='ordnung');await p.waitForSelector('[data-field="Art"]');await p.select('[data-field="Art"]','traeger');await settled(p,x=>x.doc.builds[0].groups[0].kind==='traeger');
  // Into the library; in a new project a click puts it in with its ratio.
  await p.waitForSelector('[data-group-save]:not([disabled])');await p.click('[data-group-save]');await p.waitForFunction(()=>/Eigene Bausteine/.test(document.getElementById('status').textContent));
  await newProject(p);await p.evaluate(()=>{document.querySelector('[data-store-blocks]').open=true;});await p.waitForSelector('[data-block]',{visible:true});await p.click('[data-block] strong');
  f=await settled(p,x=>x.doc.builds?.[0]?.train?.wheels.length===2&&x.doc.builds[0].groups?.length===1);t=f.doc.builds[0].train;assert.equal(dist(shaftOf(t,t.wheels[0]),shaftOf(t,t.wheels[1])),28);await p.waitForSelector('#group-ratio');assert.match(await p.$eval('#group-ratio',e=>e.textContent),/2,50/);
  // The library survives a reload.
  await p.reload();await p.waitForSelector('[data-store-blocks]');assert.equal(await p.$$eval('[data-block]',x=>x.length),1);
- assert.deepEqual(errors,[]);console.log('Studio Gruppen: Strg+G, 1 : 2,5 in der Gruppe, als Ganzes gezogen und am fremden Rad eingerastet, Rückgängig, verschachtelt und aufgelöst, fest/frei, Baustein in der Bibliothek, im neuen Projekt eingesetzt, Reload.');
+ // A sensor with the z16 inside the Träger: one Körper on its shaft, it turns with the input.
+ const sensor=await p.$$eval('.part-store details',d=>{const box=d.find(x=>x.querySelector('summary')?.textContent.startsWith('Sensoren'));box.open=true;return box.querySelector('[data-part]').dataset.part;});
+ await p.click('#fit');await wait(600);const card=await p.$eval(`[data-part="${sensor}"]`,e=>{e.scrollIntoView({block:'center'});const b=e.getBoundingClientRect();return [b.x+b.width/2,b.y+b.height/2];});await drag(p,card,await screen(p,[0,-45,0]));f=await settled(p,x=>x.doc.builds[0].items.length===1);const part=f.doc.builds[0].items[0];
+ const z16row=await p.$$eval('[data-wheel]',x=>x.find(e=>e.textContent.includes('z16')).dataset.wheel);await p.click(`[data-wheel="${z16row}"]`);await wait(150);await ctrlClick(p,`[data-item="${part.id}"]`);await p.click('[data-group-make]');
+ f=await settled(p,x=>x.doc.builds[0].items[0].free?.body?.startsWith('welle:'));const body=f.doc.builds[0].groups.find(x=>x.id===f.doc.builds[0].items[0].group);assert.equal(body.kind,'koerper');assert.ok(body.parent,'steckt im Träger');assert.match(await p.$eval('#group-kind',e=>e.textContent),/hängt an der Welle von LEGO z16/);
+ const before=await p.evaluate(()=>window.studioPart());await p.$eval('input[data-axis="Zahnräder"]',e=>{e.value='90';e.dispatchEvent(new Event('input'));});await wait(400);const after=await p.evaluate(()=>window.studioPart());assert.ok(Math.hypot(...after.map((v,k)=>v-before[k]))>10,`Sensor dreht mit: ${before} → ${after}`);
+ assert.deepEqual(errors,[]);console.log('Studio Gruppen: Strg+G, 1 : 2,5 in der Gruppe, als Ganzes gezogen und am fremden Rad eingerastet, Rückgängig, verschachtelt und aufgelöst, fest/frei, Baustein in der Bibliothek, im neuen Projekt eingesetzt, Reload, Sensor als Körper an der Welle dreht mit.');
 }finally{await browser.close();await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}

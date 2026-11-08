@@ -44,22 +44,31 @@ Projekt einen Aufbau zum Hineinziehen. Das hält `unify` in `studio.ts` nach jed
 
 Strg-Klick in der Ansicht oder im Szenenbaum wählt mehrere Dinge, Strg+G (oder „Gruppieren“) macht daraus eine Gruppe.
 Gruppen sind gemischt (Räder, Teile, Platten) und dürfen in Gruppen stecken; im Baum sind sie Ordner. Eine Platte bringt die
-Teile auf ihr mit, ein Rad die Räder auf seiner Welle: eine Welle ist ein Stück.
+Teile auf ihr mit, ein Rad die Räder auf seiner Welle: eine Welle ist ein Stück. Eine Gruppe sagt, was ihre Teile
+zueinander sind:
 
-- **Fest:** Die Abstände bleiben. Ziehst du ein Rad oder Teil der Gruppe, kommt die ganze Gruppe mit; ein Rad rastet dabei
-  wie ein einzelnes an Räder außerhalb ein (Winkelraster, Zielraster). Gezogen wird die äußerste feste Gruppe.
-  Bei Zahnrädern heißt fest: Die Achsabstände der Gruppe sind fest. Auch die Felder eines Rads (X, Höhe, Lage auf der
-  Welle, Winkel an einem Rad außerhalb) verschieben die ganze Gruppe; Zähne, Modul und Breite gedruckter Räder sind
-  gesperrt, weil sie den Achsabstand ändern. Die Gruppenseite nennt die Achsabstände. Für später: Lager und Gehäuse sollen
-  eine feste Räder-Gruppe als einen Träger mit Lagersitzen in genau diesen Abständen erzeugen; heute geht die Gruppe beim
-  Übernehmen als Mechanismus noch nicht mit (alle Wellen sitzen dann auf der gemeinsamen Grundplatte).
-- **Frei:** Die Gruppe ordnet nur; jedes Stück bewegt sich einzeln.
-- **Griff:** Eine gewählte Gruppe trägt den Griff in ihrer Mitte. Drehen geht mit Rädern nur um die Wellenrichtung, sonst um
-  die Senkrechte.
-- **Bibliothek:** „In die Bibliothek legen“ (nur feste Gruppen) speichert sie unter „Eigene Bausteine“ für jedes Projekt
-  (OPFS `/bausteine`). Hineinziehen setzt sie auf den Boden unter dem Zeiger, ein Klick daneben.
+| Art | Bedeutung | von selbst, wenn |
+|---|---|---|
+| ▣ Träger | hält Wellen in festen Achsabständen, die Räder drehen darin; dafür entstehen später Lager und Gehäuse | Räder auf mehreren Wellen |
+| ◆ Körper | ein Stück; mit einem Rad hängt alles darin an dessen Welle und dreht mit (Sensor, Nocken, Arm) | sonst |
+| ▢ Ordnung | hält nur im Baum zusammen | nur von Hand |
 
-Die Logik steht in `parts/groups.ts` (geprüft von `scripts/parts/check-groups.mjs`), die Bedienung in `studio-build.ts`.
+- Körper und Träger halten beim Bearbeiten ihre Abstände: Ziehst du ein Stück, kommt die Gruppe mit (die äußerste
+  solche), ein Rad rastet dabei an Räder außerhalb ein. Auch die Felder eines Rads verschieben dann die ganze Gruppe;
+  Zähne, Modul und Breite gedruckter Räder sind gesperrt.
+- Liegen die Gewählten in verschiedenen Gruppen, kommt die neue Gruppe dorthin, wo das Rad ist: Ein Sensor mit dem z16
+  eines Trägers wird ein Körper im Träger.
+- Jede Welle ist ein Körper, an den man auch einzeln hängen kann („Hängt an: Welle von …“).
+- Eingänge und Ausgänge setzt man an der Welle eines Rads, beliebig viele; jeder Eingang hat seinen Antrieb und unter
+  der Ansicht seinen Regler. Zwei Eingänge, die dieselbe Kette treiben, meldet die Prüfung.
+- Griff: Eine gewählte Gruppe trägt ihn in ihrer Mitte. Drehen geht mit Rädern nur um die Wellenrichtung, sonst um die
+  Senkrechte.
+- Bibliothek: „In die Bibliothek legen“ (Körper und Träger) speichert unter „Eigene Bausteine“ für jedes Projekt
+  (OPFS `/bausteine`), mit ihren Eingängen und Ausgängen.
+
+Logik: `parts/groups.ts` und `parts/train.ts` (geprüft von `scripts/parts/check-groups.mjs`), Bedienung: `studio-build.ts`,
+`studio-train.ts`. Ältere Dateien: „fest“ wird Körper oder (mit Rädern auf mehreren Wellen) Träger, „frei“ Ordnung; ein
+einzelner Eingang und Ausgang werden Listen.
 
 ### Phasen
 

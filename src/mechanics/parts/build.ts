@@ -57,9 +57,10 @@ export function parseBuild(value:unknown):Build{
  const own=Array.isArray(b.parts)?b.parts.map(x=>structuredClone(x)):[],plates=b.plates.map(parsePlate);if(new Set(plates.map(p=>p.id)).size!==plates.length)throw Error('Aufbau: Platte doppelt');
  const items=b.items.map(i=>{if(!partById(i.part,own))throw Error(`Aufbau: Teil ${i.part} fehlt im Katalog`);if(i.side!=='top'&&i.side!=='bottom')throw Error('Aufbau: Seite ungültig');if(i.plate?!plates.some(p=>p.id===i.plate):!i.free)throw Error('Aufbau: Teil ohne Lage');
   return {id:text(i.id,'Teil'),part:i.part,at:pair(i.at,-5000,5000,'Position'),angle:num(i.angle,-720,720,'Drehung'),side:i.side,clearance:num(i.clearance,0,100,'Abstand'),holder:{kind:text(i.holder?.kind,'Halter'),params:structuredClone(i.holder?.params??{})},...(i.holes?{holes:structuredClone(i.holes)}:{}),...(i.plugsOff?{plugsOff:[...i.plugsOff]}:{}),...(i.plate?{plate:i.plate}:{free:parseFree(i.free)}),...(i.wish?{wish:parseWish(i.wish)}:{}),...(i.mass!==undefined?{mass:num(i.mass,0,1e6,'Masse')}:{}),...(typeof i.group==='string'?{group:i.group}:{})};});
- const groups=parseGroups(b.groups),known=new Set((groups??[]).map(g=>g.id)),train=b.train?parseTrain(b.train):undefined;
+ const before=new Set(Array.isArray(b.groups)?(b.groups as {id:string;kind?:string}[]).filter(g=>g&&!g.kind).map(g=>g.id):[]),groups=parseGroups(b.groups),known=new Set((groups??[]).map(g=>g.id)),train=b.train?parseTrain(b.train):undefined;
  // A member whose group is gone stands alone.
  for(const x of [...items,...plates,...(train?.wheels??[])])if(x.group!==undefined&&!known.has(x.group))delete x.group;
+ for(const g of groups??[])if(before.has(g.id)&&g.kind==='koerper'&&new Set((train?.wheels??[]).filter(w=>w.group===g.id).map(w=>w.shaft)).size>1)g.kind='traeger';
  return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(train?{train}:{}),...(groups?.length?{groups}:{})};
 }
 export const partOf=(b:{parts:Part[]},i:BuildItem)=>partById(i.part,b.parts)!;

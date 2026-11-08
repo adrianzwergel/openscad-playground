@@ -13,8 +13,8 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await newProject(p);await p.waitForSelector('[data-gear]');
  // First wheel, second beside it: it snaps to 28 mm.
  await dragGear(p,await gear(p,16),[0,0,0]);let f=await settled(p,x=>x.doc.builds?.[0]?.train?.wheels.length===1);
- await dragGear(p,await gear(p,40),[30,0,2]);f=await settled(p,x=>x.doc.builds[0].train.wheels.length===2);let t=f.doc.builds[0].train;const [a,b]=t.shafts;assert.ok(Math.abs(Math.hypot(b.at[0]-a.at[0],b.at[1]-a.at[1])-28)<1e-6,`Abstand ${JSON.stringify(t.shafts)}`);assert.equal(t.input,a.id);assert.equal(t.output,b.id);
- await p.waitForSelector('#train-ratio');assert.match(await p.$eval('#train-ratio',e=>e.textContent),/1 : 2,50, Ausgang dreht gegensinnig/);assert.match(await p.$eval('#build-issues',e=>e.textContent),/kämmen/);
+ await dragGear(p,await gear(p,40),[30,0,2]);f=await settled(p,x=>x.doc.builds[0].train.wheels.length===2);let t=f.doc.builds[0].train;const [a,b]=t.shafts;assert.ok(Math.abs(Math.hypot(b.at[0]-a.at[0],b.at[1]-a.at[1])-28)<1e-6,`Abstand ${JSON.stringify(t.shafts)}`);assert.deepEqual(t.inputs.map(i=>i.shaft),[a.id]);assert.deepEqual(t.outputs,[b.id]);
+ await p.waitForSelector('#train-ratio');assert.match(await p.$eval('#train-ratio',e=>e.textContent),/LEGO z16 → LEGO z40: 1 : 2,50, gegensinnig/);assert.match(await p.$eval('#build-issues',e=>e.textContent),/kämmen/);
  // A third wheel onto the second shaft stacks beside it.
  await dragGear(p,await gear(p,16),[...[b.at[0]],0,b.at[1]]);f=await settled(p,x=>x.doc.builds[0].train.wheels.length===3);t=f.doc.builds[0].train;assert.equal(t.shafts.length,2);const on=t.wheels.filter(w=>w.shaft===b.id);assert.equal(on.length,2);assert.ok(Math.abs(on[0].z-on[1].z)>=8);
  // Undo, redo; delete by key.
@@ -31,7 +31,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // A reload keeps it; ② opens the train.
  await wait(500);await p.reload();await p.waitForSelector('[data-wheel]',{timeout:20000});await phase(p,2);await p.waitForSelector('#train-ratio',{timeout:20000});assert.match(await p.$eval('#train-ratio',e=>e.textContent),/2,50/);
  // The wheels turn by hand in any phase: the slider under the view, the output read off at 1 : 2,5.
- await phase(p,1);await p.waitForSelector('input[data-axis="Zahnräder"]');await p.$eval('input[data-axis="Zahnräder"]',e=>{e.value='100';e.dispatchEvent(new Event('input'));});assert.match(await p.$eval('#axes',e=>e.textContent),/100° → Ausgang -40°/);
+ await phase(p,1);await p.waitForSelector('input[data-axis="Zahnräder"]');await p.$eval('input[data-axis="Zahnräder"]',e=>{e.value='100';e.dispatchEvent(new Event('input'));});assert.match(await p.$eval('#axes',e=>e.textContent),/Ausgang LEGO z40: -40°/);
  // In ③ the button: a mechanism with a slider, its train driven, bearings planned.
  await phase(p,3);await p.waitForSelector('[data-compile]');
  await p.click('[data-compile]');await p.waitForFunction(()=>document.body.dataset.scene==='mechanism',{timeout:20000});await p.waitForSelector('input[data-axis="Abtrieb"]',{timeout:20000});f=await settled(p,x=>x.doc.mechanisms?.length===1);assert.ok(!(f.doc.builds??[]).some(x=>x.train?.wheels.length),'die Räder sind jetzt der Mechanismus');const m=f.doc.mechanisms[0];assert.equal(m.drives[0].target,2.5);assert.ok(m.drives[0].gear);assert.equal(m.fabrication.bearings.shaft,'lego');

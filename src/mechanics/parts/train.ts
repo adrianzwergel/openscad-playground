@@ -5,7 +5,7 @@
 import {legoParts} from '../graph/lego-parts.ts';
 import {legoSpec,spurSpec} from '../kinematics/catalog.ts';
 import type {ElementSpec} from '../kinematics/catalog.ts';
-import {compose,identity} from '../kinematics/math.ts';
+import {compose,identity,axisAngle} from '../kinematics/math.ts';
 import type {Frame,V} from '../kinematics/math.ts';
 import type {Element,JointRelation,Mechanism,Contact} from '../kinematics/model.ts';
 import type {Drive} from '../kinematics/drive.ts';
@@ -17,13 +17,22 @@ export const legoGears=legoParts.filter(p=>p.search&&p.teeth>0&&p.mount==='cross
 export type Shaft={id:string;at:[number,number]};
 /** `part`: a LEGO gear by id; without one a printed spur gear of `module`. */
 export type Wheel={id:string;shaft:string;z:number;teeth:number;module:number;width:number;part?:string;/** The group it sits in. */group?:string};
-/** `input`, `output`: shafts. `drive`: what turns the input. `grid`: mm steps of a wheel standing alone, `angle`: degree
- * steps of a wheel around the one it meshes with (0: free). `target`: a meshing wheel's shaft lands only on points of the
- * mm grid where the mesh distance is exact. */
-export type Train={shafts:Shaft[];wheels:Wheel[];input?:string;output?:string;drive:string;grid?:number;angle?:number;target?:boolean};
+/** A driven shaft and what drives it. */
+export type Input={shaft:string;drive:string};
+/** `inputs`: driven shafts, each with its own drive; `outputs`: shafts read off (several of both). `input`, `output`,
+ * `drive`: the single ones of files from before. `grid`: mm steps of a wheel standing alone, `angle`: degree steps of a
+ * wheel around the one it meshes with (0: free). `target`: a meshing wheel's shaft lands only on points of the mm grid
+ * where the mesh distance is exact. */
+export type Train={shafts:Shaft[];wheels:Wheel[];inputs?:Input[];outputs?:string[];input?:string;output?:string;drive:string;grid?:number;angle?:number;target?:boolean};
 export const DEFAULT_ANGLE=15;
 export const newTrain=():Train=>({shafts:[],wheels:[],drive:'lego-achse'});
-export const parseTrain=(t:Train):Train=>{if(!t||!Array.isArray(t.shafts)||!Array.isArray(t.wheels)||t.wheels.length>64)throw Error('Ungültiges Getriebe');for(const w of t.wheels)if(!t.shafts.some(s=>s.id===w.shaft)||!(w.teeth>=6&&w.teeth<=200)||!(w.module>0)||!(w.width>0))throw Error('Getriebe: Rad ungültig');if(t.grid!==undefined&&!(t.grid>=0&&t.grid<=50)||t.angle!==undefined&&!(t.angle>=0&&t.angle<=180))throw Error('Getriebe: Raster ungültig');return structuredClone(t);};
+export const inputsOf=(t:Train):Input[]=>t.inputs??(t.input?[{shaft:t.input,drive:t.drive}]:[]);
+export const outputsOf=(t:Train):string[]=>t.outputs??(t.output?[t.output]:[]);
+/** Writes the ends as lists; the single fields from before go. */
+export function setEnds(t:Train,inputs:Input[],outputs:string[]){t.inputs=inputs;t.outputs=outputs;delete t.input;delete t.output;}
+export const parseTrain=(t:Train):Train=>{if(!t||!Array.isArray(t.shafts)||!Array.isArray(t.wheels)||t.wheels.length>64)throw Error('Ungültiges Getriebe');for(const w of t.wheels)if(!t.shafts.some(s=>s.id===w.shaft)||!(w.teeth>=6&&w.teeth<=200)||!(w.module>0)||!(w.width>0))throw Error('Getriebe: Rad ungültig');if(t.grid!==undefined&&!(t.grid>=0&&t.grid<=50)||t.angle!==undefined&&!(t.angle>=0&&t.angle<=180))throw Error('Getriebe: Raster ungültig');
+ if(t.inputs!==undefined&&(!Array.isArray(t.inputs)||t.inputs.some(i=>!i||typeof i.shaft!=='string'||typeof i.drive!=='string'))||t.outputs!==undefined&&(!Array.isArray(t.outputs)||t.outputs.some(o=>typeof o!=='string')))throw Error('Getriebe: Ein- oder Ausgang ungültig');
+ const x=structuredClone(t),known=(s:string)=>x.shafts.some(y=>y.id===s);setEnds(x,inputsOf(x).filter(i=>known(i.shaft)),outputsOf(x).filter(known));return x;};
 export const pitchOf=(w:Wheel)=>w.module*w.teeth/2;
 export const outerOf=(w:Wheel)=>{const p=w.part?legoParts.find(x=>x.id===w.part):undefined;return p?p.radius:pitchOf(w)+w.module;};
 const shaftOf=(t:Train,w:Wheel)=>t.shafts.find(s=>s.id===w.shaft)!;
@@ -31,19 +40,31 @@ const apart=(a:Shaft,b:Shaft)=>Math.hypot(a.at[0]-b.at[0],a.at[1]-b.at[1]);
 const facing=(a:Wheel,b:Wheel)=>Math.abs(a.z-b.z)<(a.width+b.width)/2-.01;
 /** Wheels that mesh: facing each other at the sum of their pitch radii, of the same module. */
 export function meshes(t:Train){const out:[Wheel,Wheel][]=[];t.wheels.forEach((a,i)=>{for(const b of t.wheels.slice(i+1))if(a.shaft!==b.shaft&&a.module===b.module&&facing(a,b)&&Math.abs(apart(shaftOf(t,a),shaftOf(t,b))-pitchOf(a)-pitchOf(b))<.05)out.push([a,b]);});return out;}
-/** Turns of each shaft per turn of the input; a loop that disagrees locks the train. */
-export function rates(t:Train){const rate=new Map<string,number>(),pairs=meshes(t);let locked=false;if(!t.input)return {rate,locked};rate.set(t.input,1);const open=[t.input];
+/** Turns of each shaft per turn of one input (the first, without `from`); a loop that disagrees locks the train. */
+export function rates(t:Train,from=inputsOf(t)[0]?.shaft){const rate=new Map<string,number>(),pairs=meshes(t);let locked=false;if(!from)return {rate,locked};rate.set(from,1);const open=[from];
  while(open.length){const s=open.pop()!;for(const [a,b] of pairs)for(const [x,y] of [[a,b],[b,a]]){if(x.shaft!==s)continue;const next=-rate.get(s)!*x.teeth/y.teeth,known=rate.get(y.shaft);if(known===undefined){rate.set(y.shaft,next);open.push(y.shaft);}else if(Math.abs(known-next)>1e-9)locked=true;}}
  return {rate,locked};}
-/** Input turns per output turn. */
-export function ratioOf(t:Train){const {rate}=rates(t),o=t.output?rate.get(t.output):undefined;return o?1/o:undefined;}
+/** Where every shaft stands with the inputs turned by `turns` (degrees, by input shaft): each input turns its chain. A shaft
+ * two inputs reach is held by the first; `clash` names such pairs, they lock each other. */
+export function motion(t:Train,turns:Record<string,number>={}){const angle=new Map<string,number>(),owner=new Map<string,string>(),clash:[string,string][]=[];
+ for(const i of inputsOf(t)){const {rate}=rates(t,i.shaft);for(const [s,r] of rate){const o=owner.get(s);if(o!==undefined){if(!clash.some(c=>c[0]===o&&c[1]===i.shaft))clash.push([o,i.shaft]);continue;}owner.set(s,i.shaft);angle.set(s,r*(turns[i.shaft]??0));}}
+ return {angle,owner,clash};}
+/** Input turns per output turn (the first input and output, without arguments). */
+export function ratioOf(t:Train,input=inputsOf(t)[0]?.shaft,output=outputsOf(t)[0]){const {rate}=rates(t,input),o=output?rate.get(output):undefined;return o?1/o:undefined;}
+/** A shaft as a body things can hang on: the Studio's room, turned by the inputs about the shafts' direction (y). */
+export const shaftBody=(id:string)=>`welle:${id}`;
+export const shaftOfBody=(body:string|undefined)=>body?.startsWith('welle:')?body.slice(6):undefined;
+export function shaftFrames(t:Train|undefined,turns:Record<string,number>={}):Record<string,Frame>{if(!t)return {};const {angle}=motion(t,turns);return Object.fromEntries(t.shafts.map(s=>[shaftBody(s.id),{position:[s.at[0],0,s.at[1]] as V,rotation:axisAngle([0,1,0],angle.get(s.id)??0)}]));}
 export type TrainIssue={wheels:string[];message:string};
 const nameOf=(w:Wheel)=>`${w.part?'LEGO ':''}z${w.teeth}`;
-export function trainIssues(t:Train):TrainIssue[]{const out:TrainIssue[]=[],pairs=meshes(t),{rate,locked}=rates(t);
+export function trainIssues(t:Train):TrainIssue[]{const out:TrainIssue[]=[],pairs=meshes(t),ins=inputsOf(t),outs=outputsOf(t),{owner,clash}=motion(t),label=(s:string)=>{const w=t.wheels.find(x=>x.shaft===s);return w?nameOf(w):'Welle';};
  t.wheels.forEach((a,i)=>{for(const b of t.wheels.slice(i+1)){if(a.shaft===b.shaft){if(facing(a,b))out.push({wheels:[a.id,b.id],message:`${nameOf(a)} und ${nameOf(b)} sitzen auf derselben Welle ineinander.`});continue;}if(!facing(a,b)||pairs.some(p=>p.includes(a)&&p.includes(b)))continue;const d=apart(shaftOf(t,a),shaftOf(t,b));if(d<outerOf(a)+outerOf(b)+.5)out.push({wheels:[a.id,b.id],message:`${nameOf(a)} stößt an ${nameOf(b)}, ohne zu kämmen.`});}});
- if(locked)out.push({wheels:[],message:'Die Räder sperren sich: Ein Kreis aus Rädern kann sich so nicht drehen.'});
- if(!t.input||!t.output)out.push({wheels:[],message:'Eingang und Ausgang wählen.'});else if(t.input===t.output)out.push({wheels:[],message:'Eingang und Ausgang sind dieselbe Welle.'});else if(!rate.has(t.output))out.push({wheels:[],message:'Zwischen Eingang und Ausgang fehlt ein Eingriff.'});
- for(const s of t.shafts)if(t.input&&!rate.has(s.id)&&t.wheels.some(w=>w.shaft===s.id))out.push({wheels:t.wheels.filter(w=>w.shaft===s.id).map(w=>w.id),message:'Eine Welle hängt nicht am Getriebe.'});
+ if(ins.some(i=>rates(t,i.shaft).locked))out.push({wheels:[],message:'Die Räder sperren sich: Ein Kreis aus Rädern kann sich so nicht drehen.'});
+ for(const [a,b] of clash)out.push({wheels:[],message:`Die Eingänge an ${label(a)} und ${label(b)} treiben dieselbe Kette: Sie sperren sich.`});
+ if(!ins.length)out.push({wheels:[],message:'Einen Eingang wählen: an der Welle, die angetrieben wird.'});
+ if(!outs.length)out.push({wheels:[],message:'Einen Ausgang wählen.'});
+ for(const o of outs){if(ins.some(i=>i.shaft===o))out.push({wheels:[],message:`Ausgang ${label(o)} ist zugleich Eingang.`});else if(ins.length&&!owner.has(o))out.push({wheels:t.wheels.filter(w=>w.shaft===o).map(w=>w.id),message:`Ausgang ${label(o)} hängt an keinem Eingang: Es fehlt ein Eingriff.`});}
+ for(const s of t.shafts)if(ins.length&&!owner.has(s.id)&&!outs.includes(s.id)&&t.wheels.some(w=>w.shaft===s.id))out.push({wheels:t.wheels.filter(w=>w.shaft===s.id).map(w=>w.id),message:'Eine Welle hängt nicht am Getriebe.'});
  if(t.wheels.some(w=>w.part)&&t.wheels.some(w=>!w.part))out.push({wheels:[],message:'LEGO und gedruckte Räder lassen sich noch nicht mischen: Die Wellen sind verschieden.'});
  return out;}
 /** Points of the `grid` (mm, from the origin) at exactly `d` from `c`. Few in general: 28 mm on a 1 mm grid has only the
@@ -80,23 +101,23 @@ function spec(w:Wheel):ElementSpec{const lego=w.part?legoParts.find(p=>p.id===w.
  * run along y, the train belongs to the drive H1 and the output shaft is the axis the sliders turn. */
 export function compileTrain(t:Train,label:string):Demo{
  const blocking=trainIssues(t);if(blocking.length)throw Error(blocking[0].message);
- const {rate}=rates(t),ratio=ratioOf(t)!,used=t.shafts.filter(s=>rate.has(s.id)&&t.wheels.some(w=>w.shaft===s.id)),wheels=t.wheels.filter(w=>rate.has(w.shaft));
+ const input=inputsOf(t)[0].shaft,output=outputsOf(t)[0],{rate}=rates(t,input),ratio=ratioOf(t,input,output)!,used=t.shafts.filter(s=>rate.has(s.id)&&t.wheels.some(w=>w.shaft===s.id)),wheels=t.wheels.filter(w=>rate.has(w.shaft));
  const y0=Math.min(...wheels.map(w=>w.z-w.width/2)),y1=Math.max(...wheels.map(w=>w.z+w.width/2)),low=Math.min(...wheels.map(w=>shaftOf(t,w).at[1]-outerOf(w))),H=6+10-low;
  const x0=Math.min(...wheels.map(w=>shaftOf(t,w).at[0]-outerOf(w))),x1=Math.max(...wheels.map(w=>shaftOf(t,w).at[0]+outerOf(w)));
- const centre=(s:Shaft):Frame=>({position:[s.at[0],0,s.at[1]+H],rotation:along.y}),out=t.shafts.find(s=>s.id===t.output)!,o=centre(out).position,lego=wheels.some(w=>w.part);
+ const centre=(s:Shaft):Frame=>({position:[s.at[0],0,s.at[1]+H],rotation:along.y}),out=t.shafts.find(s=>s.id===output)!,o=centre(out).position,lego=wheels.some(w=>w.part);
  const size:V=[x1-x0+48,y1-y0+72,6],start=y0-24;
  const {asset,mesh}=modelAsset(`getriebe-${crypto.randomUUID().slice(0,8)}`,label,[['Grundplatte',box([(x0+x1)/2,(y0+y1)/2,3],size)],['Abtriebsachse',cylinder('y',[o[0],(y0+y1)/2,o[2]],lego?2.4:2.5,y1-y0+48)]]);
- const body=(s:Shaft)=>s.id===t.output?'Abtrieb':`H1/s${used.filter(x=>x.id!==t.output).indexOf(s)}`,jointOf=(s:Shaft)=>s.id===t.output?'Abtrieb':`H1/ground/s${used.filter(x=>x.id!==t.output).indexOf(s)}`;
+ const body=(s:Shaft)=>s.id===output?'Abtrieb':`H1/s${used.filter(x=>x.id!==output).indexOf(s)}`,jointOf=(s:Shaft)=>s.id===output?'Abtrieb':`H1/ground/s${used.filter(x=>x.id!==output).indexOf(s)}`;
  // The input shaft comes first: the drive turns it.
- used.sort((a,b)=>(b.id===t.input?1:0)-(a.id===t.input?1:0));
+ used.sort((a,b)=>(b.id===input?1:0)-(a.id===input?1:0));
  const span=(s:Shaft)=>{const on=wheels.filter(w=>w.shaft===s.id);return [Math.min(...on.map(w=>w.z-w.width/2)),Math.max(...on.map(w=>w.z+w.width/2))];};
  const mechanism:Mechanism={format:'kinematics-1',parameters:[],patterns:[],
-  bodies:[{id:'ground',frame:identity(),ground:true,display:mesh(['Grundplatte'])},{id:'Abtrieb',frame:centre(out),display:mesh(['Abtriebsachse'])},...used.filter(s=>s!==out).map(s=>{const [a,b]=span(s);return {id:body(s),frame:centre(s),shaft:{diameter:lego?4.8:5,start:s.id===t.input?start:a-14,end:b+14}};})],
+  bodies:[{id:'ground',frame:identity(),ground:true,display:mesh(['Grundplatte'])},{id:'Abtrieb',frame:centre(out),display:mesh(['Abtriebsachse'])},...used.filter(s=>s!==out).map(s=>{const [a,b]=span(s);return {id:body(s),frame:centre(s),shaft:{diameter:lego?4.8:5,start:s.id===input?start:a-14,end:b+14}};})],
   joints:used.map((s):JointRelation=>({id:jointOf(s),joint:{kind:'revolute'},a:{body:'ground',local:centre(s)},b:{body:body(s),local:identity()},...(s===out?{limits:{min:-180,max:180}}:{})})),
   elements:wheels.map((w,k):Element=>{const e=spec(w),s=shaftOf(t,w);return {id:`H1/r${k+1}`,source:e.source,surfaces:e.surfaces,interfaces:e.interfaces,envelope:e.envelope,mounts:[{interface:'bore',body:body(s),pose:compose(identity(),{position:[0,0,w.z],rotation:[0,0,0,1]})}],phase:0};}),
   contacts:meshes(t).filter(([a,b])=>rate.has(a.shaft)&&rate.has(b.shaft)).map(([a,b],k):Contact=>({id:`H1/k${k+1}`,kind:'roll',mode:'fixed-axes',a:{element:`H1/r${wheels.indexOf(a)+1}`,surface:'teeth'},b:{element:`H1/r${wheels.indexOf(b)+1}`,surface:'teeth'},params:{offsetA:0,offsetB:0}})),
   input:{kind:'coordinate',joint:'Abtrieb',coordinate:0},output:{kind:'coordinate',joint:'Abtrieb',coordinate:0},range:{from:-180,to:180,samples:37}};
- const perOutput=Object.fromEntries(used.filter(s=>s!==out).map(s=>[jointOf(s),rate.get(s.id)!/rate.get(out.id)!])),inputShaft=t.shafts.find(s=>s.id===t.input)!,iC=centre(inputShaft).position;
- const drives:Drive[]=[{id:'H1',spec:t.drive,body:'ground',frame:{position:[iC[0],start-6,iC[2]],rotation:toward([0,1,0])},axis:'Abtrieb',target:Math.abs(ratio),tolerance:5,maxStages:Math.max(1,used.length-1),gear:{reference:0,rates:perOutput,offsets:Object.fromEntries(Object.keys(perOutput).map(id=>[id,0])),label:wheels.map(nameOf).join(' · '),ratio:Math.abs(ratio),notes:[]}}];
+ const perOutput=Object.fromEntries(used.filter(s=>s!==out).map(s=>[jointOf(s),rate.get(s.id)!/rate.get(out.id)!])),inputShaft=t.shafts.find(s=>s.id===input)!,iC=centre(inputShaft).position;
+ const drives:Drive[]=[{id:'H1',spec:inputsOf(t)[0].drive,body:'ground',frame:{position:[iC[0],start-6,iC[2]],rotation:toward([0,1,0])},axis:'Abtrieb',target:Math.abs(ratio),tolerance:5,maxStages:Math.max(1,used.length-1),gear:{reference:0,rates:perOutput,offsets:Object.fromEntries(Object.keys(perOutput).map(id=>[id,0])),label:wheels.map(nameOf).join(' · '),ratio:Math.abs(ratio),notes:[]}}];
  return {label,asset,mechanism,drives,...(lego?{fabrication:{bearings:{shaft:'lego',prefer:'plain',clearance:.2,wall:4}}}:{})};
 }

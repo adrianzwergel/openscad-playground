@@ -25,9 +25,9 @@ import {hull,modelHits} from './kinematics/drive';
 import {separation} from './graph/space';
 import type {GripOptions} from './studio-mechanism';
 import {TrainEditor} from './studio-train';
-import {newTrain,trainIssues,snapWheel,meshes,ratioOf,DEFAULT_ANGLE} from './parts/train';
-import {makeGroup,dissolve,unitOf,contents,childrenOf,moveGroup,centreOf,turnAxis,blockOf,insertBlock,removeGroup,keyOf,memberOf} from './parts/groups';
-import type {Block,Member} from './parts/groups';
+import {newTrain,trainIssues,snapWheel,meshes,ratioOf,DEFAULT_ANGLE,inputsOf,outputsOf,shaftFrames,shaftOfBody} from './parts/train';
+import {makeGroup,dissolve,setKind,kindNames,rigidOf,unitOf,contents,childrenOf,moveGroup,centreOf,turnAxis,blockOf,insertBlock,removeGroup,keyOf,memberOf} from './parts/groups';
+import type {Block,Member,GroupKind} from './parts/groups';
 import {label as wheelLabel} from './studio-train';
 import type {Demo} from './demos';
 
@@ -91,7 +91,7 @@ export class BuildEditor{
  private pivot?:{start:Build;centre:V;axis:'y'|'z'};
  constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;},canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt,ensure:()=>{const b=this.ensure();return b.train??=newTrain();},mechanism:()=>this.attached,phase:()=>this.host.phase?.()??3,
   unit:w=>{const b=this.build(),id=b?unitOf(b,{kind:'wheel',id:w}):undefined;return b&&id?{id,label:this.groupLabel(id),wheels:new Set(contents(b,id).wheels.map(x=>x.id))}:undefined;},
-  moveUnit:(unit,delta,message)=>{const frames=this.host.frames();this.host.change(()=>{moveGroup(this.build()!,unit,{delta},frames);},message);}});this.trains.onChange=()=>this.refresh();}
+  moveUnit:(unit,delta,message)=>{const frames=this.frames();this.host.change(()=>{moveGroup(this.build()!,unit,{delta},frames);},message);}});this.trains.onChange=()=>this.refresh();}
  private get wheels(){return !!this.build()?.train?.wheels.length;}
  /** A build on its own is open (a mechanism's parts come along with the mechanism). */
  get active(){return !!this.activeId&&!!this.build();}
@@ -100,8 +100,12 @@ export class BuildEditor{
  get holdsProperties(){return this.active||this.attached&&(!!this.selected||!!this.plateId||!!this.trains.selectedId||this.trainOpen||!!this.groupId||this.multi.size>0);}
  /** The wheels' slider under the view (any phase). */
  renderAxes(root:HTMLElement){return this.trains.renderAxes(root);}
+ /** A body's name for people: a shaft by its wheel, the mechanism's base, or the link. */
+ private bodyName(id:string){const s=shaftOfBody(id);if(s){const w=this.build()?.train?.wheels.find(x=>x.shaft===s);return w?`Welle von ${wheelLabel(w)}`:'Welle';}return id==='ground'?'Basis':id;}
  /** Opens the page of the gear train. */
  openTrain(){this.selected=undefined;this.plateId=undefined;this.trains.select(undefined);this.trainOpen=true;}
+ /** Where the mechanism's links and the shafts stand now: a shaft is a body, turned by the inputs. */
+ private frames(){const b=this.preview??this.build();return {...this.host.frames(),...shaftFrames(b?.train,this.trains.turnsNow)};}
  private build(){const builds=this.host.doc().builds;return this.activeId?builds?.find(b=>b.id===this.activeId):this.attachedTo?builds?.find(b=>b.mechanism===this.attachedTo):undefined;}
  /** The build as seen while dragging: with the held part where it is held. */
  private shown():Build|undefined{if(this.preview)return this.preview;const b=this.build(),d=this.drag;if(!d?.over)return b;const base=b??modelBuild('neu',this.attachedTo??'');return {...base,items:d.item?[...base.items.filter(i=>i.id!==d.item!.id),d.item]:base.items,plates:d.plate?[...base.plates.filter(p=>p.id!==d.plate!.id),d.plate]:base.plates};}
@@ -114,7 +118,7 @@ export class BuildEditor{
  refresh(){
   // Wheels first: one held over the view shows before the build exists.
   const b=this.shown(),lit=this.lit(b);this.clear();this.trains.draw(this.group,lit,this.preview?.train);if(!b){this.gizmoOff();return;}
-  const frames=this.host.frames(),found=this.allIssues(b),bad=new Set(found.flatMap(x=>x.items));
+  const frames=this.frames(),found=this.allIssues(b),bad=new Set(found.flatMap(x=>x.items));
   for(const n of b.plates){const g=new THREE.Group();g.userData.plate=n.id;place(g,worldOf(n.free,frames));this.followers.push({object:g,free:n.free});this.drawSheet(g,sheet(b,n.id),n,bad,lit);this.group.add(g);}
   for(const i of b.items){if(!i.free)continue;const p=partOf(b,i),g=new THREE.Group();place(g,worldOf(i.free,frames));this.followers.push({object:g,free:i.free});g.add(this.partObject(p,i));this.group.add(g);
    if(p.body>0&&i.holder.kind!=='none'){const seat=holderPiece(b,i),under=new THREE.Group();under.position.z=-liftOf(i);for(const s of holderGeometry(seat,seat.items[0]).solids){const m=primMesh(s);if(m)under.add(m);}g.add(under);}
@@ -131,7 +135,7 @@ export class BuildEditor{
  /** Test entry: where the first thing that hangs on a link stands. */
  followerAt(){const f=this.followers.find(x=>x.free.body);return f?.object.position.toArray();}
  /** Moves what hangs on links with them: the frames change with every slider step. */
- follow(){if(!this.attachedTo||!this.followers.length)return;const frames=this.host.frames();for(const f of this.followers)if(f.free.body)place(f.object,worldOf(f.free,frames));}
+ follow(){if(!this.followers.some(f=>f.free.body))return;const frames=this.frames();for(const f of this.followers)if(f.free.body)place(f.object,worldOf(f.free,frames));}
  private partObject(p:Part,i:BuildItem){const holder=new THREE.Group();holder.userData.item=i.id;const material=new THREE.MeshStandardMaterial({color:p.color,roughness:.55,metalness:.15}),geometry=p.mesh?this.loaded.get(p.mesh):undefined;
   if(geometry){const m=new THREE.Mesh(geometry,material);m.userData.shared=true;holder.add(m);}
   else{const size=p.box.max.map((v,k)=>v-p.box.min[k]) as [number,number,number],m=new THREE.Mesh(new THREE.BoxGeometry(...size),material);m.position.set(...p.box.min.map((v,k)=>v+size[k]/2) as [number,number,number]);holder.add(m);
@@ -159,21 +163,21 @@ export class BuildEditor{
  private syncGizmo(){
   if(this.drag||this.unitDrag||this.multi.size){this.gizmoOff();return;}const b=this.build(),mode=this.host.mode?.()??'translate';
   // A group: the handle in its middle, turning about the shafts (with wheels) or the vertical.
-  if(this.groupId&&b?.groups?.some(g=>g.id===this.groupId)){if(this.host.dragging())return;this.pivot=undefined;this.gizmo.position.set(...centreOf(b,this.groupId,this.host.frames()));this.gizmo.quaternion.identity();this.gizmo.updateMatrixWorld(true);this.host.grip(this.gizmo,{mode,step:1,angle:15,space:'local',rotateAxis:turnAxis(b,this.groupId)==='y'?'Y':'Z'});return;}
-  const free=this.gizmoTarget();if(!free){this.gizmoOff();return;}if(this.host.dragging())return;place(this.gizmo,worldOf(free,this.host.frames()));this.gizmo.updateMatrixWorld(true);this.host.grip(this.gizmo,{mode,step:1,angle:15,space:'local'});}
+  if(this.groupId&&b?.groups?.some(g=>g.id===this.groupId)){if(this.host.dragging())return;this.pivot=undefined;this.gizmo.position.set(...centreOf(b,this.groupId,this.frames()));this.gizmo.quaternion.identity();this.gizmo.updateMatrixWorld(true);this.host.grip(this.gizmo,{mode,step:1,angle:15,space:'local',rotateAxis:turnAxis(b,this.groupId)==='y'?'Y':'Z'});return;}
+  const free=this.gizmoTarget();if(!free){this.gizmoOff();return;}if(this.host.dragging())return;place(this.gizmo,worldOf(free,this.frames()));this.gizmo.updateMatrixWorld(true);this.host.grip(this.gizmo,{mode,step:1,angle:15,space:'local'});}
  /** The gizmo moved: the document follows live, the Studio keeps the undo step. */
  onDrag(){
-  if(this.groupId){const b=this.build(),id=this.groupId;if(!b?.groups?.some(g=>g.id===id))return;const frames=this.host.frames();this.pivot??={start:structuredClone(b),centre:centreOf(b,id,frames),axis:turnAxis(b,id)};
+  if(this.groupId){const b=this.build(),id=this.groupId;if(!b?.groups?.some(g=>g.id===id))return;const frames=this.frames();this.pivot??={start:structuredClone(b),centre:centreOf(b,id,frames),axis:turnAxis(b,id)};
    const p=this.pivot,q=this.gizmo.quaternion,along=p.axis==='y'?q.y:q.z,angle=2*Math.atan2(along,q.w)*180/Math.PI,delta=this.gizmo.position.toArray().map((v,k)=>v-p.centre[k]) as V,next=structuredClone(p.start);
    moveGroup(next,id,{delta,angle,axis:p.axis,centre:p.centre},frames);b.items=next.items;b.plates=next.plates;if(next.train)b.train=next.train;this.refresh();return;}
-  const free=this.gizmoTarget();if(!free)return;const world:Frame={position:this.gizmo.position.toArray() as V,rotation:this.gizmo.quaternion.toArray() as Frame['rotation']},next=reframe({frame:world},free.body,this.host.frames());free.frame=next.frame;this.refresh();}
+  const free=this.gizmoTarget();if(!free)return;const world:Frame={position:this.gizmo.position.toArray() as V,rotation:this.gizmo.quaternion.toArray() as Frame['rotation']},next=reframe({frame:world},free.body,this.frames());free.frame=next.frame;this.refresh();}
 
  // ---------- pointer ----------
  /** World-free: the pointer's ray in the root's terms. */
  private rootRay(e:{clientX:number;clientY:number}){const ray=this.host.ray(e);this.group.updateWorldMatrix(true,false);return ray.ray.clone().applyMatrix4(this.group.matrixWorld.clone().invert());}
  /** What lies under the pointer: a plate (its coordinates), a surface of the model, or the floor. */
  private locate(e:{clientX:number;clientY:number},b:Build){
-  const ray=this.rootRay(e),frames=this.host.frames(),surface=this.host.surface(this.host.ray(e));let best:{plate:string;at:[number,number];distance:number}|undefined;
+  const ray=this.rootRay(e),frames=this.frames(),surface=this.host.surface(this.host.ray(e));let best:{plate:string;at:[number,number];distance:number}|undefined;
   for(const n of b.plates){const r=ray.clone().applyMatrix4(matrix(worldOf(n.free,frames)).invert()),hit=r.intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),0),new THREE.Vector3());if(!hit)continue;const q=plateRect(sheet(b,n.id)),grow=n.mode==='auto'?80:0;if(hit.x<q.x0-grow||hit.x>q.x1+grow||hit.y<q.y0-grow||hit.y>q.y1+grow)continue;const distance=hit.distanceTo(r.origin);if(!best||distance<best.distance)best={plate:n.id,at:[hit.x,hit.y],distance};}
   if(best&&(!surface||best.distance<surface.distance))return best;
   if(surface)return {surface};
@@ -196,7 +200,7 @@ export class BuildEditor{
   const b=this.build(),id=this.itemAt(ray),i=b?.items.find(x=>x.id===id),was=this.selected??this.trains.selectedId;this.trains.select(undefined);this.trainOpen=false;this.selected=id;if(id)this.plateId=undefined;else if(this.attached)this.plateId=undefined;
   if(!i){if(this.attached&&!was)return false;this.host.leave();return !this.attached;}
   this.renderProperties();this.refresh();
-  let offset:[number,number]=[0,0];if(i.plate){const n=b!.plates.find(p=>p.id===i.plate)!,r=this.rootRay(e).applyMatrix4(matrix(worldOf(n.free,this.host.frames())).invert()),at=r.intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),0),new THREE.Vector3());if(at)offset=[i.at[0]-at.x,i.at[1]-at.y];}
+  let offset:[number,number]=[0,0];if(i.plate){const n=b!.plates.find(p=>p.id===i.plate)!,r=this.rootRay(e).applyMatrix4(matrix(worldOf(n.free,this.frames())).invert()),at=r.intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),0),new THREE.Vector3());if(at)offset=[i.at[0]-at.x,i.at[1]-at.y];}
   this.host.orbit(false);this.drag={item:structuredClone(i),isNew:false,offset,moved:false,over:true,start:[e.clientX,e.clientY]};this.track();return true;
  }
  /** The one thing selected, as a member. */
@@ -208,13 +212,13 @@ export class BuildEditor{
  /** Strg+G: the selection (or the one thing selected) becomes a rigid group. */
  groupSelection(){const b=this.build();if(!b)return;let ms=[...this.multi].map(memberOf);if(!ms.length){const one=this.single();if(one)ms=[one];}if(!ms.length){this.host.status('Erst etwas auswählen: Strg-Klick wählt mehrere.');return;}
   const id='gruppe-'+crypto.randomUUID().slice(0,8),n=(b.groups?.length??0)+1;let along=0;
-  this.host.change(()=>{along=makeGroup(this.build()!,ms,id,`Gruppe ${n}`,true).along;},`Gruppe ${n} angelegt: fest, die Abstände bleiben.`);
-  if(this.build()?.groups?.some(g=>g.id===id)){this.selectMember({kind:'group',id});this.refresh();this.host.leave();if(along)this.host.status(`Gruppe ${n} angelegt (fest), dazu ${along} auf derselben Welle oder Platte.`);}}
+  let kind:GroupKind='koerper';this.host.change(()=>{const r=makeGroup(this.build()!,ms,id,`Gruppe ${n}`,undefined,this.frames());along=r.along;kind=r.kind;},`Gruppe ${n} angelegt.`);
+  if(this.build()?.groups?.some(g=>g.id===id)){this.selectMember({kind:'group',id});this.refresh();this.host.leave();this.host.status(`Gruppe ${n} angelegt: ${kindNames[kind]}${kind==='koerper'?', ein Stück':kind==='traeger'?', hält die Wellen in festen Abständen':''}${along?`, dazu ${along} auf derselben Welle oder Platte`:''}.`);}}
  private groupLabel(id:string){return this.build()?.groups?.find(g=>g.id===id)?.label??'Gruppe';}
  /** A rigid group follows one of its members: a wheel in the train's plane, snapping to wheels outside the group; a part
   * on the level it stands on, on the build's grid. */
  private startUnit(e:PointerEvent,unit:string,anchor:Member){
-  const b=this.build()!,frames=this.host.frames();let from:V|undefined;
+  const b=this.build()!,frames=this.frames();let from:V|undefined;
   if(anchor.kind==='wheel'){const p=this.trains.point(e);if(p)from=[p[0],0,p[1]];}
   else{const i=b.items.find(x=>x.id===anchor.id)!,z=standing(b,i,frames).position[2],hit=this.rootRay(e).intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),-z),new THREE.Vector3());if(hit)from=hit.toArray() as V;}
   if(!from)return;this.host.orbit(false);this.unitDrag={unit,start:structuredClone(b),anchor,from,moved:false,at:[e.clientX,e.clientY],delta:[0,0,0],text:''};
@@ -226,10 +230,10 @@ export class BuildEditor{
    const sn=snapWheel(outside,w,want,t.grid??1,e.altKey,t.angle??DEFAULT_ANGLE,!!t.target&&(t.grid??1)>0),at=sn.shaft?want:sn.at,o=sn.shaft?undefined:t.wheels.find(x=>x.id===sn.partner);
    delta=[at[0]-shaft.at[0],o?sn.z-w.z:0,at[1]-shaft.at[1]];if(o)u.text=`, ${wheelLabel(w)} kämmt mit ${wheelLabel(o)} unter ${Math.round(sn.angle!*10)/10}°`.replace(/(\d)\.(\d)/,'$1,$2');}
   else{const hit=this.rootRay(e).intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),-u.from[2]),new THREE.Vector3());if(!hit)return;const g=(v:number)=>e.altKey||!s.grid?v:Math.round(v/s.grid)*s.grid;delta=[g(hit.x-u.from[0]),g(hit.y-u.from[1]),0];}
-  u.delta=delta;const next=structuredClone(s);moveGroup(next,u.unit,{delta},this.host.frames());this.preview=next;this.refresh();
+  u.delta=delta;const next=structuredClone(s);moveGroup(next,u.unit,{delta},this.frames());this.preview=next;this.refresh();
   this.host.status(`${this.groupLabel(u.unit)}: ${delta.map(v=>Math.round(v*10)/10).join(' / ')} mm${u.text} · Alt: ohne Raster`);}
  private unitEnd(){
-  const u=this.unitDrag;this.unitDrag=undefined;this.preview=undefined;this.host.orbit(true);if(!u)return;if(!u.moved){this.refresh();return;}const frames=this.host.frames();
+  const u=this.unitDrag;this.unitDrag=undefined;this.preview=undefined;this.host.orbit(true);if(!u)return;if(!u.moved){this.refresh();return;}const frames=this.frames();
   this.host.change(()=>{const x=this.build()!,next=structuredClone(u.start);moveGroup(next,u.unit,{delta:u.delta},frames);x.items=next.items;x.plates=next.plates;if(next.train)x.train=next.train;},`${this.groupLabel(u.unit)} verschoben${u.text}.`);}
  /** A block from the library: dropped where the pointer meets the floor, or clicked: beside everything there is. */
  private startBlock(k:Block,e:PointerEvent){const start=[e.clientX,e.clientY];
@@ -237,7 +241,7 @@ export class BuildEditor{
    if(moved&&over){const hit=this.rootRay(ev).intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),0),new THREE.Vector3());if(hit)at=[Math.round(hit.x),Math.round(hit.y),0];}else if(!moved)at=this.besideAll();
    if(!at)return;let id='';this.host.change(()=>{id=insertBlock(this.ensure(),k,at!);},`${k.label} eingesetzt: eine feste Gruppe.`);if(id&&this.build()?.groups?.some(g=>g.id===id)){this.selectMember({kind:'group',id});this.refresh();this.host.leave();}};
   window.addEventListener('pointerup',up);}
- private besideAll():V{const b=this.build();if(!b)return [0,0,0];const frames=this.host.frames(),xs=[...b.items.map(i=>standing(b,i,frames).position[0]),...b.plates.map(p=>worldOf(p.free,frames).position[0]),...(b.train?.shafts??[]).map(s=>s.at[0])];return [xs.length?Math.round(Math.max(...xs))+120:0,0,0];}
+ private besideAll():V{const b=this.build();if(!b)return [0,0,0];const frames=this.frames(),xs=[...b.items.map(i=>standing(b,i,frames).position[0]),...b.plates.map(p=>worldOf(p.free,frames).position[0]),...(b.train?.shafts??[]).map(s=>s.at[0])];return [xs.length?Math.round(Math.max(...xs))+120:0,0,0];}
  private startNew(part:Part,e:PointerEvent){this.drag={item:newItem('t-'+crypto.randomUUID().slice(0,8),part,[0,0]),isNew:true,offset:[0,0],moved:false,over:false,start:[e.clientX,e.clientY]};this.track();}
  private startPlate(e:PointerEvent){this.drag={plate:newPlateNode('platte-'+crypto.randomUUID().slice(0,6)),isNew:true,offset:[0,0],moved:false,over:false,start:[e.clientX,e.clientY]};this.track();}
  private track(){
@@ -247,10 +251,10 @@ export class BuildEditor{
  private dragMove(e:PointerEvent){
   const d=this.drag;if(!d)return;const b=this.shown()??modelBuild('neu',this.attachedTo??'');if(Math.hypot(e.clientX-d.start[0],e.clientY-d.start[1])>3)d.moved=true;if(!d.moved)return;
   d.over=!d.isNew||document.elementFromPoint(e.clientX,e.clientY)===this.host.canvas();if(!d.over){this.refresh();return;}
-  if(d.plate){const s=this.locate(e,{...b,plates:b.plates.filter(p=>p.id!==d.plate!.id)});if(s&&'surface' in s)d.plate.free=reframe({frame:onSurface({...parts[0],body:1},s.surface!.point,s.surface!.normal,d.plate.thickness)},s.surface!.body||undefined,this.host.frames());this.refresh();return;}
+  if(d.plate){const s=this.locate(e,{...b,plates:b.plates.filter(p=>p.id!==d.plate!.id)});if(s&&'surface' in s)d.plate.free=reframe({frame:onSurface({...parts[0],body:1},s.surface!.point,s.surface!.normal,d.plate.thickness)},s.surface!.body||undefined,this.frames());this.refresh();return;}
   const s=this.locate(e,b),i=d.item!;if(!s)return;
   if('plate' in s&&s.plate){if(partOf(b,i).mount==='support')return;const wish:[number,number]=[s.at[0]+d.offset[0],s.at[1]+d.offset[1]],on=i.plate===s.plate;i.plate=s.plate;delete i.free;if(!on&&i.holder.kind==='none')i.holder=newItem('',partOf(b,i),[0,0]).holder;const flat=sheet({...b,items:b.items.filter(x=>x.id!==i.id)},s.plate);i.at=e.altKey?wish:snapTo(flat,i,wish);}
-  else if('surface' in s){const p=partOf(b,i),f=s.surface!;delete i.plate;i.free=reframe({frame:onSurface(p,f.point,f.normal,liftOf(i),i.angle)},f.body||undefined,this.host.frames());}
+  else if('surface' in s){const p=partOf(b,i),f=s.surface!;delete i.plate;i.free=reframe({frame:onSurface(p,f.point,f.normal,liftOf(i),i.angle)},f.body||undefined,this.frames());}
   this.refresh();
  }
  private dragEnd(e:PointerEvent){
@@ -258,7 +262,7 @@ export class BuildEditor{
   if(d.isNew&&!d.moved){this.placeByClick(d,b);d.over=true;}
   if(!d.moved&&!d.isNew||!d.over){this.refresh();return;}
   if(d.plate){const plate=d.plate;this.plateId=plate.id;this.selected=undefined;this.host.change(()=>{this.ensure().plates.push(plate);},'Bodenplatte platziert.');return;}
-  const item=d.item!,before=b?.items.find(i=>i.id===item.id);if(item.wish?.mode==='auto')delete item.wish;else if(item.wish?.mode==='zone'&&before){if(item.free){item.wish.center=[...worldOf(item.free,this.host.frames()).position];}else if(item.plate===before.plate){item.wish.center=[item.wish.center[0]+item.at[0]-before.at[0],item.wish.center[1]+item.at[1]-before.at[1]];}}
+  const item=d.item!,before=b?.items.find(i=>i.id===item.id);if(item.wish?.mode==='auto')delete item.wish;else if(item.wish?.mode==='zone'&&before){if(item.free){item.wish.center=[...worldOf(item.free,this.frames()).position];}else if(item.plate===before.plate){item.wish.center=[item.wish.center[0]+item.at[0]-before.at[0],item.wish.center[1]+item.at[1]-before.at[1]];}}
   const flat=b&&item.plate?sheet({...b,items:b.items.filter(i=>i.id!==item.id&&!i.wish)},item.plate):undefined,wish=[...item.at],at=flat&&!e.altKey?nearestFree(flat,item):item.at,label=partOf(b??{parts:[]},item).label,pushed=at[0]!==wish[0]||at[1]!==wish[1],where=item.free?.body?` an ${item.free.body}`:'';
   this.selected=item.id;this.plateId=undefined;this.host.change(()=>{const x=this.ensure(),next={...item,at};if(d.isNew)x.items.push(next);else x.items=x.items.map(y=>y.id===item.id?next:y);solveBuild(x);},pushed?`${label}: war belegt, auf den nächsten freien Platz gesetzt.`:d.isNew?`${label} platziert${where}.`:`${label} verschoben${where}.`);
  }
@@ -283,11 +287,11 @@ export class BuildEditor{
    for(const n2 of b.plates){if(a.i.plate===n2.id)continue;const q=plateBox(b,n2,worldOf(n2.free,frames));if(separation(a.h,hull(q.frame,q.center,q.half))<0)out.push({kind:'body',items:[a.i.id],message:`${a.p.label} steckt in einer Bodenplatte.`});}
    if(ctx)for(const link of modelHits(ctx.m,ctx.drives,a.h,this.ownerOf(b,a.i),ctx.assets,frames))out.push({kind:'model',items:[a.i.id],message:`${a.p.label} steckt in ${link}.`});});
   return out;}
- private allIssues(b:Build){const planar=b.plates.flatMap(n=>issues(sheet(b,n.id)));try{return [...planar,...this.spaceIssues(b,this.host.frames())];}catch{return planar;}}
+ private allIssues(b:Build){const planar=b.plates.flatMap(n=>issues(sheet(b,n.id)));try{return [...planar,...this.spaceIssues(b,this.frames())];}catch{return planar;}}
  /** The same over the whole way of every axis: a part must fit in every pose. */
  private async sweep(){
   const b=this.build();if(!b)return;this.sweepText='Fahrweg wird geprüft …';this.renderProperties();const seen=new Map<string,{axis:string;at:number[]}>();
-  try{for(const pose of await this.host.range())for(const x of this.spaceIssues(b,pose.frames)){const c=seen.get(x.message)??{axis:pose.axis,at:[]};c.at.push(Math.round(pose.value));seen.set(x.message,c);}
+  try{for(const pose of await this.host.range())for(const x of this.spaceIssues(b,{...shaftFrames(b.train),...pose.frames})){const c=seen.get(x.message)??{axis:pose.axis,at:[]};c.at.push(Math.round(pose.value));seen.set(x.message,c);}
    this.sweepText=seen.size?[...seen].map(([m,c])=>`${m} (${c.axis} bei ${c.at.slice(0,4).join(', ')}${c.at.length>4?' …':''})`).join(' · '):'✓ Über den ganzen Fahrweg frei.';}catch(e){this.sweepText=`Fahrweg nicht geprüft: ${e}`;}
   this.renderProperties();this.host.status(this.sweepText);
  }
@@ -316,10 +320,10 @@ export class BuildEditor{
    // Strg-click adds to the selection, a click selects alone.
    const go=(m:Member)=>(ev:MouseEvent)=>{if(ev.ctrlKey||ev.metaKey)this.toggle(m);else this.selectMember(m);this.refresh();this.host.leave();};
    const line=(m:Member,depth:number)=>{let text='';const data:Record<string,string>={};
-    if(m.kind==='group'){const g=b.groups!.find(x=>x.id===m.id)!;text=`${g.rigid?'▣':'▢'} ${g.label}${g.rigid?' · fest':' · frei'}`;data.group=g.id;}
+    if(m.kind==='group'){const g=b.groups!.find(x=>x.id===m.id)!;text=`${g.kind==='traeger'?'▣':g.kind==='koerper'?'◆':'▢'} ${g.label} · ${kindNames[g.kind]}`;data.group=g.id;}
     else if(m.kind==='plate'){text='▭ Bodenplatte';data.plate=m.id;}
     else if(m.kind==='item'){const i=b.items.find(x=>x.id===m.id)!;text=`${partOf(b,i).label}${i.free?.body?` → ${i.free.body}`:''}`;data.item=m.id;}
-    else{const w=t!.wheels.find(x=>x.id===m.id)!;text=`⚙ ${wheelLabel(w)}${w.shaft===t!.input?' · Eingang':w.shaft===t!.output?' · Ausgang':''}`;data.wheel=m.id;}
+    else{const w=t!.wheels.find(x=>x.id===m.id)!;text=`⚙ ${wheelLabel(w)}${inputsOf(t!).some(i=>i.shaft===w.shaft)?' · Eingang':outputsOf(t!).includes(w.shaft)?' · Ausgang':''}`;data.wheel=m.id;}
     const r=el('button',{textContent:text,...(m.kind==='item'||m.kind==='wheel'?{className:'tree-sub'}:{})});Object.assign(r.dataset,data);if(depth)r.style.paddingLeft=`${10+depth*16}px`;r.setAttribute('aria-selected',String(lit(m)));r.onclick=go(m);root.append(el('div',{className:'tree-row'},r));
     if(m.kind==='group')nest(childrenOf(b,m.id),depth+1);};
    // Parts on a plate of the same level hang under it.
@@ -405,24 +409,28 @@ export class BuildEditor{
  private groupPage(root:HTMLElement,b:Build){
   const g=b.groups!.find(x=>x.id===this.groupId)!,c=contents(b,g.id),set=(message:string,fn:(y:NonNullable<Build['groups']>[number])=>void)=>this.host.change(()=>{const y=this.build()!.groups?.find(x=>x.id===g.id);if(y)fn(y);},message);
   const name=el('input',{type:'text',value:g.label});name.dataset.field='Name der Gruppe';name.setAttribute('aria-label','Name der Gruppe');name.onchange=()=>{const v=name.value.trim();if(v)set('Gruppe umbenannt',y=>{y.label=v;});};
-  const rigid=el('select');rigid.dataset.field='Abstände';rigid.add(new Option('🔒 Fest: bewegt sich als Ganzes','fest'));rigid.add(new Option('Frei: jedes Stück einzeln','frei'));rigid.value=g.rigid?'fest':'frei';rigid.onchange=()=>set(rigid.value==='fest'?'Gruppe fest: die Abstände bleiben.':'Gruppe frei: jedes Stück bewegt sich einzeln.',y=>{y.rigid=rigid.value==='fest';});
-  root.append(heading('Gruppe'),el('label',{},'Name',name),el('label',{},'Abstände',rigid));
-  const parent=b.groups!.find(x=>x.id===g.parent);if(parent)root.append(el('p',{className:'muted',textContent:`Steckt in „${parent.label}“${parent.rigid?' (fest: die zieht mit)':''}.`}));
+  // What the members are to each other.
+  const kind=el('select');kind.dataset.field='Art';for(const [k,text] of [['traeger','▣ Träger: hält Wellen in festen Abständen'],['koerper','◆ Körper: ein Stück, dreht mit seiner Welle'],['ordnung','▢ Ordnung: nur zusammen im Baum']] as [GroupKind,string][])kind.add(new Option(text,k));kind.value=g.kind;
+  kind.onchange=()=>{const k=kind.value as GroupKind,frames=this.frames();this.host.change(()=>{setKind(this.build()!,g.id,k,frames);},`${g.label}: ${kindNames[k]}.`);};
+  root.append(heading('Gruppe'),el('label',{},'Name',name),el('label',{},'Art',kind));
+  const shafts=[...new Set(c.wheels.map(w=>w.shaft))],shaftName=shafts.length===1?this.bodyName(`welle:${shafts[0]}`):'';
+  root.append(el('p',{id:'group-kind',className:'muted',textContent:g.kind==='traeger'?'Die Wellen der Gruppe stehen fest zueinander, die Räder drehen darin. Für diese Abstände entstehen später Lager und Gehäuse.':g.kind==='koerper'?(shafts.length===1?`Ein Stück: Alles darin hängt an der ${shaftName} und dreht mit ihr.`:shafts.length?'Ein Körper dreht sich um eine Welle: Räder auf mehreren Wellen sind ein Träger.':'Ein Stück: Alles darin bewegt sich zusammen.'):'Ordnet nur: Jedes Stück bewegt sich einzeln.'}));
+  const parent=b.groups!.find(x=>x.id===g.parent);if(parent)root.append(el('p',{className:'muted',textContent:`Steckt in „${parent.label}“ (${kindNames[parent.kind]}${rigidOf(parent)?': zieht beim Bearbeiten mit':''}).`}));
   root.append(el('p',{className:'muted',textContent:[`${c.items.length} Teile`,`${c.plates.length} Platten`,`${c.wheels.length} Räder`,...(c.groups.size>1?[`${c.groups.size-1} Untergruppen`]:[])].join(' · ')}));
-  if(c.wheels.length){const t=b.train!,sub={...t,wheels:c.wheels,shafts:c.shafts},n=meshes(sub).length,ends=!!t.input&&!!t.output&&c.shafts.some(s=>s.id===t.input)&&c.shafts.some(s=>s.id===t.output),r=ends?ratioOf(sub):undefined;
-   const pairs=meshes(sub);if(pairs.length)root.append(el('p',{id:'group-distances',className:g.rigid?'state-pass':'muted',textContent:`Achsabstände${g.rigid?' (fest)':''}: ${pairs.map(([x,y])=>`${wheelLabel(x)} ↔ ${wheelLabel(y)} ${mm(Math.hypot(...[0,1].map(k=>c.shafts.find(s=>s.id===x.shaft)!.at[k]-c.shafts.find(s=>s.id===y.shaft)!.at[k]) as [number,number]))} mm`).join(' · ')}`}));
-   root.append(el('p',{id:'group-ratio',className:r?'state-pass':'muted',textContent:`${n} Eingriff${n===1?'':'e'} in der Gruppe${r?` · Übersetzung 1 : ${Math.abs(r).toFixed(2).replace('.',',')}`:ends?'':' · Eingang und Ausgang liegen nicht beide in der Gruppe'}`}));}
-  root.append(el('p',{className:'muted',textContent:`Verschieben und Drehen mit dem Griff in der Ansicht (Drehen ${turnAxis(b,g.id)==='y'?'um die Wellen':'um die Senkrechte'}).${g.rigid?' Ziehst du ein Rad oder Teil der Gruppe, kommt die ganze Gruppe mit; ein Rad rastet dabei an Räder außerhalb ein.':''}`}));
-  const keep=el('button',{textContent:'📚 In die Bibliothek legen',className:'primary'});keep.dataset.groupSave='true';keep.disabled=!g.rigid;keep.title=g.rigid?'Steht dann in jedem Projekt unter „Eigene Bausteine“.':'Nur feste Gruppen: ein Baustein hält seine Abstände.';
-  keep.onclick=()=>void (async()=>{try{await this.host.saveBlock?.(blockOf(b,g.id,this.host.frames()));this.host.status(`${g.label} liegt in der Bibliothek unter „Eigene Bausteine“.`);this.host.leave();}catch(e){this.host.status(`Nicht gespeichert: ${e instanceof Error?e.message:e}`);}})();
-  const apart=el('button',{textContent:'Auflösen'});apart.dataset.groupDissolve='true';apart.onclick=()=>{const id=g.id;this.groupId=undefined;this.host.change(()=>{dissolve(this.build()!,id);},`${g.label} aufgelöst.`);};
+  if(c.wheels.length){const t=b.train!,sub={...t,wheels:c.wheels,shafts:c.shafts},n=meshes(sub).length,mine=(s:string)=>c.shafts.some(x=>x.id===s),ends=inputsOf(t).filter(i=>mine(i.shaft)).flatMap(i=>outputsOf(t).filter(mine).map(o=>({i:i.shaft,o,r:ratioOf(sub,i.shaft,o)}))).filter(p=>p.r!==undefined),name=(s:string)=>{const w=c.wheels.find(x=>x.shaft===s);return w?wheelLabel(w):'';};
+   const pairs=meshes(sub);if(pairs.length)root.append(el('p',{id:'group-distances',className:g.kind==='traeger'?'state-pass':'muted',textContent:`Achsabstände${g.kind==='traeger'?' (fest)':''}: ${pairs.map(([x,y])=>`${wheelLabel(x)} ↔ ${wheelLabel(y)} ${mm(Math.hypot(...[0,1].map(k=>c.shafts.find(s=>s.id===x.shaft)!.at[k]-c.shafts.find(s=>s.id===y.shaft)!.at[k]) as [number,number]))} mm`).join(' · ')}`}));
+   root.append(el('p',{id:'group-ratio',className:ends.length?'state-pass':'muted',textContent:`${n} Eingriff${n===1?'':'e'} in der Gruppe${ends.length?` · ${ends.map(p=>`${name(p.i)} → ${name(p.o)} 1 : ${Math.abs(p.r!).toFixed(2).replace('.',',')}`).join(' · ')}`:' · kein Eingang und Ausgang beide in der Gruppe'}`}));}
+  root.append(el('p',{className:'muted',textContent:`Verschieben und Drehen mit dem Griff in der Ansicht (Drehen ${turnAxis(b,g.id)==='y'?'um die Wellen':'um die Senkrechte'}).${rigidOf(g)?' Ziehst du ein Rad oder Teil der Gruppe, kommt die ganze Gruppe mit; ein Rad rastet dabei an Räder außerhalb ein.':''}`}));
+  const keep=el('button',{textContent:'📚 In die Bibliothek legen',className:'primary'});keep.dataset.groupSave='true';keep.disabled=!rigidOf(g);keep.title=rigidOf(g)?'Steht dann in jedem Projekt unter „Eigene Bausteine“.':'Nur Körper und Träger: ein Baustein hält seine Abstände.';
+  keep.onclick=()=>void (async()=>{try{await this.host.saveBlock?.(blockOf(b,g.id,this.frames()));this.host.status(`${g.label} liegt in der Bibliothek unter „Eigene Bausteine“.`);this.host.leave();}catch(e){this.host.status(`Nicht gespeichert: ${e instanceof Error?e.message:e}`);}})();
+  const apart=el('button',{textContent:'Auflösen'});apart.dataset.groupDissolve='true';apart.onclick=()=>{const id=g.id;this.groupId=undefined;const frames=this.frames();this.host.change(()=>{dissolve(this.build()!,id,frames);},`${g.label} aufgelöst.`);};
   const remove=el('button',{textContent:'Mit Inhalt entfernen',className:'danger'});remove.dataset.groupRemove='true';remove.onclick=()=>this.removeSelectedGroup();
   root.append(el('div',{className:'button-row'},keep,apart,remove));}
  private report(found:Issue[]){const box=el('div',{id:'build-issues'});if(!found.length)box.append(el('p',{className:'state-pass',textContent:'✓ Nichts überschneidet sich, alle Stecker sind frei.'}));for(const f of found)box.append(el('p',{className:'state-fail',textContent:f.message}));return box;}
  /** Where a free thing hangs, and its numbers; changing the link keeps it where it is in the room. */
  private freeFields(root:HTMLElement,free:Free,number:NumberField,select:SelectField,write:(message:string,fn:(f:Free)=>void)=>void){
-  const links=Object.keys(this.host.frames());
-  if(links.length)root.append(select('Hängt an',free.body??'',[['','nichts (steht im Raum)'],...links.map(l=>[l,l==='ground'?'Basis':l] as [string,string])],v=>write('Zuordnung geändert',f=>{const next=reframe(f,v||undefined,this.host.frames());f.frame=next.frame;if(v)f.body=v;else delete f.body;})));
+  const links=Object.keys(this.frames());
+  if(links.length)root.append(select('Hängt an',free.body??'',[['','nichts (steht im Raum)'],...links.map(l=>[l,this.bodyName(l)] as [string,string])],v=>write('Zuordnung geändert',f=>{const next=reframe(f,v||undefined,this.frames());f.frame=next.frame;if(v)f.body=v;else delete f.body;})));
   (['X','Y','Z'] as const).forEach((axis,k)=>root.append(number(`${axis} [mm]`,free.frame.position[k],n=>write('Lage geändert',f=>{f.frame.position[k]=n;}),'1')));
   root.append(el('p',{className:'muted',textContent:'Feinjustieren mit dem Griff in der 3D-Ansicht: Verschieben und Drehen in der Werkzeugleiste.'}));
  }
@@ -486,13 +494,15 @@ export class BuildEditor{
    if(data.type==='net'){const fails=(data.checks as {state:string;message:string}[]).filter(c=>c.state==='fail');n.state=fails.length?'error':'done';n.positions=data.positions;n.stl=data.stl;n.key=key;const stand=(data.checks as {id:string;message:string}[]).find(c=>c.id==='stand')?.message??'';n.text=fails.length?fails.map(c=>c.message).join(' · '):`${data.report.struts} Streben · ${data.report.mass.toFixed(0)} g · Auslastung ${(data.report.utilisation*100).toFixed(0)} % · Durchbiegung ${data.report.deflection.toFixed(2)} mm · Druck ${data.report.print.label} · ${stand}`;this.host.status('Baum-Netz erzeugt.');}
    else{n.state='error';n.text=String(data.message??'Struktur nicht erzeugt.');this.host.status(n.text);}
    this.refresh();this.renderProperties();};
-  w.postMessage({kind:'net',build:b,settings:{bracing:n.bracing,load:n.load}});this.renderProperties();
+  // The net knows the room only: what hangs on a shaft goes where it stands now.
+  const frames=this.frames(),room=structuredClone(b);for(const x of [...room.items,...room.plates])if(x.free&&shaftOfBody(x.free.body))x.free={frame:worldOf(x.free,frames)};
+  w.postMessage({kind:'net',build:room,settings:{bracing:n.bracing,load:n.load}});this.renderProperties();
  }
  /** Fixed, a zone, or open; on a model a zone with a goal. Asking for a place on a plate takes effect at once. */
  private placeFields(root:HTMLElement,b:Build,i:BuildItem,p:Part,number:NumberField,select:SelectField,set:(m:string,f:(x:BuildItem)=>void)=>void){
   const onPlate=!!i.plate,mode=i.wish?.mode??'fixed',solved=(message:string,fn:(x:BuildItem)=>void)=>{let failed:string[]=[];this.host.change(()=>{const x=this.build()!,y=x.items.find(z=>z.id===i.id);if(y)fn(y);failed=solveBuild(x);},message);if(failed.length){const now=this.build()!;this.host.status(`Kein Platz für ${failed.map(id=>{const q=now.items.find(z=>z.id===id);return q?partOf(now,q).label:id;}).join(', ')}: größere Platte oder größerer Bereich.`);}};
   if(!onPlate&&!this.attached)return;
-  root.append(select('Platz',mode,onPlate?[['fixed','🔒 Fest'],['zone','↔ Bereich: ungefähr hier'],['auto','✨ Auto: egal wo']]:[['fixed','🔒 Fest'],['zone','↔ Bereich: ungefähr hier']],v=>{if(v==='fixed')solved('Platz fest',x=>{delete x.wish;});else if(v==='auto')solved('Platz automatisch',x=>{x.wish={mode:'auto',center:[],size:[],goal:'middle'};});else if(onPlate)solved('Bereich gesetzt',x=>{x.wish={mode:'zone',center:[...x.at],size:[60,60],goal:'middle'};});else set('Bereich gesetzt',x=>{x.wish={mode:'zone',center:[...worldOf(x.free!,this.host.frames()).position],size:[80],goal:'middle'};});}));
+  root.append(select('Platz',mode,onPlate?[['fixed','🔒 Fest'],['zone','↔ Bereich: ungefähr hier'],['auto','✨ Auto: egal wo']]:[['fixed','🔒 Fest'],['zone','↔ Bereich: ungefähr hier']],v=>{if(v==='fixed')solved('Platz fest',x=>{delete x.wish;});else if(v==='auto')solved('Platz automatisch',x=>{x.wish={mode:'auto',center:[],size:[],goal:'middle'};});else if(onPlate)solved('Bereich gesetzt',x=>{x.wish={mode:'zone',center:[...x.at],size:[60,60],goal:'middle'};});else set('Bereich gesetzt',x=>{x.wish={mode:'zone',center:[...worldOf(x.free!,this.frames()).position],size:[80],goal:'middle'};});}));
   const w=i.wish;if(!w||w.mode!=='zone')return;
   if(onPlate){(['Mitte X','Mitte Y'] as const).forEach((l,k)=>root.append(number(`${l} [mm]`,w.center[k],n=>solved('Bereich geändert',x=>{x.wish!.center[k]=n;}),'1')));(['Breite','Tiefe'] as const).forEach((l,k)=>root.append(number(`Bereich ${l} [mm]`,w.size[k],n=>solved('Bereich geändert',x=>{x.wish!.size[k]=Math.max(1,n);}),'5')));return;}
   root.append(number('Radius [mm]',w.size[0],n=>set('Bereich geändert',x=>{x.wish!.size[0]=Math.max(5,n);}),'10'),select('Ziel',w.goal,[['middle','möglichst mittig im Bereich'],['axis','kurzer Hebel zu den Achsen (Gewicht)']],v=>set('Ziel geändert',x=>{x.wish!.goal=v as 'middle'|'axis';})));
@@ -501,7 +511,7 @@ export class BuildEditor{
  /** A place on the model in the ball: lying on a surface, free of the rest, in every pose, the best by the goal. */
  private async findPlace(id:string,p:Part){
   const b=this.build(),i=b?.items.find(x=>x.id===id),ctx=this.host.model(),w=i?.wish;if(!b||!i||!ctx||!w)return;this.host.status('Platz wird gesucht …');await new Promise(r=>setTimeout(r));
-  const frames=this.host.frames(),points=surfacePoints(ctx.m,ctx.drives,ctx.assets,frames,w.center as V,w.size[0],6),others=b.items.filter(x=>x.id!==id).map(x=>{const q=partBox(partOf(b,x),standing(b,x,frames));return {gap:Math.max(i.clearance,x.clearance),h:hull(q.frame,q.center,q.half)};}),found:{frame:Frame;body:string;score:number;lever:number}[]=[];
+  const frames=this.frames(),points=surfacePoints(ctx.m,ctx.drives,ctx.assets,frames,w.center as V,w.size[0],6),others=b.items.filter(x=>x.id!==id).map(x=>{const q=partBox(partOf(b,x),standing(b,x,frames));return {gap:Math.max(i.clearance,x.clearance),h:hull(q.frame,q.center,q.half)};}),found:{frame:Frame;body:string;score:number;lever:number}[]=[];
   for(const s of points)for(const angle of [0,90]){const frame=onSurface(p,s.point,s.normal,liftOf(i),angle),q=partBox(p,frame),h=hull(q.frame,q.center,q.half);if(others.some(o=>separation(h,o.h)<o.gap)||modelHits(ctx.m,ctx.drives,h,s.body,ctx.assets,frames).length)continue;const lever=axisLever(ctx.m,ctx.drives,frames,s.body,s.point);found.push({frame,body:s.body,lever,score:w.goal==='axis'?lever:Math.hypot(s.point[0]-w.center[0],s.point[1]-w.center[1],s.point[2]-w.center[2])});}
   found.sort((x,y)=>x.score-y.score);const range=await this.host.range();
   // The best places often sit side by side and fail together: spread the tries over the whole list, in order.
