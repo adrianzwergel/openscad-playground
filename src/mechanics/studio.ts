@@ -32,7 +32,7 @@ const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unkno
 /** A new project: empty, with the parts list every project has. */
 const fresh=():StudioDocument=>({version:1,assemblies:[],routes:[],builds:[emptyBuild()]});
 function emptyBuild(){return {...newBuild('teile-'+crypto.randomUUID().slice(0,8),'Teile'),plates:[]};}
-const isEmpty=(b:{items:unknown[];plates:unknown[];train?:{wheels:unknown[]}})=>!b.items.length&&!b.plates.length&&!b.train?.wheels.length;
+const isEmpty=(b:{items:unknown[];plates:unknown[];train?:{wheels:unknown[]};linkage?:{links:unknown[]}})=>!b.items.length&&!b.plates.length&&!b.train?.wheels.length&&!b.linkage?.links.length;
 /** One device: once the project has its mechanism, the parts belong to it (an empty list goes); without one there is
  * always a list to place into. */
 function unify(d:StudioDocument){
@@ -90,6 +90,7 @@ window.addEventListener('keydown',e=>{if(e.key==='Alt'&&!free){free=true;snaps()
 (window as unknown as {studioScreen:(p:[number,number,number])=>[number,number]}).studioScreen=p=>{mechRoot.updateMatrixWorld(true);const v=mechRoot.localToWorld(new THREE.Vector3(...p)).project(camera),r=renderer.domElement.getBoundingClientRect();return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];};
 (window as unknown as {studioFrame:(key:string)=>number[]|undefined}).studioFrame=key=>build.frameOf(key);
 (window as unknown as {studioPart:(key?:string)=>number[]|undefined}).studioPart=key=>build.followerAt(key);
+(window as unknown as {studioLinkage:object}).studioLinkage={point:(l:string,p:string)=>build.linkagePoint(l,p),reading:()=>build.linkageReading(),set:(l:string,v:number)=>build.setLinkageInput(l,v),screen:(l:string,p:string)=>{const w=build.linkagePoint(l,p);if(!w)return undefined;build.group.updateMatrixWorld(true);const v=new THREE.Vector3(...w).applyMatrix4(build.group.matrixWorld).project(camera),r=renderer.domElement.getBoundingClientRect();return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];}};
 // Test entry: the document as the old save slot held it (checks read it from there).
 (window as unknown as {studioSave:()=>void}).studioSave=()=>localStorage.setItem('mechanics-studio',serializeStudio(doc));
 window.addEventListener('studio-pick',e=>{const d=(e as CustomEvent).detail;if(!mech.pickByName(d.part,d.local))status.textContent='Teil nicht gefunden: '+d.part;});

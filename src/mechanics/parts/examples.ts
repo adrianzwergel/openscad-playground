@@ -5,6 +5,7 @@ import type {Build} from './build.ts';
 import {newItem,newPlateNode} from './build.ts';
 import {partById} from './catalog.ts';
 import {legoGears,newTrain,setEnds} from './train.ts';
+import {pushrodCorner} from './linkage.ts';
 import type {Train,Wheel} from './train.ts';
 import {compose,inverse,axisAngle} from '../kinematics/math.ts';
 import type {Frame,V} from '../kinematics/math.ts';
@@ -36,4 +37,5 @@ export const buildExamples:Example[]=[
  {key:'schwenkarm',title:'Schwenkarm',text:'Eine Platte als Arm dreht mit eigenem Motor um ihr Ende; ein Pico auf ihr fährt mit.',make:b=>{
   const arm={...newPlateNode('arm',at([60,0,40])),mode:'fixed' as const,size:[160,30] as [number,number],center:[0,0] as [number,number]};arm.free.joint={kind:'drehen',axis:'z',at:[-10,0,40],min:-90,max:90,input:{drive:'nema17'}};b.plates.push(arm);
   b.items.push({...newItem('pico',partById('rpi-pico')!,[50,0]),plate:'arm'},item('motor','nema17-40',at([-10,0,0])));}},
+ {key:'aufhaengung',title:'Pushrod-Aufhängung 1:10',text:'Doppelquerlenker, Pushrod auf Umlenkhebel und Öldämpfer, Spurstange: Gelenkpunkte setzen, Lenker und Halter entstehen daraus.',make:b=>{b.linkage={links:pushrodCorner()};}},
 ];

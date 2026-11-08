@@ -87,6 +87,34 @@ du ein Stück, kommt die Gruppe mit, ein Rad rastet dabei an Räder außerhalb e
 man Teile mit den Rädern einer Welle, verbindet das Studio die Teile fest mit dieser Welle (eine Verbindung wie jede
 andere). Starre Gruppen gehen als Bausteine in die Bibliothek. Strg-Klick wählt mehrere, Strg+G gruppiert.
 
+### Gestänge aus Gelenkpunkten (Fahrwerk)
+
+Bei Aufhängungen wählt man die **Gelenkpunkte**, die Lenker folgen daraus, wie in Fahrwerksprogrammen mit Hardpoints.
+Logik: `parts/linkage.ts`, Editor: `studio-linkage.ts`; geprüft von `scripts/parts/check-linkage.mjs` und
+`scripts/check-studio-linkage-browser.mjs`.
+
+- Ein **Lenker** hat Punkte; jeder Punkt verbindet ihn mit etwas anderem (der Welt = Chassis, einem anderen Lenker, einem
+  Teil, einer Platte, einer Welle) als **Kugelgelenk** oder als **Drehachse** durch zwei Lagerpunkte. Drei Arten:
+  **gedruckter Lenker** (Querlenker, Umlenkhebel, Radträger; seine Form entsteht aus allen Punkten an ihm, auch denen
+  anderer, die auf ihm enden), **Stab** (gekauftes Spannschloss M3 mit zwei Kugelpfannen: fest ist nur der Abstand),
+  **Federbein** (gekaufter Öldämpfer: hält nichts, seine Länge wird abgelesen und gegen den Hub geprüft).
+- Punkte stehen in der **Konstruktionslage** (Regler auf 0) im Raum; dort ist der Rahmen jedes Lenkers die Identität. Sie
+  sind Griffe in der Ansicht: gezogen rasten sie im 0,5-mm-Raster (Alt: frei), auf einem Punkt oder Rohr eines anderen
+  Lenkers abgelegt hängen sie an ihm. Genau setzt man sie mit X/Y/Z auf der Seite des Lenkers.
+- Eine Drehachse kann **Eingang** sein: Der Regler „Gestänge bewegen“ dreht dort (in Grad). Gelöst wird jede Stellung als
+  geschlossene Schleife (Levenberg–Marquardt über die sechs Koordinaten jedes Lenkers, Stäbe als Abstände). Die Prüfung
+  zählt die freien Bewegungen (6 je Lenker minus 3 je Kugel, 5 je Drehachse, 1 je Stab und Eingang): 0 heißt bestimmt.
+- Abgelesen wird **Radhub, Sturz, Spur, Dämpferlänge** jetzt und über den ganzen Bereich, dazu die **Motion Ratio**.
+  Räumlich: z oben, beim Auto x nach vorn, y nach links.
+- Katalog „Fahrwerk 1:10“: Öldämpfer 55/65/75 mm, Kugelköpfe 5,8 und 6,8 mm M3, Räder Ø 56 und 64; Maße typisch und von
+  Hand eingetragen (offene CAD-Daten mit klarer Lizenz gibt es kaum). Baustein **Pushrod-Ecke 1:10** und das Beispiel
+  „Pushrod-Aufhängung 1:10“: Doppelquerlenker, Pushrod auf Umlenkhebel und Dämpfer, Spurstange (Spuränderung unter 0,01°
+  über ±9 mm Federweg).
+- **③:** „Gestänge · Druckteile & Halter“ gibt jeden gedruckten Lenker als STL aus (Rohre zwischen den Punkten, Hülse an
+  Drehachsen mit Bohrung Ø 3,2 für M3, Kernloch Ø 2,5 für Kugelbolzen bzw. den Gewindestift der Pfanne) und die
+  **Halter am Chassis** (Säule mit Fuß und Schraubloch bis zum einstellbaren Boden, Laschen an Drehachsen). Die Stückliste
+  nennt Kugelbolzen, Pfannen, Spannschlösser mit Kugelmitte-Abstand, Dämpfer, Räder und Schrauben M3 nach Länge.
+
 ### Phasen
 
 Alle drei sind immer offen. Was eine Phase für das Projekt nicht hat, sagt der Szenenbaum.

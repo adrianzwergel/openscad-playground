@@ -8,8 +8,11 @@ import {deriveMechanism} from '../../src/mechanics/parts/derive.ts';
 import {solve} from '../../src/mechanics/kinematics/solver.ts';
 import {heldTrains} from '../../src/mechanics/kinematics/drive.ts';
 import {planBearings} from '../../src/mechanics/kinematics/bearings.ts';
+import {linkageIssues,freedomOf} from '../../src/mechanics/parts/linkage.ts';
 const lines=[];
 for(const x of buildExamples){const b={...newBuild('teile','Teile'),plates:[]};x.make(b);const read=parseBuild(JSON.parse(JSON.stringify(b)));
+ // A linkage alone: determined, nothing to derive.
+ if(read.linkage&&!read.train){assert.deepEqual(linkageIssues(read.linkage),[],x.key);assert.equal(freedomOf(read.linkage),0);lines.push(x.key+' bestimmt');continue;}
  if(read.train)assert.deepEqual(trainIssues(read.train).map(i=>i.message),[],x.key);
  const got=deriveMechanism(read,x.title,`test-${x.key}`,read.items.filter(i=>i.free?.joint?.kind==='mutter').map(i=>({id:i.id,shaft:i.free.body.slice(6),along:i.free.frame.position[1],lead:i.free.joint.lead,min:i.free.joint.min,max:i.free.joint.max})));assert.ok(got,x.key+': abgeleiteter Mechanismus');
  const m=got.demo.mechanism,held=Object.fromEntries(got.demo.drives.map(d=>[d.axis,0]));const h=await solve({...structuredClone(m),range:{from:0,to:0,samples:1}},{yield:false,fixed:heldTrains(got.demo.drives,held)});
