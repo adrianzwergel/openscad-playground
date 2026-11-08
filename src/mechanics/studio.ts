@@ -71,7 +71,7 @@ const build:BuildEditor=new BuildEditor({doc:()=>doc,change:(edit,message)=>chan
  frames:()=>mech.active?mech.framesNow():{},surface:ray=>mech.active?mech.surfaceAt(ray):undefined,model:()=>mech.active?mech.clashContext():undefined,range:()=>mech.posesOverRange(),
  grip:(o,options)=>{if(o)grip(o,options!);else if(transform.object?.userData.buildGizmo)transform.detach();},dragging:()=>transform.dragging,
  mode:()=>transform.mode==='rotate'?'rotate':'translate',blocks:()=>blocks.all,saveBlock:async x=>{await blocks.add(x);},removeBlock:async id=>{await blocks.remove(id);},
- adopt:(d,consume)=>void adoptModel(()=>mech.addDemo(d,consume?x=>{for(const b of x.builds??[])if(!b.mechanism)delete b.train;}:undefined),2),phase:()=>phase,loadModel:()=>modelFile.click()});
+ adopt:(d,consume)=>void adoptModel(()=>mech.addDemo(d,consume?x=>{for(const b of x.builds??[])if(!b.mechanism)delete b.train;}:undefined),consume?3:2),phase:()=>phase,loadModel:()=>modelFile.click()});
 mechRoot.add(mech.view.group,mech.handles,motion.view.group,build.group);
 // The gizmo on a handle: mode, steps (Alt held: none) and axes as the handle asks.
 let steps:{step:number;angle:number}={step:0,angle:0},free=false;
@@ -119,7 +119,7 @@ function current():Scene|undefined{const all=scenes();return all.find(s=>keyOf(s
 const phasesOf=(_s:Scene):Phase[]=>[1,2,3];
 function enterScene(s:Scene){if(s.kind==='mechanism'){if(build.activeId)build.exit();if(mech.activeId!==s.id)mech.enter(s.id);}else{if(mech.activeId)mech.exit();if(build.activeId!==s.id)build.enter(s.id);}}
 function setPhase(p:Phase){const s=current();if(!s)return;phase=phasesOf(s).includes(p)?p:phasesOf(s)[0];build.deselect();
- if(s.kind==='mechanism'){enterScene(s);mech.open(mech.defaultPage(phase));return;}const b=doc.builds?.find(x=>x.id===s.id);if(phase===3&&b?.plates[0]&&!b.items.some(i=>i.free))build.selectPlate(b.plates[0].id);else if(phase===2&&b?.train?.wheels.length)build.openTrain();else build.overview();draw();}
+ if(s.kind==='mechanism'){enterScene(s);mech.open(mech.defaultPage(phase));return;}const b=doc.builds?.find(x=>x.id===s.id);if(phase===3&&b?.plates[0]&&!b.items.some(i=>i.free))build.selectPlate(b.plates[0].id);else if(phase!==1&&b?.train?.wheels.length&&!b.items.length&&!b.plates.length)build.openTrain();else build.overview();draw();}
 function openScene(s:Scene,p?:Phase){sceneKey=keyOf(s);startOpen=false;enterScene(s);setPhase(p??1);}
 for(const b of document.querySelectorAll<HTMLButtonElement>('#phases [data-phase]'))b.onclick=()=>setPhase(Number(b.dataset.phase) as Phase);
 
@@ -131,7 +131,9 @@ function drawView(){
  if(!s||startOpen){renderStart();renderHeader(s);syncHistory();return;}
  enterScene(s);if(!phasesOf(s).includes(phase))phase=phasesOf(s)[0];document.body.dataset.scene=s.kind;document.body.dataset.phase=String(phase);
  mech.view.group.visible=s.kind==='mechanism'&&!motion.active;build.attach(s.kind==='mechanism'?s.id:undefined);build.group.visible=true;
- if(s.kind==='mechanism'){mech.refresh();mech.renderAxes($('axes'));}build.refresh();
+ const axes=$('axes');if(s.kind==='mechanism'){mech.refresh();mech.renderAxes(axes);}else axes.replaceChildren();build.refresh();
+ // The wheels' slider joins the axes; without either the bar stays away.
+ const wheelsTurn=build.renderAxes(axes);if(wheelsTurn)axes.hidden=false;document.body.dataset.axes=String(s.kind==='mechanism'||wheelsTurn);
  $('view-hint').textContent=phase===1?`Aus der Bibliothek in die Ansicht ziehen · Zahnräder rasten im Achsabstand ein · R dreht · Entf löscht · Alt: ohne Einrasten${s.kind==='mechanism'?' · Modellteile anklicken, um sie einem Glied zuzuweisen':''}`:`Linke Maus dreht · rechte Maus verschiebt · Mausrad zoomt${s.kind==='mechanism'?' · Regler unten bewegen die Achsen':''}`;
  renderHeader(s);renderLeft(s);renderRight(s);syncHistory();
 }

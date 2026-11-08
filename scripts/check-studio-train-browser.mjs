@@ -30,7 +30,10 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.click('#undo');await settled(p,x=>x.doc.builds[0].train.wheels.length===2);
  // A reload keeps it; ② opens the train.
  await wait(500);await p.reload();await p.waitForSelector('[data-wheel]',{timeout:20000});await phase(p,2);await p.waitForSelector('#train-ratio',{timeout:20000});assert.match(await p.$eval('#train-ratio',e=>e.textContent),/2,50/);
- // The button: a mechanism with a slider, its train driven, bearings planned.
+ // The wheels turn by hand in any phase: the slider under the view, the output read off at 1 : 2,5.
+ await phase(p,1);await p.waitForSelector('input[data-axis="Zahnräder"]');await p.$eval('input[data-axis="Zahnräder"]',e=>{e.value='100';e.dispatchEvent(new Event('input'));});assert.match(await p.$eval('#axes',e=>e.textContent),/100° → Ausgang -40°/);
+ // In ③ the button: a mechanism with a slider, its train driven, bearings planned.
+ await phase(p,3);await p.waitForSelector('[data-compile]');
  await p.click('[data-compile]');await p.waitForFunction(()=>document.body.dataset.scene==='mechanism',{timeout:20000});await p.waitForSelector('input[data-axis="Abtrieb"]',{timeout:20000});f=await settled(p,x=>x.doc.mechanisms?.length===1);assert.ok(!(f.doc.builds??[]).some(x=>x.train?.wheels.length),'die Räder sind jetzt der Mechanismus');const m=f.doc.mechanisms[0];assert.equal(m.drives[0].target,2.5);assert.ok(m.drives[0].gear);assert.equal(m.fabrication.bearings.shaft,'lego');
  await goTo(p,'Lager & Wellen');await wait(500);assert.match(await p.$eval('#properties',e=>e.textContent),/Gleitlager/);
  // One device, one mechanism: here the block is locked; in a new project it becomes its mechanism.

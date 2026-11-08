@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {legoParts} from './graph/lego-parts';
-import {legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
+import {rates,legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
 import type {Train,Wheel} from './parts/train';
 import type {Build} from './parts/build';
 import {joinShaft} from './parts/groups';
@@ -16,6 +16,7 @@ export type TrainHost={build:()=>Build|undefined;change:(edit:()=>void,message:s
  /** A finished train or block becomes the project's mechanism; `consume`: the wheels here go into it. */adopt:(d:Demo,consume?:boolean)=>void;
  /** The train to change, made with the first wheel (inside a change). */ensure:()=>Train;
  /** The project has a mechanism already: a train or block cannot become a second one. */mechanism:()=>boolean;
+ /** The Studio's phase: the wheels become a mechanism with bearings and frame in ③. */phase?:()=>number;
  /** The rigid group a wheel moves with, its wheels, and a move of it (room coordinates: x, along the shafts, height). */
  unit?:(wheel:string)=>{id:string;label:string;wheels:Set<string>}|undefined;moveUnit?:(unit:string,delta:[number,number,number],message:string)=>void};
 type Drag={wheel:Wheel;isNew:boolean;moved:boolean;over:boolean;start:[number,number];at:[number,number];shaft?:string;partner?:string;angle?:number};
@@ -36,21 +37,34 @@ export class TrainEditor{
  select(id?:string){this.selected=id;}
  private selected?:string;private drag?:Drag;private loaded=new Map<string,THREE.BufferGeometry>();private sun=legoGears.find(p=>p.teeth===16)?.id??legoGears[0].id;private planet=legoGears.find(p=>p.teeth===16)?.id??legoGears[0].id;
  onChange=()=>{};
+ /** How far the input is turned (degrees): every wheel that hangs on it turns with its rate, in every phase. */
+ private turn=0;private spins=new Map<string,THREE.Object3D>();
  constructor(private host:TrainHost){}
  private train():Train|undefined{return this.host.build()?.train;}
  reset(){this.selected=undefined;this.drag=undefined;}
  /** The train as seen while dragging. */
  private shown():Train|undefined{const d=this.drag,t=this.train()??(d?.over?newTrain():undefined);if(!t||!d?.over)return t;const id=d.shaft??d.wheel.shaft,shafts=t.shafts.some(s=>s.id===id)?t.shafts.map(s=>s.id===id&&!d.shaft?{...s,at:d.at}:s):[...t.shafts,{id,at:d.at}];return {...t,shafts,wheels:[...t.wheels.filter(w=>w.id!==d.wheel.id),{...d.wheel,shaft:id}]};}
  draw(group:THREE.Group,lit:ReadonlySet<string>=new Set(),override?:Train){
-  const t=override??this.shown();if(!t)return;const bad=new Set(trainIssues(t).flatMap(x=>x.wheels)),on=new Set(meshes(t).flat().map(w=>w.id));
+  this.spins.clear();const t=override??this.shown();if(!t)return;const bad=new Set(trainIssues(t).flatMap(x=>x.wheels)),on=new Set(meshes(t).flat().map(w=>w.id));
   for(const s of t.shafts){const list=t.wheels.filter(w=>w.shaft===s.id);if(!list.length)continue;const lo=Math.min(...list.map(w=>w.z-w.width/2))-8,hi=Math.max(...list.map(w=>w.z+w.width/2))+8,color=s.id===t.input?0x63cbb3:s.id===t.output?0xffb347:0xc9d4db,m=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.4,hi-lo,16),new THREE.MeshStandardMaterial({color,roughness:.5}));m.position.set(s.at[0],(lo+hi)/2,s.at[1]);m.userData.shaft=s.id;group.add(m);}
-  for(const w of t.wheels){const s=t.shafts.find(x=>x.id===w.shaft)!,holder=new THREE.Group();holder.position.set(s.at[0],w.z,s.at[1]);holder.quaternion.set(...along.y);holder.userData.wheel=w.id;
+  for(const w of t.wheels){const s=t.shafts.find(x=>x.id===w.shaft)!,holder=new THREE.Group();holder.position.set(s.at[0],w.z,s.at[1]);holder.quaternion.set(...along.y);holder.userData.wheel=w.id;const spin=new THREE.Group();holder.add(spin);this.spins.set(w.id,spin);
    const color=bad.has(w.id)?0xff5a55:w.id===this.selected||lit.has(w.id)?0xffffff:on.has(w.id)?0x8fb6d9:0xa9b4bd,material=new THREE.MeshStandardMaterial({color,roughness:.55}),geometry=w.part?this.loaded.get(w.part):undefined;
-   if(geometry){const m=new THREE.Mesh(geometry,material);m.userData.shared=true;holder.add(m);}
-   else{const m=new THREE.Mesh(new THREE.CylinderGeometry(pitchOf(w),pitchOf(w),w.width,48).rotateX(Math.PI/2),material);holder.add(m);const rim=new THREE.Mesh(new THREE.RingGeometry(pitchOf(w),outerOf(w),48),new THREE.MeshBasicMaterial({color,side:THREE.DoubleSide,transparent:true,opacity:.6}));rim.position.z=w.width/2;holder.add(rim);
+   if(geometry){const m=new THREE.Mesh(geometry,material);m.userData.shared=true;spin.add(m);}
+   else{const m=new THREE.Mesh(new THREE.CylinderGeometry(pitchOf(w),pitchOf(w),w.width,48).rotateX(Math.PI/2),material);spin.add(m);const rim=new THREE.Mesh(new THREE.RingGeometry(pitchOf(w),outerOf(w),48),new THREE.MeshBasicMaterial({color,side:THREE.DoubleSide,transparent:true,opacity:.6}));rim.position.z=w.width/2;spin.add(rim);
     if(w.part)void modelOf(w.part).then(g=>{this.loaded.set(w.part!,g);this.onChange();}).catch(()=>this.host.status(`LEGO-Modell fehlt: ${w.part}`));}
    group.add(holder);}
+  this.spin(t);
  }
+ /** Turns the drawn wheels to the input's angle. */
+ private spin(t:Train){const {rate}=rates(t);for(const w of t.wheels){const o=this.spins.get(w.id),r=rate.get(w.shaft);if(o)o.rotation.z=(r??0)*this.turn*Math.PI/180;}}
+ /** The slider under the view: the input turned by hand, the output read off. Returns whether there is one. */
+ renderAxes(root:HTMLElement){
+  const t=this.train();if(!t?.input||!meshes(t).length)return false;const {rate}=rates(t),inWheel=t.wheels.find(w=>w.shaft===t.input),o=t.output?rate.get(t.output):undefined;
+  const slider=el('input',{type:'range',min:'-720',max:'720',step:'1',value:String(this.turn)});slider.dataset.axis='Zahnräder';slider.setAttribute('aria-label','Zahnräder drehen');const out=el('output',{});
+  const show=()=>{out.textContent=`${this.turn}°${o!==undefined?` → Ausgang ${Math.round(this.turn*o*10)/10}°`.replace('.',','):''}`;};show();
+  slider.oninput=()=>{this.turn=Number(slider.value);show();this.spin(t);};
+  const zero=el('button',{textContent:'Auf Null'});zero.onclick=()=>{this.turn=0;slider.value='0';show();this.spin(t);};
+  root.append(el('h3',{textContent:'Zahnräder drehen'}),el('label',{className:'axis-row'},el('span',{textContent:inWheel?`Eingang ${label(inWheel)}`:'Eingang'}),slider,out),zero,el('p',{className:'muted',textContent:'Dreht den Eingang von Hand: Jedes Rad, das daran hängt, läuft mit seiner Übersetzung mit, in jeder Phase und in Gruppen.'}));return true;}
  point(e:{clientX:number;clientY:number}):[number,number]|undefined{const root=this.host.root();root.updateWorldMatrix(true,false);const r=this.host.ray(e).ray.clone().applyMatrix4(root.matrixWorld.clone().invert()),hit=r.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),new THREE.Vector3());return hit?[hit.x,hit.z]:undefined;}
  wheelAt(ray:THREE.Raycaster,group:THREE.Group){group.updateWorldMatrix(true,true);let o:THREE.Object3D|null|undefined=ray.intersectObjects(group.children,true)[0]?.object;while(o&&!o.userData.wheel)o=o.parent;return o?.userData.wheel as string|undefined;}
  hover(ray:THREE.Raycaster,group:THREE.Group){return !!this.wheelAt(ray,group);}
@@ -114,6 +128,7 @@ export class TrainEditor{
   root.append(heading('Getriebe'),el('p',{id:'train-ratio',className:ratio?'state-pass':'muted',textContent:ratio?`Übersetzung 1 : ${Math.abs(ratio).toFixed(2).replace('.',',')}, Ausgang dreht ${ratio>0?'gleichsinnig':'gegensinnig'}`:'Noch keine Verbindung von Eingang zu Ausgang.'}));
   const s=el('select');s.dataset.field='Antrieb';for(const d of kinds)s.add(new Option(d.label,d.id));s.value=kinds.some(d=>d.id===t.drive)?t.drive:kinds[0].id;s.onchange=()=>set('Antrieb geändert',x=>{x.drive=s.value;});root.append(el('label',{},'Antrieb am Eingang',s));
   const box=el('div',{id:'build-issues'});for(const f of found)box.append(el('p',{className:'state-fail',textContent:f.message}));if(!found.length)box.append(el('p',{className:'state-pass',textContent:'✓ Alle Räder kämmen und drehen frei.'}));root.append(heading('Prüfung'),box);
-  const make=el('button',{textContent:'⚙ Als Mechanismus übernehmen',className:'primary'});make.dataset.compile='true';make.disabled=found.length>0||this.host.mechanism();make.onclick=()=>{try{const drive=kinds.some(d=>d.id===t.drive)?t.drive:kinds[0].id;this.host.adopt(compileTrain({...t,drive},'Getriebe'),true);}catch(e){this.host.status(String(e));}};root.append(make,el('p',{className:'muted',textContent:this.host.mechanism()?'Das Projekt hat schon einen Mechanismus: Getriebe für seine Achsen findet die Suche am Antrieb. Für ein eigenes Getriebe ein neues Projekt anlegen.':'Die Räder werden der Mechanismus des Projekts, mit Grundplatte: Regler, Lager & Wellen und Struktur funktionieren dort wie gewohnt.'}));
+  if((this.host.phase?.()??3)!==3){root.append(el('p',{className:'muted',textContent:'Drehen: unten mit dem Regler. Lager und Gestell für die Räder erzeugt „③ Fertigen“.'}));return;}
+  const make=el('button',{textContent:'⚙ Lager und Gestell erzeugen',className:'primary'});make.dataset.compile='true';make.disabled=found.length>0||this.host.mechanism();make.onclick=()=>{try{const drive=kinds.some(d=>d.id===t.drive)?t.drive:kinds[0].id;this.host.adopt(compileTrain({...t,drive},'Getriebe'),true);}catch(e){this.host.status(String(e));}};root.append(make,el('p',{className:'muted',textContent:this.host.mechanism()?'Das Projekt hat schon einen Mechanismus: Getriebe für seine Achsen findet die Suche am Antrieb. Für ein eigenes Getriebe ein neues Projekt anlegen.':'Die Räder werden der Mechanismus des Projekts, mit Grundplatte: Lager & Wellen und Struktur entstehen dort wie bei jedem Modell.'}));
  }
 }

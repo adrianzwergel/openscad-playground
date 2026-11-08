@@ -39,7 +39,8 @@
   await say('Teil 3: Ein Getriebe aus Zahnrädern, aus derselben Bibliothek.');await toStart();await click('[data-new-project]');await until(()=>$('[data-gear]'));
   await say('Ein z16 in die Ansicht ziehen …');await dragTo(gear(16),[0,0,0]);
   await say('… und ein z40 daneben: Es rastet genau im Achsabstand ein. Rechts steht die Übersetzung.');await dragTo(gear(40),[30,0,2]);await fit();await wait(2500);
-  await say('In „② Bewegen“ macht ein Klick daraus den Mechanismus des Projekts, mit Grundplatte, Regler, Lagern und Struktur.');await phaseTo(2);await click('[data-compile]');await until(()=>$('input[data-axis="Abtrieb"]'));await wait(1500);await fit();
+  await say('Gedreht wird gleich hier: Der Regler unten dreht den Eingang, jedes Rad läuft mit seiner Übersetzung mit.');await sweep('Zahnräder',.5,.62);await sweep('Zahnräder',.62,.5);
+  await say('In „③ Fertigen“ macht ein Klick daraus den Mechanismus des Projekts, mit Grundplatte, Lagern und Struktur.');await phaseTo(3);await click('[data-compile]');await until(()=>$('input[data-axis="Abtrieb"]'));await wait(1500);await fit();
   await say('Der Regler unten dreht das Getriebe.',1000);await sweep('Abtrieb',.5,.9);await sweep('Abtrieb',.9,.5);
   await say('Teil 4: Teile direkt am Modell, hier am Beispiel Roboterarm.');await toStart();await click('[data-demo="robot"]');await until(()=>$('[data-part="rpi-pico"]'));await wait(1500);await fit();
   await say('Ein Pico auf den Unterarm: Er legt sich flach auf die Fläche unter der Maus und fährt mit dem Arm mit.');await dragTo('[data-part="rpi-pico"]',[-15,0,495]);await sweep('Schulter',.5,.85);await sweep('Schulter',.85,.5);

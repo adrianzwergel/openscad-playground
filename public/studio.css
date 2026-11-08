@@ -45,7 +45,7 @@ label input:not([type=checkbox]),label select{display:block;width:100%;margin-to
 #gizmo-tools{position:absolute;left:12px;top:10px;display:flex;gap:4px}#fit{position:absolute;right:12px;top:10px}
 #gizmo-tools button,#fit{background:#1f2a34e6;font-size:12px;padding:6px 10px}
 #axes-bar{border-top:1px solid var(--line);background:#18222b;padding:6px 12px;max-height:38vh;overflow:auto}
-body:not([data-scene=mechanism]) #axes-bar{display:none}
+body[data-axes=false] #axes-bar{display:none}body:not([data-scene=mechanism]) #motion-panel{display:none}
 #axes-bar h2{margin:4px 0}
 #motion-panel summary{cursor:pointer;color:var(--soft);font-size:12px;padding:4px 0}
 #motion-panel .panel-title{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 0}

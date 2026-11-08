@@ -89,7 +89,7 @@ export class BuildEditor{
  private preview?:Build;
  /** A group on the handle: the build and the handle's place when the handle was taken. */
  private pivot?:{start:Build;centre:V;axis:'y'|'z'};
- constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;},canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt,ensure:()=>{const b=this.ensure();return b.train??=newTrain();},mechanism:()=>this.attached,
+ constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;},canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt,ensure:()=>{const b=this.ensure();return b.train??=newTrain();},mechanism:()=>this.attached,phase:()=>this.host.phase?.()??3,
   unit:w=>{const b=this.build(),id=b?unitOf(b,{kind:'wheel',id:w}):undefined;return b&&id?{id,label:this.groupLabel(id),wheels:new Set(contents(b,id).wheels.map(x=>x.id))}:undefined;},
   moveUnit:(unit,delta,message)=>{const frames=this.host.frames();this.host.change(()=>{moveGroup(this.build()!,unit,{delta},frames);},message);}});this.trains.onChange=()=>this.refresh();}
  private get wheels(){return !!this.build()?.train?.wheels.length;}
@@ -98,6 +98,8 @@ export class BuildEditor{
  get attached(){return !!this.attachedTo;}
  /** Something of the attached parts is selected: the properties are ours. */
  get holdsProperties(){return this.active||this.attached&&(!!this.selected||!!this.plateId||!!this.trains.selectedId||this.trainOpen||!!this.groupId||this.multi.size>0);}
+ /** The wheels' slider under the view (any phase). */
+ renderAxes(root:HTMLElement){return this.trains.renderAxes(root);}
  /** Opens the page of the gear train. */
  openTrain(){this.selected=undefined;this.plateId=undefined;this.trains.select(undefined);this.trainOpen=true;}
  private build(){const builds=this.host.doc().builds;return this.activeId?builds?.find(b=>b.id===this.activeId):this.attachedTo?builds?.find(b=>b.mechanism===this.attachedTo):undefined;}
@@ -299,13 +301,14 @@ export class BuildEditor{
   const row=(text:string,data:Record<string,string>,selected:boolean,go:()=>void,sub=false)=>{const r=el('button',{textContent:text,...(sub?{className:'tree-sub'}:{})});Object.assign(r.dataset,data);r.setAttribute('aria-selected',String(selected));r.onclick=go;root.append(el('div',{className:'tree-row'},r));};
   const nothing=!this.selected&&!this.plateId&&!this.trainOpen&&!this.trains.selectedId;
   if(phase===2){
-   if(wheels)row('⚙ Getriebe aus Zahnrädern',{trainPage:'true'},this.trainOpen,()=>{this.openTrain();this.refresh();this.host.leave();});
+   if(wheels){row('⚙ Zahnräder: Eingang, Ausgang, Antrieb',{trainPage:'true'},this.trainOpen,()=>{this.openTrain();this.refresh();this.host.leave();});root.append(el('p',{className:'muted',textContent:'Gedreht werden sie unten mit dem Regler, in jeder Phase.'}));}
    else if(!this.attached)root.append(el('p',{className:'muted',textContent:'Noch nichts, das sich bewegt. In „① Aufbauen“ ein 3D-Modell laden oder Zahnräder setzen.'}));
    return;}
   if(phase===3){
+   if(wheels&&!this.attached)row('⚙ Zahnräder: Lager und Gestell',{trainMake:'true'},this.trainOpen,()=>{this.openTrain();this.refresh();this.host.leave();});
    if(this.active&&b&&!b.plates.length&&b.items.length)row('🕸 Träger (Baum-Netz)',{overview:'true'},nothing,()=>pick());
    for(const n of b?.plates??[])row('▭ Bodenplatte · Druckdateien',{plate:n.id},!this.selected&&this.plateId===n.id,()=>pick(undefined,n.id));
-   if(!this.attached&&!b?.items.length&&!b?.plates.length)root.append(el('p',{className:'muted',textContent:'Noch nichts zu fertigen. In „① Aufbauen“ Teile, eine Bodenplatte oder ein 3D-Modell holen.'}));
+   if(!this.attached&&!b?.items.length&&!b?.plates.length&&!wheels)root.append(el('p',{className:'muted',textContent:'Noch nichts zu fertigen. In „① Aufbauen“ Teile, eine Bodenplatte oder ein 3D-Modell holen.'}));
    return;}
   if(this.attached)root.append(el('div',{className:'tree-group',textContent:'Teile'}));
   if(this.active)row('▦ Übersicht',{overview:'true'},nothing&&!this.groupId&&!this.multi.size,()=>pick());
@@ -358,7 +361,7 @@ export class BuildEditor{
   if(!this.attached)out.push({label:'Etwas platziert',done:true,hint:'',phase:1,open:()=>this.overview()});
   if(b.items.length)out.push({label:'Nichts im Weg',done:!found.length,hint:found[0]?.message??'Alles frei.',phase:1,open:()=>{this.selected=found[0]?.items[0];}});
   if(wheels){const bad=trainIssues(t!);out.push({label:'Alle Räder kämmen',done:t!.wheels.length>=2&&!bad.length,hint:t!.wheels.length<2?'Ein zweites Zahnrad daneben ziehen: Es rastet im Achsabstand ein.':bad[0]?.message??'Alles kämmt.',phase:1,open:()=>{this.trains.select(bad[0]?.wheels[0]??t!.wheels[0].id);}});
-   if(!this.attached)out.push({label:'Als Mechanismus übernommen',done:false,hint:'In „② Bewegen“ den Antrieb wählen und „Als Mechanismus übernehmen“.',phase:2,open:()=>this.openTrain()});}
+   if(!this.attached)out.push({label:'Lager und Gestell erzeugt',done:false,hint:'In „③ Fertigen“: „Lager und Gestell erzeugen“ macht die Räder zum Mechanismus, mit Lagern und Struktur.',phase:3,open:()=>this.openTrain()});}
   if(this.active&&!b.plates.length&&b.items.length)out.push({label:'Träger erzeugt',done:!!this.net.positions&&this.net.key===this.netKey(b),hint:'In „③ Fertigen“ das Baum-Netz erzeugen.',phase:3,open:()=>this.overview()});
   if(b.plates.length)out.push({label:'Druckdateien',done:false,hint:'Bodenplatte wählen: Platte als STL oder Gehäuse als ZIP.',phase:3,open:()=>{this.selected=undefined;this.plateId=b.plates[0].id;}});
   return out;

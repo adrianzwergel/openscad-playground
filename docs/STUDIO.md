@@ -65,11 +65,15 @@ Die Logik steht in `parts/groups.ts` (geprüft von `scripts/parts/check-groups.m
 
 Alle drei sind immer offen. Was eine Phase für das Projekt nicht hat, sagt der Szenenbaum.
 
+Zahnräder drehen sich in jeder Phase: Sobald Räder kämmen und ein Eingang gesetzt ist, steht unter der Ansicht der Regler
+„Zahnräder drehen“; jedes Rad, das am Eingang hängt, läuft mit seiner Übersetzung mit, auch in Gruppen. „Lager und
+Gestell erzeugen“ in ③ macht aus den Rädern den Mechanismus des Projekts (vorher „Als Mechanismus übernehmen“ in ②).
+
 | Phase | Mechanismus | Teile, Platten, Zahnräder |
 |---|---|---|
 | ① Aufbauen | Modell & Glieder | platzieren, Halter, Bohrungen, Räder einrasten |
-| ② Bewegen | Achsen, Antriebe, Getriebesuche | Getriebe aus Zahnrädern: Übersetzung, Antrieb, übernehmen |
-| ③ Fertigen | Lager & Wellen, Struktur je Glied | Platte als STL, Gehäuse, Träger aus Baum-Netz |
+| ② Bewegen | Achsen, Antriebe, Getriebesuche | Zahnräder: Eingang, Ausgang, Antrieb |
+| ③ Fertigen | Lager & Wellen, Struktur je Glied | Platte als STL, Gehäuse, Träger aus Baum-Netz; Zahnräder: Lager und Gestell erzeugen |
 
 ## Aufbau des Codes
 
