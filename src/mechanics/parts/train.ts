@@ -17,10 +17,12 @@ export const legoGears=legoParts.filter(p=>p.search&&p.teeth>0&&p.mount==='cross
 export type Shaft={id:string;at:[number,number]};
 /** `part`: a LEGO gear by id; without one a printed spur gear of `module`. */
 export type Wheel={id:string;shaft:string;z:number;teeth:number;module:number;width:number;part?:string};
-/** `input`, `output`: shafts. `drive`: what turns the input. */
-export type Train={shafts:Shaft[];wheels:Wheel[];input?:string;output?:string;drive:string};
+/** `input`, `output`: shafts. `drive`: what turns the input. `grid`: mm steps of a wheel standing alone, `angle`: degree
+ * steps of a wheel around the one it meshes with (0: free). */
+export type Train={shafts:Shaft[];wheels:Wheel[];input?:string;output?:string;drive:string;grid?:number;angle?:number};
+export const DEFAULT_ANGLE=15;
 export const newTrain=():Train=>({shafts:[],wheels:[],drive:'lego-achse'});
-export const parseTrain=(t:Train):Train=>{if(!t||!Array.isArray(t.shafts)||!Array.isArray(t.wheels)||t.wheels.length>64)throw Error('Ungültiges Getriebe');for(const w of t.wheels)if(!t.shafts.some(s=>s.id===w.shaft)||!(w.teeth>=6&&w.teeth<=200)||!(w.module>0)||!(w.width>0))throw Error('Getriebe: Rad ungültig');return structuredClone(t);};
+export const parseTrain=(t:Train):Train=>{if(!t||!Array.isArray(t.shafts)||!Array.isArray(t.wheels)||t.wheels.length>64)throw Error('Ungültiges Getriebe');for(const w of t.wheels)if(!t.shafts.some(s=>s.id===w.shaft)||!(w.teeth>=6&&w.teeth<=200)||!(w.module>0)||!(w.width>0))throw Error('Getriebe: Rad ungültig');if(t.grid!==undefined&&!(t.grid>=0&&t.grid<=50)||t.angle!==undefined&&!(t.angle>=0&&t.angle<=180))throw Error('Getriebe: Raster ungültig');return structuredClone(t);};
 export const pitchOf=(w:Wheel)=>w.module*w.teeth/2;
 export const outerOf=(w:Wheel)=>{const p=w.part?legoParts.find(x=>x.id===w.part):undefined;return p?p.radius:pitchOf(w)+w.module;};
 const shaftOf=(t:Train,w:Wheel)=>t.shafts.find(s=>s.id===w.shaft)!;
@@ -43,14 +45,23 @@ export function trainIssues(t:Train):TrainIssue[]{const out:TrainIssue[]=[],pair
  for(const s of t.shafts)if(t.input&&!rate.has(s.id)&&t.wheels.some(w=>w.shaft===s.id))out.push({wheels:t.wheels.filter(w=>w.shaft===s.id).map(w=>w.id),message:'Eine Welle hängt nicht am Getriebe.'});
  if(t.wheels.some(w=>w.part)&&t.wheels.some(w=>!w.part))out.push({wheels:[],message:'LEGO und gedruckte Räder lassen sich noch nicht mischen: Die Wellen sind verschieden.'});
  return out;}
-/** Where a wheel goes for a pointer at `p`: on a shaft under it, at the mesh distance of a wheel near it, or on the grid. */
-export function snapWheel(t:Train,w:Wheel,p:[number,number],grid=1,free=false):{at:[number,number];shaft?:string;z:number}{
+/** Where a wheel goes for a pointer at `p`: on a shaft under it, at the mesh distance of a wheel near it (around it in
+ * steps of `step` degrees, 0: free), or on the grid of `grid` mm (0: free). `partner`, `angle`: the wheel it meshes with
+ * and the direction from it, 0° along x, 90° up. */
+export function snapWheel(t:Train,w:Wheel,p:[number,number],grid=1,free=false,step=0):{at:[number,number];shaft?:string;z:number;partner?:string;angle?:number}{
  const others=t.wheels.filter(o=>o.id!==w.id&&o.shaft!==w.shaft);if(free)return {at:p,z:w.z};
  for(const s of t.shafts){if(!t.wheels.some(o=>o.shaft===s.id&&o.id!==w.id)||Math.hypot(p[0]-s.at[0],p[1]-s.at[1])>Math.max(3,Math.min(pitchOf(w),6))||s.id===w.shaft)continue;const on=t.wheels.filter(o=>o.shaft===s.id&&o.id!==w.id);return {at:s.at,shaft:s.id,z:Math.max(...on.map(o=>o.z+o.width/2))+w.width/2+.5};}
- let best:{at:[number,number];z:number}|undefined,miss=Infinity;
- for(const o of others){if(o.module!==w.module)continue;const c=shaftOf(t,o).at,d=pitchOf(o)+pitchOf(w),r=Math.hypot(p[0]-c[0],p[1]-c[1]),off=Math.abs(r-d);if(off<miss&&off<Math.max(6,d*.35)&&r>.1){miss=off;best={at:[c[0]+(p[0]-c[0])/r*d,c[1]+(p[1]-c[1])/r*d],z:o.z};}}
- return best??{at:[Math.round(p[0]/grid)*grid,Math.round(p[1]/grid)*grid],z:w.z};
+ let best:{at:[number,number];z:number;partner:string;angle:number}|undefined,miss=Infinity;
+ for(const o of others){if(o.module!==w.module)continue;const c=shaftOf(t,o).at,d=pitchOf(o)+pitchOf(w),r=Math.hypot(p[0]-c[0],p[1]-c[1]),off=Math.abs(r-d);if(off<miss&&off<Math.max(6,d*.35)&&r>.1){miss=off;const angle=stepped(Math.atan2(p[1]-c[1],p[0]-c[0])*180/Math.PI,step);best={at:around(c,d,angle),z:o.z,partner:o.id,angle};}}
+ const g=(v:number)=>grid>0?Math.round(v/grid)*grid:v;
+ return best??{at:[g(p[0]),g(p[1])],z:w.z};
 }
+
+const stepped=(a:number,step:number)=>{const s=step>0?Math.round(a/step)*step:a;return ((s%360)+360)%360;};
+/** The point at `d` from `c` in the direction `angle` (degrees); exact at 0, 90, 180, 270. */
+export function around(c:[number,number],d:number,angle:number):[number,number]{const q=Math.round(angle*1e6)/1e6,exact:Record<number,[number,number]>={0:[1,0],90:[0,1],180:[-1,0],270:[0,-1]},[x,y]=exact[q]??[Math.cos(angle*Math.PI/180),Math.sin(angle*Math.PI/180)];return [c[0]+d*x,c[1]+d*y];}
+/** The first wheel `w` meshes with, and the direction to `w` from it (degrees). */
+export function partnerOf(t:Train,w:Wheel){const pair=meshes(t).find(p=>p.some(x=>x.id===w.id));if(!pair)return undefined;const o=pair[0].id===w.id?pair[1]:pair[0],c=shaftOf(t,o).at,s=shaftOf(t,w).at;return {wheel:o,angle:stepped(Math.atan2(s[1]-c[1],s[0]-c[0])*180/Math.PI,0),distance:pitchOf(o)+pitchOf(w),centre:c};}
 
 // ---------- to a mechanism ----------
 function spec(w:Wheel):ElementSpec{const lego=w.part?legoParts.find(p=>p.id===w.part):undefined;return lego?legoSpec(lego,'spur'):spurSpec(w.teeth,w.module,w.width,5.1);}

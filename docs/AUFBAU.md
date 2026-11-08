@@ -127,7 +127,11 @@ Ausgang und Antrieb. Was kämmt, wird nicht gespeichert, sondern aus der Lage be
 gleicher Höhe, Achsabstand gleich der Summe der Teilkreisradien. Daraus folgt die Übersetzung.
 
 - **Einrasten:** `snapWheel` setzt ein Rad nahe einer Welle auf diese Welle, sonst auf den Kreis im Achsabstand des
-  nächsten Rads, sonst aufs Raster. Alt schaltet das ab.
+  nächsten Rads, sonst aufs mm-Raster. Auf dem Kreis gibt der Eingriff den Abstand vor; gerastet wird der Winkel um das
+  Nachbarrad (`angle`, Vorgabe 15°, 0° waagerecht, 90° darüber, genau auf den Achsen). Ein Rad ohne Nachbarn rastet im
+  mm-Raster (`grid`, Vorgabe 1 mm). Beide stehen im Getriebe und werden mit dem Projekt gespeichert; einstellbar oben
+  in der Bibliotheksgruppe „Zahnräder“. Alt schaltet beides ab. Ein gewähltes Rad lässt sich über „Winkel am …“ um
+  sein Nachbarrad drehen, der Achsabstand bleibt.
 - **Prüfung:** Räder, die sich berühren, ohne zu kämmen; ein Kreis aus Rädern, der sich sperrt; Wellen ohne Verbindung.
   LEGO und gedruckte Räder lassen sich noch nicht mischen, die Wellen sind verschieden.
 - **Mechanismus:** `compileTrain` erzeugt Grundplatte, Abtriebsachse, Körper, Gelenke und Kontakte wie die Getriebe-Demos,

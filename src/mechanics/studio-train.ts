@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {legoParts} from './graph/lego-parts';
-import {legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain} from './parts/train';
+import {legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
 import type {Train,Wheel} from './parts/train';
 import type {Build} from './parts/build';
 import {planetGearbox,along} from './demos';
@@ -15,12 +15,17 @@ export type TrainHost={build:()=>Build|undefined;change:(edit:()=>void,message:s
  /** A finished train or block becomes the project's mechanism; `consume`: the wheels here go into it. */adopt:(d:Demo,consume?:boolean)=>void;
  /** The train to change, made with the first wheel (inside a change). */ensure:()=>Train;
  /** The project has a mechanism already: a train or block cannot become a second one. */mechanism:()=>boolean};
-type Drag={wheel:Wheel;isNew:boolean;moved:boolean;over:boolean;start:[number,number];at:[number,number];shaft?:string};
+type Drag={wheel:Wheel;isNew:boolean;moved:boolean;over:boolean;start:[number,number];at:[number,number];shaft?:string;partner?:string;angle?:number};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const heading=(text:string)=>el('h2',{textContent:text});
 const shapes=new Map<string,Promise<THREE.BufferGeometry>>();
 function modelOf(id:string){let g=shapes.get(id);if(!g){g=new STLLoader().loadAsync(`./mechanics-assets/ldraw/meshes/${id}.stl`).then(x=>{x.computeVertexNormals();return x;});shapes.set(id,g);}return g;}
 const label=(w:Wheel)=>`${w.part?'LEGO':'Gedruckt'} z${w.teeth}${w.part?'':` m${w.module}`}`;
+const deg=(a:number)=>`${Math.round(a*10)/10}°`.replace('.',',');
+/** The two grids: mm for a wheel standing alone, degrees around the wheel it meshes with. */
+const gridOf=(t:Train|undefined)=>({mm:t?.grid??1,angle:t?.angle??DEFAULT_ANGLE});
+
+const partnerText=(t:Train,d:Drag)=>{const o=t.wheels.find(w=>w.id===d.partner);return o&&d.angle!==undefined?`, kämmt mit ${label(o)} unter ${deg(d.angle)}`:'';};
 
 export class TrainEditor{
  /** A wheel is selected. */
@@ -55,7 +60,8 @@ export class TrainEditor{
  private dragMove(e:PointerEvent){
   const d=this.drag,t=this.train()??newTrain();if(!d)return;if(Math.hypot(e.clientX-d.start[0],e.clientY-d.start[1])>3)d.moved=true;if(!d.moved)return;
   d.over=!d.isNew||document.elementFromPoint(e.clientX,e.clientY)===this.host.canvas();if(!d.over){this.onChange();return;}
-  const p=this.point(e);if(!p)return;const s=snapWheel(t,d.wheel,p,1,e.altKey);d.at=s.at;d.shaft=s.shaft;d.wheel.z=s.z;this.onChange();
+  const p=this.point(e);if(!p)return;const g=gridOf(t),s=snapWheel(t,d.wheel,p,g.mm,e.altKey,g.angle);d.at=s.at;d.shaft=s.shaft;d.wheel.z=s.z;d.partner=s.partner;d.angle=s.angle;this.onChange();
+  const o=t.wheels.find(w=>w.id===s.partner);this.host.status(s.shaft?'Auf die Welle stecken':o?`Am ${label(o)}: ${deg(s.angle!)} · Alt: ohne Raster`:`Frei: ${s.at.map(v=>Math.round(v*10)/10).join(' / ')} mm · Alt: ohne Raster`);
  }
  private dragEnd(){
   const d=this.drag,t=this.train()??newTrain();this.drag=undefined;this.host.orbit(true);if(!d)return;
@@ -65,7 +71,7 @@ export class TrainEditor{
   this.host.change(()=>{const x=this.host.ensure(),target=d.shaft??d.wheel.shaft;let wheel=x.wheels.find(w=>w.id===d.wheel.id);if(!wheel){wheel={...d.wheel,shaft:target};x.wheels.push(wheel);}const old=wheel.shaft;wheel.z=d.wheel.z;wheel.shaft=target;
    const s=x.shafts.find(y=>y.id===target);if(s){if(!d.shaft)s.at=d.at;}else x.shafts.push({id:target,at:d.at});
    if(old!==target&&!x.wheels.some(w=>w.shaft===old))x.shafts=x.shafts.filter(y=>y.id!==old);
-   x.input??=target;if(target!==x.input)x.output=x.output&&x.shafts.some(y=>y.id===x.output)?x.output:target;},d.shaft?`${label(d.wheel)} sitzt auf der Welle.`:d.isNew?`${label(d.wheel)} platziert.`:`${label(d.wheel)} verschoben.`);
+   x.input??=target;if(target!==x.input)x.output=x.output&&x.shafts.some(y=>y.id===x.output)?x.output:target;},d.shaft?`${label(d.wheel)} sitzt auf der Welle.`:`${label(d.wheel)} ${d.isNew?'platziert':'verschoben'}${partnerText(t,d)}.`);
  }
  key(e:KeyboardEvent){if(e.key==='Delete'&&this.selected){this.remove();return true;}return false;}
  private remove(){const id=this.selected!;this.selected=undefined;this.host.change(()=>{const x=this.train()!;x.wheels=x.wheels.filter(w=>w.id!==id);x.shafts=x.shafts.filter(s=>x.wheels.some(w=>w.shaft===s.id));if(!x.shafts.some(s=>s.id===x.input))delete x.input;if(!x.shafts.some(s=>s.id===x.output))delete x.output;},'Rad entfernt');}
@@ -76,6 +82,8 @@ export class TrainEditor{
  }
  /** The library of a train: gears, and the planetary stage as a block. */
  renderStore(root:HTMLElement){
+  const g=gridOf(this.train()),grid=(text:string,key:'grid'|'angle',value:number,options:[number,string][])=>{const s=el('select');s.dataset.field=text;for(const [v,l] of options)s.add(new Option(l,String(v)));s.value=String(value);s.onchange=()=>this.host.change(()=>{this.host.ensure()[key]=Number(s.value);},`${text}: ${s.selectedOptions[0].text}`);return el('label',{},text,s);};
+  root.append(grid('Winkelraster am Nachbarrad','angle',g.angle,[[0,'frei'],[5,'5°'],[10,'10°'],[15,'15°'],[30,'30°'],[45,'45°'],[90,'90°']]),grid('Raster ohne Nachbarn','grid',g.mm,[[0,'frei'],[0.5,'0,5 mm'],[1,'1 mm'],[2,'2 mm'],[5,'5 mm'],[8,'8 mm (LEGO)']]),el('p',{className:'muted',textContent:'Am Nachbarrad gibt der Eingriff den Abstand vor, gerastet wird der Winkel. Steht ein Rad allein, rastet es im mm-Raster. Alt beim Ziehen: ohne Raster.'}));
   const list=el('div',{className:'part-store'});
   for(const p of [...legoGears].sort((a,b)=>a.teeth-b.teeth)){const row=el('div',{className:'part-card',title:p.name},el('strong',{textContent:`LEGO z${p.teeth}`}),el('small',{textContent:`${p.name.replace(/^Technic /,'')} · ${p.size[2]} mm breit`}));row.dataset.gear=p.id;row.onpointerdown=e=>{e.preventDefault();this.startNew({teeth:p.teeth,module:1,width:p.size[2],part:p.id},e);};list.append(row);}
   const printed=el('div',{className:'part-card',title:'Zähne und Modul rechts einstellen.'},el('strong',{textContent:'Gedrucktes Stirnrad'}),el('small',{textContent:'Zähne, Modul und Breite einstellbar'}));printed.dataset.gear='gedruckt';printed.onpointerdown=e=>{e.preventDefault();this.startNew({teeth:20,module:1.5,width:10},e);};list.append(printed);root.append(list);
@@ -92,6 +100,7 @@ export class TrainEditor{
   const w=t.wheels.find(x=>x.id===this.selected);
   if(w){const s=t.shafts.find(x=>x.id===w.shaft)!,wheel=(message:string,fn:(y:Wheel)=>void)=>set(message,x=>{const y=x.wheels.find(z=>z.id===w.id);if(y)fn(y);}),shaft=(fn:(at:[number,number])=>void)=>set('Welle verschoben',x=>{const y=x.shafts.find(z=>z.id===s.id);if(y)fn(y.at);});
    root.append(el('h3',{textContent:label(w)}),number('X der Welle [mm]',s.at[0],n=>shaft(a=>{a[0]=n;}),'1'),number('Höhe der Welle [mm]',s.at[1],n=>shaft(a=>{a[1]=n;}),'1'),number('Lage auf der Welle [mm]',w.z,n=>wheel('Rad verschoben',y=>{y.z=n;})));
+   const near=partnerOf(t,w);if(near){const step=gridOf(t).angle;root.append(number(`Winkel am ${label(near.wheel)} [°]`,near.angle,n=>shaft(a=>{const at=around(near.centre,near.distance,((n%360)+360)%360);a[0]=at[0];a[1]=at[1];}),String(step||1)),el('p',{className:'muted',textContent:'Dreht die Welle um das Nachbarrad, der Achsabstand bleibt. 0° waagerecht, 90° darüber.'}));}
    if(!w.part)root.append(number('Zähne',w.teeth,n=>wheel('Zähne geändert',y=>{y.teeth=Math.max(6,Math.round(n));}),'1'),number('Modul',w.module,n=>wheel('Modul geändert',y=>{y.module=Math.max(.3,n);}),'0.25'),number('Breite [mm]',w.width,n=>wheel('Breite geändert',y=>{y.width=Math.max(1,n);})));
    const input=el('button',{textContent:'Als Eingang'});input.dataset.setInput='true';input.onclick=()=>set('Eingang gesetzt',x=>{if(x.output===s.id)delete x.output;x.input=s.id;});const output=el('button',{textContent:'Als Ausgang'});output.dataset.setOutput='true';output.onclick=()=>set('Ausgang gesetzt',x=>{if(x.input===s.id)delete x.input;x.output=s.id;});const remove=el('button',{textContent:'Entfernen',className:'danger'});remove.dataset.remove='true';remove.onclick=()=>this.remove();root.append(el('div',{className:'button-row'},input,output,remove));}
   const ratio=ratioOf(t),found=trainIssues(t),lego=t.wheels.some(x=>x.part),kinds=driveCatalog.filter(d=>lego?d.id==='lego-achse':d.id!=='lego-achse');

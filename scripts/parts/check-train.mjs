@@ -24,6 +24,12 @@ const tri=newTrain(),r=20;tri.shafts.push({id:'a',at:[0,0]},{id:'b',at:[2*r,0]},
 const w5=wheel('w5','neu',40),s=snapWheel(t,w5,[-6,28]);assert.ok(Math.abs(Math.hypot(...s.at)-28)<1e-9,'Kreis um z16');assert.equal(s.shaft,undefined);
 const q=snapWheel(t,wheel('w6','neu',16),[28.5,.5]);assert.equal(q.shaft,'b');assert.ok(q.z>0);
 assert.deepEqual(snapWheel(t,w5,[200.4,100.2]).at,[200,100]);
+// In degree steps around the neighbour, the mesh distance exact; 90° lands exactly above it. The mm grid for a wheel
+// alone; 0 means free.
+const a15=snapWheel(t,w5,[-6,28],1,false,15);assert.equal(a15.angle,105);assert.equal(a15.partner,'w1');assert.ok(Math.abs(Math.hypot(...a15.at)-28)<1e-9);
+assert.deepEqual(snapWheel(t,w5,[2,27.5],1,false,90).at,[0,28]);assert.equal(meshes({...t,shafts:[...t.shafts,{id:'neu',at:snapWheel(t,w5,[2,27.5],1,false,90).at}],wheels:[...t.wheels,{...w5,z:0}]}).length,2);
+assert.deepEqual(snapWheel(t,w5,[201.4,98.2],5).at,[200,100]);assert.deepEqual(snapWheel(t,w5,[200.4,100.2],0).at,[200.4,100.2]);
+assert.throws(()=>parseTrain({...t,angle:400}),/Raster/);
 // Compiled: the two trains turn at their ratios, closed over the range, held by their rates.
 for(const [name,x,ratio] of [['einstufig',t,2.5],['zweistufig',two,6.25],['Zwischenrad',idle,2.5]]){const d=compileTrain(x,name),m=d.mechanism,free=await solve({...structuredClone(m),range:{from:-180,to:180,samples:13}},{yield:false});
  assert.deepEqual(free.checks.filter(c=>c.state==='fail').map(c=>c.message),[],`${name} geht auf`);const sun=free.poses.map(p=>p.coordinates['H1/ground/s0'][0]),o=free.poses.map(p=>p.coordinates.Abtrieb[0]);assert.ok(Math.abs(Math.abs((sun.at(-1)-sun[0])/(o.at(-1)-o[0]))-ratio)<1e-6,`${name}: Übersetzung`);

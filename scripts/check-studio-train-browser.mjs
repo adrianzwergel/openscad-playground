@@ -12,7 +12,7 @@ const dragGear=async(p,id,to)=>{await p.evaluate(i=>{const e=document.querySelec
 try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});await p.goto('http://localhost:4001/studio');await p.waitForSelector('canvas');
  await newProject(p);await p.waitForSelector('[data-gear]');
  // First wheel, second beside it: it snaps to 28 mm.
- await dragGear(p,await gear(p,16),[0,0,0]);let f=await settled(p,x=>x.doc.builds?.[0]?.train.wheels.length===1);
+ await dragGear(p,await gear(p,16),[0,0,0]);let f=await settled(p,x=>x.doc.builds?.[0]?.train?.wheels.length===1);
  await dragGear(p,await gear(p,40),[30,0,2]);f=await settled(p,x=>x.doc.builds[0].train.wheels.length===2);let t=f.doc.builds[0].train;const [a,b]=t.shafts;assert.ok(Math.abs(Math.hypot(b.at[0]-a.at[0],b.at[1]-a.at[1])-28)<1e-6,`Abstand ${JSON.stringify(t.shafts)}`);assert.equal(t.input,a.id);assert.equal(t.output,b.id);
  await p.waitForSelector('#train-ratio');assert.match(await p.$eval('#train-ratio',e=>e.textContent),/1 : 2,50, Ausgang dreht gegensinnig/);assert.match(await p.$eval('#build-issues',e=>e.textContent),/kämmen/);
  // A third wheel onto the second shaft stacks beside it.
@@ -20,6 +20,10 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // Undo, redo; delete by key.
  await p.click('#undo');await settled(p,x=>x.doc.builds[0].train.wheels.length===2);await p.click('#redo');await settled(p,x=>x.doc.builds[0].train.wheels.length===3);
  await p.evaluate(()=>[...document.querySelectorAll('[data-wheel]')].at(-1).click());await p.waitForSelector('[data-remove]');await p.click('[data-remove]');await settled(p,x=>x.doc.builds[0].train.wheels.length===2);
+ // Around its neighbour by angle: z40 straight above the z16, still meshing at 28 mm. The grids sit in the library.
+ assert.equal(await p.$eval('[data-field="Winkelraster am Nachbarrad"]',s=>s.value),'15');
+ await p.evaluate(()=>[...document.querySelectorAll('[data-wheel]')].find(x=>x.textContent.includes('z40')).click());await p.waitForSelector('[data-field="Winkel am LEGO z16 [°]"]');
+ await p.$eval('[data-field="Winkel am LEGO z16 [°]"]',e=>{e.value='90';e.dispatchEvent(new Event('change'));});f=await settled(p,x=>{const s=x.doc.builds[0].train.shafts;return Math.abs(s[1].at[0]-s[0].at[0])<1e-9;});t=f.doc.builds[0].train;assert.ok(Math.abs(t.shafts[1].at[1]-t.shafts[0].at[1]-28)<1e-9,JSON.stringify(t.shafts));await p.waitForFunction(()=>/2,50/.test(document.getElementById('train-ratio')?.textContent??''));
  // A reload keeps it; ② opens the train.
  await wait(500);await p.reload();await p.waitForSelector('[data-wheel]',{timeout:20000});await phase(p,2);await p.waitForSelector('#train-ratio',{timeout:20000});assert.match(await p.$eval('#train-ratio',e=>e.textContent),/2,50/);
  // The button: a mechanism with a slider, its train driven, bearings planned.
