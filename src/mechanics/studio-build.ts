@@ -89,7 +89,9 @@ export class BuildEditor{
  private preview?:Build;
  /** A group on the handle: the build and the handle's place when the handle was taken. */
  private pivot?:{start:Build;centre:V;axis:'y'|'z'};
- constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;},canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt,ensure:()=>{const b=this.ensure();return b.train??=newTrain();},mechanism:()=>this.attached});this.trains.onChange=()=>this.refresh();}
+ constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;},canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt,ensure:()=>{const b=this.ensure();return b.train??=newTrain();},mechanism:()=>this.attached,
+  unit:w=>{const b=this.build(),id=b?unitOf(b,{kind:'wheel',id:w}):undefined;return b&&id?{id,label:this.groupLabel(id),wheels:new Set(contents(b,id).wheels.map(x=>x.id))}:undefined;},
+  moveUnit:(unit,delta,message)=>{const frames=this.host.frames();this.host.change(()=>{moveGroup(this.build()!,unit,{delta},frames);},message);}});this.trains.onChange=()=>this.refresh();}
  private get wheels(){return !!this.build()?.train?.wheels.length;}
  /** A build on its own is open (a mechanism's parts come along with the mechanism). */
  get active(){return !!this.activeId&&!!this.build();}
@@ -405,6 +407,7 @@ export class BuildEditor{
   const parent=b.groups!.find(x=>x.id===g.parent);if(parent)root.append(el('p',{className:'muted',textContent:`Steckt in „${parent.label}“${parent.rigid?' (fest: die zieht mit)':''}.`}));
   root.append(el('p',{className:'muted',textContent:[`${c.items.length} Teile`,`${c.plates.length} Platten`,`${c.wheels.length} Räder`,...(c.groups.size>1?[`${c.groups.size-1} Untergruppen`]:[])].join(' · ')}));
   if(c.wheels.length){const t=b.train!,sub={...t,wheels:c.wheels,shafts:c.shafts},n=meshes(sub).length,ends=!!t.input&&!!t.output&&c.shafts.some(s=>s.id===t.input)&&c.shafts.some(s=>s.id===t.output),r=ends?ratioOf(sub):undefined;
+   const pairs=meshes(sub);if(pairs.length)root.append(el('p',{id:'group-distances',className:g.rigid?'state-pass':'muted',textContent:`Achsabstände${g.rigid?' (fest)':''}: ${pairs.map(([x,y])=>`${wheelLabel(x)} ↔ ${wheelLabel(y)} ${mm(Math.hypot(...[0,1].map(k=>c.shafts.find(s=>s.id===x.shaft)!.at[k]-c.shafts.find(s=>s.id===y.shaft)!.at[k]) as [number,number]))} mm`).join(' · ')}`}));
    root.append(el('p',{id:'group-ratio',className:r?'state-pass':'muted',textContent:`${n} Eingriff${n===1?'':'e'} in der Gruppe${r?` · Übersetzung 1 : ${Math.abs(r).toFixed(2).replace('.',',')}`:ends?'':' · Eingang und Ausgang liegen nicht beide in der Gruppe'}`}));}
   root.append(el('p',{className:'muted',textContent:`Verschieben und Drehen mit dem Griff in der Ansicht (Drehen ${turnAxis(b,g.id)==='y'?'um die Wellen':'um die Senkrechte'}).${g.rigid?' Ziehst du ein Rad oder Teil der Gruppe, kommt die ganze Gruppe mit; ein Rad rastet dabei an Räder außerhalb ein.':''}`}));
   const keep=el('button',{textContent:'📚 In die Bibliothek legen',className:'primary'});keep.dataset.groupSave='true';keep.disabled=!g.rigid;keep.title=g.rigid?'Steht dann in jedem Projekt unter „Eigene Bausteine“.':'Nur feste Gruppen: ein Baustein hält seine Abstände.';

@@ -29,6 +29,10 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  const at40=shaftOf(t,t.wheels.find(w=>w.id===z40.id)),at16=shaftOf(t,t.wheels.find(w=>w.id===z16.id));assert.ok(Math.abs(dist(at40,[-80,0])-28)<1e-6,`kämmt mit dem äußeren z16: ${at40}`);assert.ok(Math.abs(dist(at40,at16)-28)<1e-6,'eigener Abstand bleibt');
  assert.match(await p.$eval('#status',e=>e.textContent),/verschoben, LEGO z40 kämmt mit LEGO z16/);
  await p.click('#undo');await settled(p,x=>{const y=x.doc.builds[0].train;return dist(shaftOf(y,y.wheels.find(w=>w.id===z40.id)),c)<1e-9;});
+ // Fixed axis distances: X of the z40 moves the whole group, the group shows its distances; teeth stay locked.
+ await p.click(`[data-wheel="${z40.id}"]`);await p.waitForSelector('[data-field="X der Welle [mm]"]');assert.match(await p.$eval('#properties',e=>e.textContent),/Achsabstände sind fest/);
+ await p.$eval('[data-field="X der Welle [mm]"]',(e,v)=>{e.value=String(v);e.dispatchEvent(new Event('change'));},c[0]+10);f=await settled(p,x=>{const y=x.doc.builds[0].train;return Math.abs(shaftOf(y,y.wheels.find(w=>w.id===z40.id))[0]-c[0]-10)<1e-9;});t=f.doc.builds[0].train;assert.ok(Math.abs(dist(shaftOf(t,t.wheels.find(w=>w.id===z16.id)),shaftOf(t,t.wheels.find(w=>w.id===z40.id)))-28)<1e-9,'z16 fährt mit');
+ await p.click(`[data-group="${g.id}"]`);await p.waitForSelector('#group-distances');assert.match(await p.$eval('#group-distances',e=>e.textContent),/Achsabstände \(fest\): LEGO z16 ↔ LEGO z40 28 mm/);await p.click('#undo');await settled(p,x=>{const y=x.doc.builds[0].train;return dist(shaftOf(y,y.wheels.find(w=>w.id===z40.id)),c)<1e-9;});
  // Nested: the group and the outside wheel in a bigger one; dissolving it puts them back.
  await p.click(`[data-group="${g.id}"]`);await wait(150);await ctrlClick(p,`[data-wheel="${out.id}"]`);await p.click('[data-group-make]');f=await settled(p,x=>x.doc.builds[0].groups?.length===2);const outer=f.doc.builds[0].groups.find(x=>x.id!==g.id);assert.equal(f.doc.builds[0].groups.find(x=>x.id===g.id).parent,outer.id);
  assert.equal(await p.$$eval(`[data-group="${g.id}"]`,x=>x[0].style.paddingLeft!==''),true,'eingerückt im Baum');

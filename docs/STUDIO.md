@@ -48,6 +48,11 @@ Teile auf ihr mit, ein Rad die Räder auf seiner Welle: eine Welle ist ein Stüc
 
 - **Fest:** Die Abstände bleiben. Ziehst du ein Rad oder Teil der Gruppe, kommt die ganze Gruppe mit; ein Rad rastet dabei
   wie ein einzelnes an Räder außerhalb ein (Winkelraster, Zielraster). Gezogen wird die äußerste feste Gruppe.
+  Bei Zahnrädern heißt fest: Die Achsabstände der Gruppe sind fest. Auch die Felder eines Rads (X, Höhe, Lage auf der
+  Welle, Winkel an einem Rad außerhalb) verschieben die ganze Gruppe; Zähne, Modul und Breite gedruckter Räder sind
+  gesperrt, weil sie den Achsabstand ändern. Die Gruppenseite nennt die Achsabstände. Für später: Lager und Gehäuse sollen
+  eine feste Räder-Gruppe als einen Träger mit Lagersitzen in genau diesen Abständen erzeugen; heute geht die Gruppe beim
+  Übernehmen als Mechanismus noch nicht mit (alle Wellen sitzen dann auf der gemeinsamen Grundplatte).
 - **Frei:** Die Gruppe ordnet nur; jedes Stück bewegt sich einzeln.
 - **Griff:** Eine gewählte Gruppe trägt den Griff in ihrer Mitte. Drehen geht mit Rädern nur um die Wellenrichtung, sonst um
   die Senkrechte.
