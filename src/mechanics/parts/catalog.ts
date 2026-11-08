@@ -23,6 +23,7 @@ const typed:Part[]=[
  // Same outline and hole pattern as the Pi 4; Ethernet and the USB stacks trade places, so their plugs do too.
  {...boxPart({id:'rpi5',label:'Raspberry Pi 5',group:'Controller',size:[85,56],thickness:1.4,height:18,below:2,note:'Bohrbild wie Pi 4 (58 × 49 mm). Stecker: Lage aus dem Pi 4 übernommen, Ethernet und USB getauscht; bitte am Teil nachmessen.'}),holes:pi4.holes,box:{...pi4.box,min:[-42.5,-28,-1.8],max:[44.5,28,17.8]},plugs:pi4.plugs.map(p=>p.dir===0?{...p,at:[p.at[0],-p.at[1]] as [number,number]}:p)},
  boxPart({id:'esp32-devkitc',label:'ESP32 DevKitC V4',group:'Controller',size:[54.4,27.9],height:6,below:6,note:'Keine Befestigungslöcher, Maße je nach Hersteller verschieden.'}),
+ boxPart({id:'tr8-mutter',label:'Spindelmutter TR8 (Flansch)',group:'Mechanik',size:[22,22],height:15,holes:rect(11.3,11.3,3.5),note:'Flansch Ø 22 mm, vier Löcher auf Ø 16 mm, Gewinde TR8 × 8. Auf eine Gewindespindel gezogen wandert sie mit ihr.'}),
  boxPart({id:'d1-mini',label:'Wemos D1 mini (ESP8266)',group:'Controller',size:[34.2,25.6],height:6.7,below:3,note:'Keine Befestigungslöcher.'}),
  boxPart({id:'hc-sr04',label:'HC-SR04 Ultraschall',group:'Sensoren',size:[45,20],height:15,holes:rect(41,16,2),below:3,note:'Lochabstand je nach Hersteller verschieden, bitte nachmessen.'}),
  boxPart({id:'l298n',label:'L298N Motortreiber',group:'Module',size:[43,43],height:27,holes:rect(37,37,3),below:3,note:'Lochabstand je nach Hersteller verschieden, bitte nachmessen.'}),
@@ -41,6 +42,6 @@ export const parts:Part[]=[...imported,...typed,...supports];
 export function massOf(p:Part){const hull=p.group==='Motoren'&&p.size[0]>30?p.size[0]*p.size[1]*p.size[2]:(p.box.max[0]-p.box.min[0])*(p.box.max[1]-p.box.min[1])*(p.box.max[2]-p.box.min[2]),v=hull/1000,d=p.group==='Motoren'?(p.size[0]>30?4:1.2):p.group==='Lüfter'?.3:.4;return Math.max(1,v*d);}
 /** Holding torque of a stepper by frame size (Nm), for the couple on its screws; 0 for everything else. */
 export function torqueOf(p:Part){if(p.group!=='Motoren'||!p.shaft)return 0;return p.size[0]>50?1.3:p.size[0]>40?.45:.18;}
-export const partGroups=['Controller','Motoren','Module','Sensoren','Anzeigen','Schalter','Lüfter','Befestigung','Eigene Teile'];
+export const partGroups=['Controller','Motoren','Module','Sensoren','Anzeigen','Schalter','Lüfter','Mechanik','Befestigung','Eigene Teile'];
 export const partById=(id:string,own:Part[]=[])=>parts.find(p=>p.id===id)??own.find(p=>p.id===id);
 export const catalogSource={source:nopscadlib.source,commit:nopscadlib.commit,license:nopscadlib.license};

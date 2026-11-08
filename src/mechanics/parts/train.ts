@@ -16,7 +16,10 @@ import type {Demo} from '../demos.ts';
 export const legoGears=legoParts.filter(p=>p.search&&p.teeth>0&&p.mount==='cross');
 /** A shaft is a part of its own: `fixed`, it stands in its carrier (an axle: wheels on it run loose), else it turns in it.
  * `kind`, `d`: what it is made of and its diameter, for bearings and the parts list. */
-export type Shaft={id:string;at:[number,number];fixed?:boolean;kind?:'lego'|'gedruckt'|'stahl';d?:number};
+export type Shaft={id:string;at:[number,number];fixed?:boolean;kind?:'lego'|'gedruckt'|'stahl'|'spindel';d?:number;/** A lead screw: mm per turn; it may stand without wheels, `length` long about `z` along y. */lead?:number;length?:number;z?:number};
+/** A rack: a toothed bar in the train's plane sliding along `dir` (x, or the height h). `at`: the middle of its pitch line
+ * (x, height), `z` along the shafts. It slides between `min` and `max` (mm). */
+export type Rack={id:string;at:[number,number];dir:'x'|'h';z:number;length:number;module:number;width:number;min:number;max:number;group?:string};
 /** `part`: a LEGO gear by id; without one a printed spur gear of `module`. */
 export type Wheel={id:string;shaft:string;z:number;teeth:number;module:number;width:number;part?:string;/** The group it sits in. */group?:string;/** Runs free on its shaft (an idler) instead of fixed to it. */loose?:boolean};
 /** A driven shaft and what drives it. */
@@ -25,14 +28,14 @@ export type Input={shaft:string;drive:string};
  * `drive`: the single ones of files from before. `grid`: mm steps of a wheel standing alone, `angle`: degree steps of a
  * wheel around the one it meshes with (0: free). `target`: a meshing wheel's shaft lands only on points of the mm grid
  * where the mesh distance is exact. */
-export type Train={shafts:Shaft[];wheels:Wheel[];inputs?:Input[];outputs?:string[];input?:string;output?:string;drive:string;grid?:number;angle?:number;target?:boolean};
+export type Train={shafts:Shaft[];wheels:Wheel[];racks?:Rack[];inputs?:Input[];outputs?:string[];input?:string;output?:string;drive:string;grid?:number;angle?:number;target?:boolean};
 export const DEFAULT_ANGLE=15;
 export const newTrain=():Train=>({shafts:[],wheels:[],drive:'lego-achse'});
 export const inputsOf=(t:Train):Input[]=>t.inputs??(t.input?[{shaft:t.input,drive:t.drive}]:[]);
 export const outputsOf=(t:Train):string[]=>t.outputs??(t.output?[t.output]:[]);
 /** Writes the ends as lists; the single fields from before go. */
 export function setEnds(t:Train,inputs:Input[],outputs:string[]){t.inputs=inputs;t.outputs=outputs;delete t.input;delete t.output;}
-export const parseTrain=(t:Train):Train=>{if(!t||!Array.isArray(t.shafts)||!Array.isArray(t.wheels)||t.wheels.length>64)throw Error('Ungültiges Getriebe');for(const w of t.wheels)if(!t.shafts.some(s=>s.id===w.shaft)||!(w.teeth>=6&&w.teeth<=200)||!(w.module>0)||!(w.width>0))throw Error('Getriebe: Rad ungültig');if(t.grid!==undefined&&!(t.grid>=0&&t.grid<=50)||t.angle!==undefined&&!(t.angle>=0&&t.angle<=180))throw Error('Getriebe: Raster ungültig');
+export const parseTrain=(t:Train):Train=>{if(!t||!Array.isArray(t.shafts)||!Array.isArray(t.wheels)||t.wheels.length>64)throw Error('Ungültiges Getriebe');if(t.racks!==undefined&&(!Array.isArray(t.racks)||t.racks.length>32||t.racks.some(r=>!r||typeof r.id!=='string'||r.dir!=='x'&&r.dir!=='h'||![...r.at,r.z,r.length,r.module,r.width,r.min,r.max].every(Number.isFinite)||!(r.length>0&&r.module>0&&r.width>0)||r.min>r.max)))throw Error('Getriebe: Zahnstange ungültig');for(const w of t.wheels)if(!t.shafts.some(s=>s.id===w.shaft)||!(w.teeth>=6&&w.teeth<=200)||!(w.module>0)||!(w.width>0))throw Error('Getriebe: Rad ungültig');if(t.grid!==undefined&&!(t.grid>=0&&t.grid<=50)||t.angle!==undefined&&!(t.angle>=0&&t.angle<=180))throw Error('Getriebe: Raster ungültig');
  if(t.inputs!==undefined&&(!Array.isArray(t.inputs)||t.inputs.some(i=>!i||typeof i.shaft!=='string'||typeof i.drive!=='string'))||t.outputs!==undefined&&(!Array.isArray(t.outputs)||t.outputs.some(o=>typeof o!=='string')))throw Error('Getriebe: Ein- oder Ausgang ungültig');
  const x=structuredClone(t),known=(s:string)=>x.shafts.some(y=>y.id===s);setEnds(x,inputsOf(x).filter(i=>known(i.shaft)),outputsOf(x).filter(known));return x;};
 export const pitchOf=(w:Wheel)=>w.module*w.teeth/2;
@@ -45,9 +48,20 @@ export function meshes(t:Train){const out:[Wheel,Wheel][]=[];t.wheels.forEach((a
 /** Turns of each shaft per turn of one input (the first, without `from`); a loop that disagrees locks the train. */
 /** What turns as one: a shaft with the wheels fixed on it, or a loose wheel on its own. */
 export const nodeOf=(w:Wheel)=>w.loose?`rad:${w.id}`:w.shaft;
-export function rates(t:Train,from=inputsOf(t)[0]?.shaft){const rate=new Map<string,number>(),pairs=meshes(t),fixed=new Set(t.shafts.filter(s=>s.fixed).map(s=>s.id));let locked=false;if(!from||fixed.has(from))return {rate,locked:!!from};rate.set(from,1);const open=[from];
+/** A rack as a body: it slides by the wheels in it. */
+export const rackBody=(id:string)=>`zahnstange:${id}`;
+/** Wheels in a rack: the pitch circle touches its pitch line, facing it, inside its length, of the same module. `mm`: how
+ * far it slides per degree the wheel turns (about +y; the side decides the sign). */
+export function rackMeshes(t:Train){const out:{wheel:Wheel;rack:Rack;mm:number}[]=[];
+ for(const r of t.racks??[])for(const w of t.wheels){if(w.module!==r.module||Math.abs(w.z-r.z)>=(w.width+r.width)/2-.01)continue;const s=shaftOf(t,w),p=pitchOf(w),along=r.dir==='x'?0:1,across=1-along,off=s.at[across]-r.at[across];
+  if(Math.abs(Math.abs(off)-p)>.05||Math.abs(s.at[along]-r.at[along])>r.length/2)continue;const k=p*Math.PI/180;out.push({wheel:w,rack:r,mm:r.dir==='x'?(off>0?-k:k):(off>0?-k:k)});}
+ return out;}
+/** Every coupling as an edge: rate(b) = rate(a) · n / d. Wheels turn in degrees, racks slide in mm. */
+function couplings(t:Train){const out:{a:string;b:string;n:number;d:number}[]=[];for(const [x,y] of meshes(t)){out.push({a:nodeOf(x),b:nodeOf(y),n:-x.teeth,d:y.teeth},{a:nodeOf(y),b:nodeOf(x),n:-y.teeth,d:x.teeth});}
+ for(const m of rackMeshes(t)){out.push({a:nodeOf(m.wheel),b:rackBody(m.rack.id),n:m.mm,d:1},{a:rackBody(m.rack.id),b:nodeOf(m.wheel),n:1,d:m.mm});}return out;}
+export function rates(t:Train,from=inputsOf(t)[0]?.shaft){const rate=new Map<string,number>(),edges=couplings(t),fixed=new Set(t.shafts.filter(s=>s.fixed).map(s=>s.id));let locked=false;if(!from||fixed.has(from))return {rate,locked:!!from};rate.set(from,1);const open=[from];
  // A fixed shaft does not turn: a chain that would turn it locks.
- while(open.length){const s=open.pop()!;for(const [a,b] of pairs)for(const [x,y] of [[a,b],[b,a]]){if(nodeOf(x)!==s)continue;const next=-rate.get(s)!*x.teeth/y.teeth,to=nodeOf(y);if(fixed.has(to)){locked=true;continue;}const known=rate.get(to);if(known===undefined){rate.set(to,next);open.push(to);}else if(Math.abs(known-next)>1e-9)locked=true;}}
+ while(open.length){const s=open.pop()!;for(const e of edges){if(e.a!==s)continue;const next=rate.get(s)!*e.n/e.d;if(fixed.has(e.b)){locked=true;continue;}const known=rate.get(e.b);if(known===undefined){rate.set(e.b,next);open.push(e.b);}else if(Math.abs(known-next)>1e-9*Math.max(1,Math.abs(next)))locked=true;}}
  return {rate,locked};}
 /** Where every shaft stands with the inputs turned by `turns` (degrees, by input shaft): each input turns its chain. A shaft
  * two inputs reach is held by the first; `clash` names such pairs, they lock each other. */
@@ -63,7 +77,7 @@ export const shaftOfBody=(body:string|undefined)=>body?.startsWith('welle:')?bod
 export const wheelBody=(id:string)=>`rad:${id}`;
 /** The bodies of the train: every shaft, and every loose wheel, turned by the inputs. */
 export function shaftFrames(t:Train|undefined,turns:Record<string,number>={}):Record<string,Frame>{if(!t)return {};const {angle}=motion(t,turns),at=(s:Shaft,a:number)=>({position:[s.at[0],0,s.at[1]] as V,rotation:axisAngle([0,1,0],a)});
- return Object.fromEntries([...t.shafts.map(s=>[shaftBody(s.id),at(s,angle.get(s.id)??0)]),...t.wheels.filter(w=>w.loose).map(w=>[wheelBody(w.id),at(shaftOf(t,w),angle.get(nodeOf(w))??0)])]);}
+ return Object.fromEntries([...(t.racks??[]).map(r=>{const v=Math.min(r.max,Math.max(r.min,angle.get(rackBody(r.id))??0));return [rackBody(r.id),{position:[r.at[0]+(r.dir==='x'?v:0),r.z,r.at[1]+(r.dir==='h'?v:0)] as V,rotation:[0,0,0,1] as Frame['rotation']}];}),...t.shafts.map(s=>[shaftBody(s.id),at(s,angle.get(s.id)??0)]),...t.wheels.filter(w=>w.loose).map(w=>[wheelBody(w.id),at(shaftOf(t,w),angle.get(nodeOf(w))??0)])]);}
 export type TrainIssue={wheels:string[];message:string};
 /** What is fine but worth knowing: wheels no input reaches stand still (something else may move them later). */
 export function trainNotes(t:Train):string[]{const ins=inputsOf(t);if(!ins.length)return [];const {owner}=motion(t),still=t.wheels.filter(w=>!owner.has(nodeOf(w)));return still.length?[`${still.map(nameOf).join(', ')} ${still.length===1?'hängt':'hängen'} an keinem Eingang und ${still.length===1?'steht':'stehen'} still.`]:[];}

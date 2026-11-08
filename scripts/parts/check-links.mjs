@@ -22,4 +22,8 @@ assert.ok(hangsOn(b,itemBody('arm')).has(itemBody('geber')));assert.ok(!hangsOn(
 // The file keeps them; a broken connection is refused.
 const back=parseBuild(JSON.parse(JSON.stringify(b)));assert.deepEqual(back.items[0].free.joint,b.items[0].free.joint);assert.equal(back.plates[0].free.joint.input.drive,'nema17');
 const bad=JSON.parse(JSON.stringify(b));bad.items[0].free.joint.min=10;bad.items[0].free.joint.max=0;assert.throws(()=>parseBuild(bad),/Verbindung/);
-console.log('Verbindungen: Arm dreht um seinen Drehpunkt, Geber fährt mit, Motor auf dem Schlitten, Bereich begrenzt, keine Schleifen, Datei geprüft.');
+// A nut on a lead screw: two turns of 8 mm lead move it 16 mm along the shaft (y); it does not turn; at the end it stops.
+{const s={...newBuild('s','Spindel'),plates:[]};s.items.push({...newItem('m',partById('tr8-mutter'),[0,0]),free:{frame:{position:[0,10,0],rotation:[0,0,0,1]},body:'welle:sp',joint:{kind:'mutter',axis:'y',lead:8,min:-100,max:30}}});
+ const base={'welle:sp':{position:[50,0,80],rotation:[0,Math.sin(Math.PI/4),0,Math.cos(Math.PI/4)]}};let g=bodyFrames(s,base,{'welle:sp':720});near(g[itemBody('m')].position,[50,26,80],'zwei Umdrehungen');assert.deepEqual(g[itemBody('m')].rotation,[0,0,0,1],'dreht nicht mit');
+ g=bodyFrames(s,base,{'welle:sp':3600});near(g[itemBody('m')].position,[50,40,80],'am Ende der Spindel');}
+console.log('Verbindungen: Arm dreht um seinen Drehpunkt, Geber fährt mit, Motor auf dem Schlitten, Bereich begrenzt, keine Schleifen, Datei geprüft, Spindelmutter wandert.');

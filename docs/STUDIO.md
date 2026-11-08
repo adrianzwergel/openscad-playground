@@ -52,7 +52,12 @@ Mates in Onshape. Logik: `parts/links.ts`, `parts/train.ts`; geprüft von `scrip
   oder einer Platte. Die Verbindung ist **fest**, **dreht** um X/Y/Z durch einen Drehpunkt oder **schiebt** entlang X/Y/Z
   (Richtungen dessen, womit verbunden), mit Bereich und auf Wunsch als **Eingang** mit Regler. Was daran hängt, fährt
   mit, über ganze Ketten. Ein Teil, das auf ein Zahnrad gezogen wird, ist fest mit dessen Welle verbunden.
-- **Zahneingriffe** erkennt das Studio selbst; sie koppeln die Drehungen der Wellen und losen Räder.
+- **Kopplungen** erkennt das Studio selbst. Zahneingriffe koppeln Wellen und Losräder; eine **Zahnstange** (Bibliothek
+  „Zahnräder“, an ein Rad gezogen legt sie sich an seinen Teilkreis) schiebt r·π/180 mm je Grad, ein zweites Ritzel an ihr
+  dreht gegenläufig. Eine **Gewindespindel TR8** ist eine Welle mit Steigung, die auch ohne Rad besteht; eine
+  **Spindelmutter** (Bibliothek „Mechanik“) auf ihr gezogen sitzt auf der Achse und wandert je Umdrehung um die Steigung,
+  ohne sich mitzudrehen (Verbindungsart „Spindelmutter“). Teile, die mit einer Zahnstange oder Mutter verbunden sind,
+  fahren mit. Logik: `rackMeshes`/`rates` in `parts/train.ts`, `mutter` in `parts/links.ts`.
 - Im Szenenbaum stehen unten unter **Verbindungen** alle Wellen, Losräder und nicht festen Teile mit ihrer Verbindung.
 
 **Gruppen** ordnen nur, wie Baugruppen im CAD-Browser. Eine **starre** Gruppe hält beim Bearbeiten ihre Abstände: Ziehst

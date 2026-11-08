@@ -1,7 +1,7 @@
 // Gear trains built by hand: what meshes, the ratio, snapping, what is refused; the compiled mechanism turns at the
 // ratio, closes, gets its bearings and its structures like the gearbox demos.
 import assert from 'node:assert/strict';
-import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,trainMechanism,trainNotes,motion,shaftFrames,legoGears,parseTrain,gridPoints} from '../../src/mechanics/parts/train.ts';
+import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,trainMechanism,trainNotes,motion,shaftFrames,rackMeshes,rackBody,legoGears,parseTrain,gridPoints} from '../../src/mechanics/parts/train.ts';
 import {solve} from '../../src/mechanics/kinematics/solver.ts';
 import {heldTrains} from '../../src/mechanics/kinematics/drive.ts';
 import {planBearings,applyBearings} from '../../src/mechanics/kinematics/bearings.ts';
@@ -47,6 +47,10 @@ for(const [name,x,ratio] of [['einstufig',t,2.5],['zweistufig',two,6.25],['Zwisc
 {const idl=structuredClone(idle);idl.shafts[1].fixed=true;idl.wheels[1].loose=true;assert.deepEqual(trainIssues(idl),[]);assert.equal(ratioOf(idl),2.5);const m=motion(idl,{a:100});assert.equal(m.angle.get('m'),undefined,'die Achse steht');assert.ok(Math.abs(m.angle.get('rad:w2')+100*16/24)<1e-9,'das Losrad dreht');
  const fr=shaftFrames(idl,{a:100});assert.ok(fr['rad:w2'],'Losrad ist ein Körper');const d=trainMechanism(idl,'Losrad',false,'test-los');assert.equal(d.mechanism.joints.length,3);
  const jam=structuredClone(idle);jam.shafts[1].fixed=true;assert.ok(trainIssues(jam).some(x=>/feststehende Achse hält/.test(x.message)),'fest auf feststehender Achse sperrt');}
+// A rack under a z16 (pitch radius 8): 90° turn it 8·π/2 mm towards -x; a second pinion on the other side turns the other way.
+{const r=newTrain();r.shafts.push({id:'a',at:[0,0]},{id:'b',at:[40,-16]});r.wheels.push(wheel('p1','a',16),wheel('p2','b',16));r.racks=[{id:'z',at:[0,-8],dir:'x',z:0,length:120,module:1,width:8,min:-50,max:50}];r.inputs=[{shaft:'a',drive:'lego-achse'}];r.outputs=['b'];
+ assert.equal(rackMeshes(r).length,2);const m=motion(r,{a:90});assert.ok(Math.abs(m.angle.get(rackBody('z'))+4*Math.PI)<1e-9,'Zahnstange schiebt');assert.ok(Math.abs(m.angle.get('b')+90)<1e-9,'Ritzel gegenüber gegenläufig');
+ assert.ok(Math.abs(shaftFrames(r,{a:90})[rackBody('z')].position[0]+4*Math.PI)<1e-9);assert.equal(shaftFrames(r,{a:3600})[rackBody('z')].position[0],-50,'am Anschlag');assert.equal(parseTrain(JSON.parse(JSON.stringify(r))).racks.length,1);}
 // Derived live: two inputs, two chains, two drives; the shafts stay where the Studio shows them; it closes and is borne.
 const dual=structuredClone(t);dual.shafts.push({id:'c',at:[0,80]},{id:'d',at:[28,80]});dual.wheels.push(wheel('w7','c',16),wheel('w8','d',40));dual.inputs=[{shaft:'a',drive:'lego-achse'},{shaft:'c',drive:'lego-achse'}];dual.outputs=['b','d'];delete dual.input;delete dual.output;
 {const d=trainMechanism(dual,'Zwei',false,'test-zwei'),m=d.mechanism;assert.deepEqual(d.drives.map(x=>x.axis),['Abtrieb-1','Abtrieb-2']);assert.deepEqual(m.bodies.find(x=>x.id==='Abtrieb-2').frame.position,[28,0,80]);

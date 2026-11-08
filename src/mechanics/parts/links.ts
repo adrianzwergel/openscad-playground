@@ -9,7 +9,9 @@ import {compose,axisAngle} from '../kinematics/math.ts';
 import type {Frame,V} from '../kinematics/math.ts';
 
 export type Axis='x'|'y'|'z';
-export type Joint={kind:'drehen'|'schieben';axis:Axis;/** Pivot of a turning joint in the frame of what it is connected to; without, where the part stands. */at?:V;min:number;max:number;/** Driven by this drive, with a slider. */input?:{drive:string}};
+/** `mutter`: a nut on a lead screw (connected to a shaft): it travels `lead` mm per turn of the shaft along it and does
+ * not turn with it. */
+export type Joint={kind:'drehen'|'schieben'|'mutter';axis:Axis;lead?:number;/** Pivot of a turning joint in the frame of what it is connected to; without, where the part stands. */at?:V;min:number;max:number;/** Driven by this drive, with a slider. */input?:{drive:string}};
 export const itemBody=(id:string)=>`teil:${id}`;
 export const plateBody=(id:string)=>`platte:${id}`;
 const unit:Record<Axis,V>={x:[1,0,0],y:[0,1,0],z:[0,0,1]};
@@ -22,8 +24,11 @@ export function jointMove(j:Joint,value:number,pivot:V=[0,0,0]):Frame{const v=Ma
 export function bodyFrames(b:Build,base:Record<string,Frame>,values:Record<string,number>={}):Record<string,Frame>{
  const out:Record<string,Frame>={},free=new Map<string,Free>([...b.items.filter(i=>i.free).map(i=>[itemBody(i.id),i.free!] as const),...b.plates.map(p=>[plateBody(p.id),p.free] as const)]),busy=new Set<string>();
  const frameOf=(key:string):Frame|undefined=>{if(out[key])return out[key];const f=free.get(key);if(!f)return base[key];if(busy.has(key))return undefined;busy.add(key);
-  const parent=f.body?frameOf(f.body):undefined,j=f.joint,local=j?compose(jointMove(j,values[key]??0,f.frame.position),f.frame):f.frame,moved=parent?compose(parent,local):local;busy.delete(key);out[key]=moved;return moved;};
+  const parent=f.body?frameOf(f.body):undefined,j=f.joint;
+  // A nut: where the shaft stands, without its turn, shifted along it by the turns times the lead.
+  if(j?.kind==='mutter'){const p=parent?.position??[0,0,0],v=Math.min(j.max,Math.max(j.min,(values[f.body??'']??0)/360*(j.lead??8)));busy.delete(key);out[key]=compose({position:[p[0],p[1]+v,p[2]],rotation:[0,0,0,1]},f.frame);return out[key];}
+  const local=j?compose(jointMove(j,values[key]??0,f.frame.position),f.frame):f.frame,moved=parent?compose(parent,local):local;busy.delete(key);out[key]=moved;return moved;};
  for(const key of free.keys())frameOf(key);return out;}
 /** Bodies a part may be connected to without a loop: everything but itself and what hangs on it. */
 export function hangsOn(b:Build,key:string){const below=new Set([key]);for(let grew=true;grew;){grew=false;for(const [k,f] of [...b.items.filter(i=>i.free).map(i=>[itemBody(i.id),i.free!] as const),...b.plates.map(p=>[plateBody(p.id),p.free] as const)])if(f.body&&below.has(f.body)&&!below.has(k)){below.add(k);grew=true;}}return below;}
-export function parseJoint(j:unknown):Joint|undefined{if(j===undefined)return undefined;const x=j as Joint;if(!x||x.kind!=='drehen'&&x.kind!=='schieben'||!(x.axis in unit)||!Number.isFinite(x.min)||!Number.isFinite(x.max)||x.min>x.max||x.at!==undefined&&(!Array.isArray(x.at)||x.at.length!==3||!x.at.every(Number.isFinite))||x.input!==undefined&&typeof x.input?.drive!=='string')throw Error('Aufbau: Verbindung ungültig');return structuredClone(x);}
+export function parseJoint(j:unknown):Joint|undefined{if(j===undefined)return undefined;const x=j as Joint;if(!x||x.kind!=='drehen'&&x.kind!=='schieben'&&x.kind!=='mutter'||x.lead!==undefined&&!(x.lead>0)||!(x.axis in unit)||!Number.isFinite(x.min)||!Number.isFinite(x.max)||x.min>x.max||x.at!==undefined&&(!Array.isArray(x.at)||x.at.length!==3||!x.at.every(Number.isFinite))||x.input!==undefined&&typeof x.input?.drive!=='string')throw Error('Aufbau: Verbindung ungültig');return structuredClone(x);}
