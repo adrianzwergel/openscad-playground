@@ -17,7 +17,7 @@ import {modelPoints} from './bearings.ts';
 import {driveLoads} from './loads.ts';
 import type {DriveLoadSettings} from './loads.ts';
 import type {Anchor,StructureResult,StructureSettings,FieldJob} from '../../structure/generate.ts';
-import {generateStructure} from '../../structure/generate.ts';
+import {generateStructure,defaultSettings} from '../../structure/generate.ts';
 import {featureGeometry,featureSize} from '../../structure/features.ts';
 const featureSizeOf=(x:{feature:import('../../structure/features.ts').Feature})=>featureSize(x.feature).radius;
 import {PrimIndex} from '../../structure/sdf.ts';
@@ -195,8 +195,13 @@ export async function linkStructures(m:Mechanism,drives:Drive[],plan:BearingPlan
    if(c.rail&&carrierOf(c.rail.link)===l)for(const a of list.filter(x=>x.id.startsWith(`${c.rail!.element}/halter`)))cases.push({[a.id]:rotate(a.frame.rotation,[c.rail.tangential,c.rail.radial,0])});}
   try{
    const pool=s.pool,soFar=[...built],clearance=clearanceFor(l);
-   const result=await generateStructure({id:l,anchors:list,clearance,cases,settings:{...s.structure,region:s.region},...(pool?{pool:(job:FieldJob,points:Float64Array)=>pool.field(l,soFar,{...job,clearance:clearance.values()},points),prefetch:async(points:Float64Array)=>clearance.prime(points,await pool.clearance(l,soFar,points))}:{})},(stage,f)=>progress?.(l,stage,f));
-   entry.result=result;entry.checks.push(...result.report.checks);
+   const run=(o:Partial<StructureSettings>)=>generateStructure({id:l,anchors:list,clearance,cases,settings:{...s.structure,region:s.region,...o},...(pool?{pool:(job:FieldJob,points:Float64Array)=>pool.field(l,soFar,{...job,clearance:clearance.values()},points),prefetch:async(points:Float64Array)=>clearance.prime(points,await pool.clearance(l,soFar,points))}:{})},(stage,f)=>progress?.(l,stage,f));
+   // Too weak or too soft: the struts were short of room. Again with a wider search room, then also with a denser net;
+   // the first that holds wins, else the one closest to holding.
+   const weak=(r:StructureResult)=>r.report.checks.filter(c=>(c.id==='strength'||c.id==='stiffness')&&c.state!=='pass').length,short=(r:StructureResult)=>Math.max(r.report.utilisation,r.report.deflection/(s.structure.deflection??defaultSettings.deflection));
+   let result=await run({}),tried='';
+   for(const [o,label] of [[{region:s.region*1.6},'Suchraum ×1,6'],[{region:s.region*1.6,bracing:Math.max(2,s.structure.bracing??1)},'Suchraum ×1,6 und dichtes Netz']] as [Partial<StructureSettings>,string][]){if(!weak(result))break;progress?.(l,'Zu weich: neuer Versuch mit mehr Raum',0);const next=await run(o);if(!weak(next)||short(next)<short(result)){result=next;tried=label;}}
+   entry.result=result;entry.checks.push(...result.report.checks);if(tried)entry.checks.push({id:'retry',state:'pass',message:`Im ersten Anlauf zu weich, mit ${tried} nachgerechnet.`});
    const b:BuiltStructure={link:l,struts:result.struts.map(st=>({a:st.a,b:st.b,ra:st.ra,rb:st.rb})),joints:result.joints};built.push(b);register(b);
   }catch(e){entry.error=e instanceof Error?e.message:String(e);entry.checks.push({id:'generate',state:'fail',message:entry.error});}
  }
