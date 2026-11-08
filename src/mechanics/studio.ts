@@ -87,6 +87,7 @@ function setMode(mode:'translate'|'rotate'){transform.setMode(mode);showAxes();f
 window.addEventListener('keydown',e=>{if(e.key==='Alt'&&!free){free=true;snaps();e.preventDefault();}});window.addEventListener('keyup',e=>{if(e.key==='Alt'){free=false;snaps();}});window.addEventListener('blur',()=>{free=false;snaps();});
 // Test and script entries: a point of the scene on the page; where the first part on a link stands; pick a model part.
 (window as unknown as {studioScreen:(p:[number,number,number])=>[number,number]}).studioScreen=p=>{mechRoot.updateMatrixWorld(true);const v=mechRoot.localToWorld(new THREE.Vector3(...p)).project(camera),r=renderer.domElement.getBoundingClientRect();return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];};
+(window as unknown as {studioFrame:(key:string)=>number[]|undefined}).studioFrame=key=>build.frameOf(key);
 (window as unknown as {studioPart:(key?:string)=>number[]|undefined}).studioPart=key=>build.followerAt(key);
 // Test entry: the document as the old save slot held it (checks read it from there).
 (window as unknown as {studioSave:()=>void}).studioSave=()=>localStorage.setItem('mechanics-studio',serializeStudio(doc));

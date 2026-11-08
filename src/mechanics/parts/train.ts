@@ -17,7 +17,8 @@ import type {Demo} from '../demos.ts';
 export const legoGears=legoParts.filter(p=>p.search&&p.teeth>0&&p.mount==='cross');
 /** A shaft is a part of its own: `fixed`, it stands in its carrier (an axle: wheels on it run loose), else it turns in it.
  * `kind`, `d`: what it is made of and its diameter, for bearings and the parts list. */
-export type Shaft={id:string;at:[number,number];fixed?:boolean;kind?:'lego'|'gedruckt'|'stahl'|'spindel';d?:number;/** A lead screw: mm per turn; it may stand without wheels, `length` long about `z` along y. */lead?:number;length?:number;z?:number};
+export type Shaft={id:string;at:[number,number];fixed?:boolean;kind?:'lego'|'gedruckt'|'stahl'|'spindel';d?:number;/** A lead screw: mm per turn; it may stand without wheels, `length` long about `z` along y. */lead?:number;length?:number;z?:number;
+ /** Connected to a moving body (another shaft, a part, a plate): where it sits on it. Without, it is in the world. */on?:{body:string;frame:Frame}};
 /** A rack: a toothed bar in the train's plane sliding along `dir` (x, or the height h). `at`: the middle of its pitch line
  * (x, height), `z` along the shafts. It slides between `min` and `max` (mm). */
 export type Rack={id:string;at:[number,number];dir:'x'|'h';z:number;length:number;module:number;width:number;min:number;max:number;group?:string};
@@ -82,11 +83,16 @@ export const shaftOfBody=(body:string|undefined)=>body?.startsWith('welle:')?bod
 /** A loose wheel as a body: it turns on its own. */
 export const wheelBody=(id:string)=>`rad:${id}`;
 /** The bodies of the train: every shaft, and every loose wheel, turned by the inputs. */
+/** The frames of shafts that sit on a moving body, and of the loose wheels on them: that body's frame times their place on
+ * it, turned by their own angle (`angle`: of motion). */
+export function carriedFrames(t:Train,frames:Record<string,Frame>,angle:Map<string,number>):Record<string,Frame>{const out:Record<string,Frame>={},turn=(a:number)=>({position:[0,0,0] as V,rotation:axisAngle([0,1,0],a)});
+ for(const s of t.shafts){if(!s.on)continue;const p=frames[s.on.body];if(!p)continue;const base=compose(p,s.on.frame);out[shaftBody(s.id)]=compose(base,turn(angle.get(s.id)??0));for(const w of t.wheels)if(w.loose&&w.shaft===s.id)out[wheelBody(w.id)]=compose(base,turn(angle.get(nodeOf(w))??0));}
+ return out;}
 export function shaftFrames(t:Train|undefined,turns:Record<string,number>={}):Record<string,Frame>{if(!t)return {};const {angle}=motion(t,turns),at=(s:Shaft,a:number)=>({position:[s.at[0],0,s.at[1]] as V,rotation:axisAngle([0,1,0],a)});
  return Object.fromEntries([...(t.racks??[]).map(r=>{const v=Math.min(r.max,Math.max(r.min,angle.get(rackBody(r.id))??0));return [rackBody(r.id),{position:[r.at[0]+(r.dir==='x'?v:0),r.z,r.at[1]+(r.dir==='h'?v:0)] as V,rotation:[0,0,0,1] as Frame['rotation']}];}),...t.shafts.map(s=>[shaftBody(s.id),at(s,angle.get(s.id)??0)]),...t.wheels.filter(w=>w.loose).map(w=>[wheelBody(w.id),at(shaftOf(t,w),angle.get(nodeOf(w))??0)])]);}
 export type TrainIssue={wheels:string[];message:string};
 /** What is fine but worth knowing: wheels no input reaches stand still (something else may move them later). */
-export function trainNotes(t:Train):string[]{const ins=inputsOf(t);if(!ins.length)return [];const {owner}=motion(t),still=t.wheels.filter(w=>!owner.has(nodeOf(w)));return still.length?[`${still.map(nameOf).join(', ')} ${still.length===1?'hängt':'hängen'} an keinem Eingang und ${still.length===1?'steht':'stehen'} still.`]:[];}
+export function trainNotes(t:Train):string[]{const ins=inputsOf(t);if(!ins.length)return [];const {owner}=motion(t),riding=new Set(t.shafts.filter(s=>s.on).map(s=>s.id)),still=t.wheels.filter(w=>!owner.has(nodeOf(w))&&!riding.has(w.shaft));return still.length?[`${still.map(nameOf).join(', ')} ${still.length===1?'hängt':'hängen'} an keinem Eingang und ${still.length===1?'steht':'stehen'} still.`]:[];}
 const nameOf=(w:Wheel)=>`${w.part?'LEGO ':''}z${w.teeth}`;
 export function trainIssues(t:Train):TrainIssue[]{const out:TrainIssue[]=[],pairs=meshes(t),ins=inputsOf(t),outs=outputsOf(t),{owner,clash}=motion(t),label=(s:string)=>{const w=t.wheels.find(x=>x.shaft===s);return w?nameOf(w):'Welle';};
  t.wheels.forEach((a,i)=>{for(const b of t.wheels.slice(i+1)){if(a.shaft===b.shaft){if(facing(a,b))out.push({wheels:[a.id,b.id],message:`${nameOf(a)} und ${nameOf(b)} sitzen auf derselben Welle ineinander.`});continue;}if(!facing(a,b)||pairs.some(p=>p.includes(a)&&p.includes(b)))continue;const d=apart(shaftOf(t,a),shaftOf(t,b));if(d<outerOf(a)+outerOf(b)+.5)out.push({wheels:[a.id,b.id],message:`${nameOf(a)} stößt an ${nameOf(b)}, ohne zu kämmen.`});}});

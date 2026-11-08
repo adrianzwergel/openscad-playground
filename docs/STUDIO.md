@@ -48,6 +48,9 @@ Mates in Onshape. Logik: `parts/links.ts`, `parts/train.ts`; geprüft von `scrip
 - **Welle** ist ein eigenes Bauteil (Zeile im Baum, die Räder darunter): aus LEGO-Achse, gedruckt oder Stahl, mit Ø; sie
   **dreht** in ihrem Träger oder **steht fest** (Achse). Ein Rad sitzt **fest** auf ihr oder läuft **lose** (Losrad); auf
   einer feststehenden Achse laufen Räder lose. Eingänge (mit Antrieb) und Ausgänge setzt man an der Welle.
+  Eine Welle oder Achse kann selbst **verbunden** sein mit einem bewegten Körper (einer anderen Welle, einem Teil, einer
+  Platte): Dann fährt sie mit ihm, samt ihren Rädern, z. B. ein z36 auf einer Achse, die an der Welle des z24 sitzt. Eingriffe
+  rechnet das Studio dabei noch für ruhende Wellen; ein Planetengetriebe, dessen Planeten mitfahren und kämmen, noch nicht.
 - **Teile und Platten** sind **verbunden mit** der Welt, einem Glied des Modells, einer Welle, einem losen Rad, einem Teil
   oder einer Platte. Die Verbindung ist **fest**, **dreht** um X/Y/Z durch einen Drehpunkt oder **schiebt** entlang X/Y/Z
   (Richtungen dessen, womit verbunden), mit Bereich und auf Wunsch als **Eingang** mit Regler. Was daran hängt, fährt

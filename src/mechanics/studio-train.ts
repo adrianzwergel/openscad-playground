@@ -6,6 +6,8 @@ import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {legoParts} from './graph/lego-parts';
 import {inputsOf,outputsOf,setEnds,motion,trainNotes,nodeOf,rackMeshes,rackBody,beltLength,legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
 import type {Train,Wheel,Rack,Shaft} from './parts/train';
+import {compose} from './kinematics/math';
+import type {Frame,V} from './kinematics/math';
 import type {Build} from './parts/build';
 import {joinShaft} from './parts/groups';
 import {planetGearbox,along} from './demos';
@@ -16,6 +18,7 @@ export type TrainHost={build:()=>Build|undefined;change:(edit:()=>void,message:s
  /** A finished train or block becomes the project's mechanism; `consume`: the wheels here go into it. */adopt:(d:Demo,consume?:boolean)=>void;
  /** The train to change, made with the first wheel (inside a change). */ensure:()=>Train;
  /** The project has a mechanism already: a train or block cannot become a second one. */mechanism:()=>boolean;
+ /** Bodies a shaft can sit on (key, name), and putting it there ('' : the world). */bodies?:(shaft:string)=>[string,string][];attachShaft?:(shaft:string,body:string)=>void;
  /** The Studio's phase: the wheels become a mechanism with bearings and frame in ③. */phase?:()=>number;
  /** The rigid group a wheel moves with, its wheels, and a move of it (room coordinates: x, along the shafts, height). */
  unit?:(wheel:string)=>{id:string;label:string;wheels:Set<string>}|undefined;moveUnit?:(unit:string,delta:[number,number,number],message:string)=>void};
@@ -48,7 +51,9 @@ export class TrainEditor{
  private selected?:string;private drag?:Drag;private loaded=new Map<string,THREE.BufferGeometry>();private sun=legoGears.find(p=>p.teeth===16)?.id??legoGears[0].id;private planet=legoGears.find(p=>p.teeth===16)?.id??legoGears[0].id;
  onChange=()=>{};
  /** How far each input is turned (degrees, by shaft): every wheel and part that hangs on it turns with its rate. */
- private turns:Record<string,number>={};private spins=new Map<string,THREE.Object3D>();private bars=new Map<string,{object:THREE.Object3D;rack:Rack}>();
+ private turns:Record<string,number>={};private spins=new Map<string,THREE.Object3D>();
+ /** What sits on a shaft that rides on something: placed from the frames every time they change. */
+ private riders:{object:THREE.Object3D;body:string;offset:V;turn:boolean}[]=[];private bars=new Map<string,{object:THREE.Object3D;rack:Rack}>();
  get turnsNow():Readonly<Record<string,number>>{return this.turns;}
  constructor(private host:TrainHost){}
  private train():Train|undefined{return this.host.build()?.train;}
@@ -57,9 +62,9 @@ export class TrainEditor{
  private shown():Train|undefined{const d=this.drag,t=this.train()??(d?.over?newTrain():undefined);if(!t||!d?.over)return t;const id=d.shaft??d.wheel.shaft,shafts=t.shafts.some(s=>s.id===id)?t.shafts.map(s=>s.id===id&&!d.shaft?{...s,at:d.at}:s):[...t.shafts,{id,at:d.at}];return {...t,shafts,wheels:[...t.wheels.filter(w=>w.id!==d.wheel.id),{...d.wheel,shaft:id}]};}
  draw(group:THREE.Group,lit:ReadonlySet<string>=new Set(),override?:Train){
   this.spins.clear();const t=override??this.shown();if(!t)return;const bad=new Set(trainIssues(t).flatMap(x=>x.wheels)),on=new Set(meshes(t).flat().map(w=>w.id));
-  this.bars.clear();
-  for(const s of t.shafts){const list=t.wheels.filter(w=>w.shaft===s.id),screw=s.kind==='spindel';if(!list.length&&!screw)continue;const lo=list.length?Math.min(...list.map(w=>w.z-w.width/2))-8:(s.z??0)-(s.length??200)/2,hi=list.length?Math.max(...list.map(w=>w.z+w.width/2))+8:(s.z??0)+(s.length??200)/2,color=inputsOf(t).some(i=>i.shaft===s.id)?0x63cbb3:outputsOf(t).includes(s.id)?0xffb347:screw?0xc8a24a:0xc9d4db,r=screw?(s.d??8)/2:2.4,m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,hi-lo,16),new THREE.MeshStandardMaterial({color,roughness:.5}));m.position.set(s.at[0],(lo+hi)/2,s.at[1]);m.userData.shaft=s.id;group.add(m);}
-  for(const w of t.wheels){const s=t.shafts.find(x=>x.id===w.shaft)!,holder=new THREE.Group();holder.position.set(s.at[0],w.z,s.at[1]);holder.quaternion.set(...along.y);holder.userData.wheel=w.id;const spin=new THREE.Group();holder.add(spin);this.spins.set(w.id,spin);
+  this.bars.clear();this.riders=[];
+  for(const s of t.shafts){const list=t.wheels.filter(w=>w.shaft===s.id),screw=s.kind==='spindel';if(!list.length&&!screw)continue;const lo=list.length?Math.min(...list.map(w=>w.z-w.width/2))-8:(s.z??0)-(s.length??200)/2,hi=list.length?Math.max(...list.map(w=>w.z+w.width/2))+8:(s.z??0)+(s.length??200)/2,color=inputsOf(t).some(i=>i.shaft===s.id)?0x63cbb3:outputsOf(t).includes(s.id)?0xffb347:screw?0xc8a24a:0xc9d4db,r=screw?(s.d??8)/2:2.4,m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,hi-lo,16),new THREE.MeshStandardMaterial({color,roughness:.5}));m.position.set(s.at[0],(lo+hi)/2,s.at[1]);m.userData.shaft=s.id;group.add(m);if(s.on)this.riders.push({object:m,body:`welle:${s.id}`,offset:[0,(lo+hi)/2,0],turn:false});}
+  for(const w of t.wheels){const s=t.shafts.find(x=>x.id===w.shaft)!,holder=new THREE.Group();holder.position.set(s.at[0],w.z,s.at[1]);holder.quaternion.set(...along.y);holder.userData.wheel=w.id;if(s.on)this.riders.push({object:holder,body:w.loose?`rad:${w.id}`:`welle:${s.id}`,offset:[0,w.z,0],turn:true});const spin=new THREE.Group();holder.add(spin);this.spins.set(w.id,spin);
    const color=bad.has(w.id)?0xff5a55:w.id===this.selected||lit.has(w.id)?0xffffff:w.pulley?0xd9a066:on.has(w.id)?0x8fb6d9:0xa9b4bd,material=new THREE.MeshStandardMaterial({color,roughness:.55}),geometry=w.part?this.loaded.get(w.part):undefined;
    if(w.pulley){const r=pitchOf(w),hub=new THREE.Mesh(new THREE.CylinderGeometry(r,r,w.width,40).rotateX(Math.PI/2),material);spin.add(hub);for(const z of [-1,1]){const flange=new THREE.Mesh(new THREE.CylinderGeometry(r+1.5,r+1.5,1,40).rotateX(Math.PI/2),material);flange.position.z=z*(w.width/2+.5);spin.add(flange);}const mark=new THREE.Mesh(new THREE.BoxGeometry(r*.9,1.2,w.width+2.2),new THREE.MeshBasicMaterial({color:0x553311}));mark.position.x=r*.45;spin.add(mark);}
    else if(geometry){const m=new THREE.Mesh(geometry,material);m.userData.shared=true;spin.add(m);}
@@ -78,8 +83,11 @@ export class TrainEditor{
   this.spin(t);
  }
  /** Turns the drawn wheels to the inputs' angles. */
- private spin(t:Train){const {angle}=motion(t,this.turns);for(const w of t.wheels){const o=this.spins.get(w.id);if(o)o.rotation.z=(angle.get(nodeOf(w))??0)*Math.PI/180;}
+ private spin(t:Train){const {angle}=motion(t,this.turns),riding=new Set(t.shafts.filter(s=>s.on).map(s=>s.id));for(const w of t.wheels){const o=this.spins.get(w.id);if(o)o.rotation.z=riding.has(w.shaft)?0:(angle.get(nodeOf(w))??0)*Math.PI/180;}
   for(const {object,rack:r} of this.bars.values()){const v=Math.min(r.max,Math.max(r.min,angle.get(rackBody(r.id))??0));object.position.set(r.at[0]+(r.dir==='x'?v:0),r.z,r.at[1]+(r.dir==='h'?v:0));}}
+ /** Places what rides on a moving body: its shaft's frame (with its own turn) times its place along it. */
+ follow(frames:Record<string,Frame>){for(const r of this.riders){const f=frames[r.body];if(!f)continue;const p=compose(f,{position:r.offset,rotation:[0,0,0,1]});r.object.position.set(...p.position);r.object.quaternion.set(...f.rotation);if(r.turn)r.object.quaternion.multiply(new THREE.Quaternion(...along.y));}}
+ get riding(){return this.riders.length>0;}
  /** The sliders under the view: one per input, turned by hand; the outputs read off. Returns whether there is one. */
  renderAxes(root:HTMLElement,moved:()=>void=()=>{}){
   const t=this.train(),ins=t?inputsOf(t):[];if(!t||!ins.length)return false;const outs=outputsOf(t),name=(s:string)=>{const w=t.wheels.find(x=>x.shaft===s);return w?label(w):'Welle';};
@@ -186,7 +194,8 @@ export class TrainEditor{
     const kind=el('select');kind.dataset.field='Welle aus';for(const [v,l] of [['lego','LEGO-Achse'],['gedruckt','gedruckt'],['stahl','Stahlwelle']])kind.add(new Option(l,v));kind.value=s.kind??(lego?'lego':'stahl');kind.onchange=()=>set('Welle geändert',x=>{const y=x.shafts.find(z=>z.id===s.id);if(y)y.kind=kind.value as 'lego'|'gedruckt'|'stahl';});
     const turn=el('select');turn.dataset.field='Verbindung der Welle';turn.add(new Option('dreht in ihrem Träger','dreht'));turn.add(new Option('steht fest (Achse: Räder laufen lose)','steht'));turn.value=s.fixed?'steht':'dreht';
     turn.onchange=()=>set(turn.value==='steht'?'Achse steht fest; die Räder darauf laufen lose.':'Welle dreht.',x=>{const y=x.shafts.find(z=>z.id===s.id);if(!y)return;if(turn.value==='steht'){y.fixed=true;for(const r of x.wheels)if(r.shaft===y.id)r.loose=true;}else delete y.fixed;});
-    root.append(heading('Welle'),el('label',{},'Aus',kind),...(s.kind&&s.kind!=='lego'||!lego&&!s.kind?[number('Ø [mm]',s.d??5,n=>set('Durchmesser geändert',x=>{const y=x.shafts.find(z=>z.id===s.id);if(y)y.d=Math.max(1,n);}),'0.5')]:[]),el('label',{},'Verbindung',turn));}
+    const on=el('select');on.dataset.field='Welle verbunden mit';on.add(new Option('der Welt',''));for(const [k,n] of this.host.bodies?.(s.id)??[])on.add(new Option(n,k));on.value=s.on?.body??'';on.onchange=()=>this.host.attachShaft?.(s.id,on.value);
+    root.append(heading('Welle'),el('label',{},'Verbunden mit',on),el('label',{},'Aus',kind),...(s.kind&&s.kind!=='lego'||!lego&&!s.kind?[number('Ø [mm]',s.d??5,n=>set('Durchmesser geändert',x=>{const y=x.shafts.find(z=>z.id===s.id);if(y)y.d=Math.max(1,n);}),'0.5')]:[]),el('label',{},'Verbindung',turn));}
    else{root.append(number('Lage auf der Welle [mm]',w.z,n=>unit?move([0,n-w.z,0],'auf den Wellen verschoben'):wheel('Rad verschoben',y=>{y.z=n;})));
     const on=el('select');on.dataset.field='Auf der Welle';on.add(new Option('fest: dreht mit der Welle','fest'));on.add(new Option('lose: läuft frei (Losrad)','lose'));on.value=w.loose?'lose':'fest';on.disabled=!!s.fixed&&!w.loose;on.onchange=()=>wheel(on.value==='lose'?`${label(w)} läuft lose.`:`${label(w)} fest auf der Welle.`,y=>{if(on.value==='lose')y.loose=true;else delete y.loose;});
     const open=el('button',{textContent:`${s.fixed?'Achse':'Welle'} ›`});open.dataset.openShaft='true';open.onclick=()=>{this.selectShaft(s.id);this.host.leave();};root.append(el('label',{},'Auf der Welle',on),open);}
