@@ -1,7 +1,7 @@
 // Gear trains built by hand: what meshes, the ratio, snapping, what is refused; the compiled mechanism turns at the
 // ratio, closes, gets its bearings and its structures like the gearbox demos.
 import assert from 'node:assert/strict';
-import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,legoGears,parseTrain} from '../../src/mechanics/parts/train.ts';
+import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,legoGears,parseTrain,gridPoints} from '../../src/mechanics/parts/train.ts';
 import {solve} from '../../src/mechanics/kinematics/solver.ts';
 import {heldTrains} from '../../src/mechanics/kinematics/drive.ts';
 import {planBearings,applyBearings} from '../../src/mechanics/kinematics/bearings.ts';
@@ -30,6 +30,10 @@ const a15=snapWheel(t,w5,[-6,28],1,false,15);assert.equal(a15.angle,105);assert.
 assert.deepEqual(snapWheel(t,w5,[2,27.5],1,false,90).at,[0,28]);assert.equal(meshes({...t,shafts:[...t.shafts,{id:'neu',at:snapWheel(t,w5,[2,27.5],1,false,90).at}],wheels:[...t.wheels,{...w5,z:0}]}).length,2);
 assert.deepEqual(snapWheel(t,w5,[201.4,98.2],5).at,[200,100]);assert.deepEqual(snapWheel(t,w5,[200.4,100.2],0).at,[200.4,100.2]);
 assert.throws(()=>parseTrain({...t,angle:400}),/Raster/);
+// Target grid: only grid points at exactly the mesh distance. 28 mm on 1 mm: the four on the axes; 20 mm: twelve.
+assert.equal(gridPoints([0,0],28,1).length,4);assert.equal(gridPoints([0,0],20,1).length,12);assert.equal(gridPoints([0,0],28,8).length,0);
+const tg=snapWheel(t,w5,[-3,27],1,false,15,true);assert.deepEqual(tg.at,[0,28]);assert.equal(tg.exact,4);assert.equal(tg.angle,90);
+const none=snapWheel(t,w5,[-3,27],8,false,15,true);assert.equal(none.partner,'w1');assert.equal(none.exact,0);assert.equal(none.angle,90);
 // Compiled: the two trains turn at their ratios, closed over the range, held by their rates.
 for(const [name,x,ratio] of [['einstufig',t,2.5],['zweistufig',two,6.25],['Zwischenrad',idle,2.5]]){const d=compileTrain(x,name),m=d.mechanism,free=await solve({...structuredClone(m),range:{from:-180,to:180,samples:13}},{yield:false});
  assert.deepEqual(free.checks.filter(c=>c.state==='fail').map(c=>c.message),[],`${name} geht auf`);const sun=free.poses.map(p=>p.coordinates['H1/ground/s0'][0]),o=free.poses.map(p=>p.coordinates.Abtrieb[0]);assert.ok(Math.abs(Math.abs((sun.at(-1)-sun[0])/(o.at(-1)-o[0]))-ratio)<1e-6,`${name}: Übersetzung`);

@@ -23,7 +23,7 @@ function modelOf(id:string){let g=shapes.get(id);if(!g){g=new STLLoader().loadAs
 const label=(w:Wheel)=>`${w.part?'LEGO':'Gedruckt'} z${w.teeth}${w.part?'':` m${w.module}`}`;
 const deg=(a:number)=>`${Math.round(a*10)/10}°`.replace('.',',');
 /** The two grids: mm for a wheel standing alone, degrees around the wheel it meshes with. */
-const gridOf=(t:Train|undefined)=>({mm:t?.grid??1,angle:t?.angle??DEFAULT_ANGLE});
+const gridOf=(t:Train|undefined)=>({mm:t?.grid??1,angle:t?.angle??DEFAULT_ANGLE,target:!!t?.target&&(t?.grid??1)>0});
 
 const partnerText=(t:Train,d:Drag)=>{const o=t.wheels.find(w=>w.id===d.partner);return o&&d.angle!==undefined?`, kämmt mit ${label(o)} unter ${deg(d.angle)}`:'';};
 
@@ -60,8 +60,8 @@ export class TrainEditor{
  private dragMove(e:PointerEvent){
   const d=this.drag,t=this.train()??newTrain();if(!d)return;if(Math.hypot(e.clientX-d.start[0],e.clientY-d.start[1])>3)d.moved=true;if(!d.moved)return;
   d.over=!d.isNew||document.elementFromPoint(e.clientX,e.clientY)===this.host.canvas();if(!d.over){this.onChange();return;}
-  const p=this.point(e);if(!p)return;const g=gridOf(t),s=snapWheel(t,d.wheel,p,g.mm,e.altKey,g.angle);d.at=s.at;d.shaft=s.shaft;d.wheel.z=s.z;d.partner=s.partner;d.angle=s.angle;this.onChange();
-  const o=t.wheels.find(w=>w.id===s.partner);this.host.status(s.shaft?'Auf die Welle stecken':o?`Am ${label(o)}: ${deg(s.angle!)} · Alt: ohne Raster`:`Frei: ${s.at.map(v=>Math.round(v*10)/10).join(' / ')} mm · Alt: ohne Raster`);
+  const p=this.point(e);if(!p)return;const g=gridOf(t),s=snapWheel(t,d.wheel,p,g.mm,e.altKey,g.angle,g.target);d.at=s.at;d.shaft=s.shaft;d.wheel.z=s.z;d.partner=s.partner;d.angle=s.angle;this.onChange();
+  const o=t.wheels.find(w=>w.id===s.partner);this.host.status(s.shaft?'Auf die Welle stecken':o?`Am ${label(o)}: ${s.exact?`Rasterpunkt ${s.at.map(v=>Math.round(v*1000)/1000).join(' / ')} mm (${s.exact} exakte auf dem Kreis)`:s.exact===0?`${deg(s.angle!)}, kein exakter Rasterpunkt auf dem Kreis: Winkelraster`:deg(s.angle!)} · Alt: ohne Raster`:`Frei: ${s.at.map(v=>Math.round(v*10)/10).join(' / ')} mm · Alt: ohne Raster`);
  }
  private dragEnd(){
   const d=this.drag,t=this.train()??newTrain();this.drag=undefined;this.host.orbit(true);if(!d)return;
@@ -83,7 +83,8 @@ export class TrainEditor{
  /** The library of a train: gears, and the planetary stage as a block. */
  renderStore(root:HTMLElement){
   const g=gridOf(this.train()),grid=(text:string,key:'grid'|'angle',value:number,options:[number,string][])=>{const s=el('select');s.dataset.field=text;for(const [v,l] of options)s.add(new Option(l,String(v)));s.value=String(value);s.onchange=()=>this.host.change(()=>{this.host.ensure()[key]=Number(s.value);},`${text}: ${s.selectedOptions[0].text}`);return el('label',{},text,s);};
-  root.append(grid('Winkelraster am Nachbarrad','angle',g.angle,[[0,'frei'],[5,'5°'],[10,'10°'],[15,'15°'],[30,'30°'],[45,'45°'],[90,'90°']]),grid('Raster ohne Nachbarn','grid',g.mm,[[0,'frei'],[0.5,'0,5 mm'],[1,'1 mm'],[2,'2 mm'],[5,'5 mm'],[8,'8 mm (LEGO)']]),el('p',{className:'muted',textContent:'Am Nachbarrad gibt der Eingriff den Abstand vor, gerastet wird der Winkel. Steht ein Rad allein, rastet es im mm-Raster. Alt beim Ziehen: ohne Raster.'}));
+  const target=el('input',{type:'checkbox',checked:g.target,disabled:!(g.mm>0)});target.dataset.field='Zielraster';target.onchange=()=>this.host.change(()=>{this.host.ensure().target=target.checked;},target.checked?'Zielraster: Wellen landen nur auf exakten Rasterpunkten.':'Zielraster aus.');
+  root.append(grid('Raster [mm]','grid',g.mm,[[0,'frei'],[0.5,'0,5 mm'],[1,'1 mm'],[2,'2 mm'],[5,'5 mm'],[8,'8 mm (LEGO)']]),el('label',{className:'check',title:'Am Nachbarrad nur Rasterpunkte, auf denen der Achsabstand exakt stimmt. Meist wenige; gibt es keinen, gilt das Winkelraster.'},target,'Zielraster: Welle auch am Nachbarrad auf dem Raster'),grid('Winkelraster am Nachbarrad','angle',g.angle,[[0,'frei'],[5,'5°'],[10,'10°'],[15,'15°'],[30,'30°'],[45,'45°'],[90,'90°']]),el('p',{className:'muted',textContent:g.target?'Ein Rad allein rastet im mm-Raster, am Nachbarrad auf den Rasterpunkten mit exaktem Achsabstand; gibt es dort keinen, gilt das Winkelraster. Alt beim Ziehen: ohne Raster.':'Ein Rad allein rastet im mm-Raster. Am Nachbarrad gibt der Eingriff den Abstand vor, gerastet wird der Winkel. Alt beim Ziehen: ohne Raster.'}));
   const list=el('div',{className:'part-store'});
   for(const p of [...legoGears].sort((a,b)=>a.teeth-b.teeth)){const row=el('div',{className:'part-card',title:p.name},el('strong',{textContent:`LEGO z${p.teeth}`}),el('small',{textContent:`${p.name.replace(/^Technic /,'')} · ${p.size[2]} mm breit`}));row.dataset.gear=p.id;row.onpointerdown=e=>{e.preventDefault();this.startNew({teeth:p.teeth,module:1,width:p.size[2],part:p.id},e);};list.append(row);}
   const printed=el('div',{className:'part-card',title:'Zähne und Modul rechts einstellen.'},el('strong',{textContent:'Gedrucktes Stirnrad'}),el('small',{textContent:'Zähne, Modul und Breite einstellbar'}));printed.dataset.gear='gedruckt';printed.onpointerdown=e=>{e.preventDefault();this.startNew({teeth:20,module:1.5,width:10},e);};list.append(printed);root.append(list);

@@ -132,6 +132,10 @@ gleicher Höhe, Achsabstand gleich der Summe der Teilkreisradien. Daraus folgt d
   mm-Raster (`grid`, Vorgabe 1 mm). Beide stehen im Getriebe und werden mit dem Projekt gespeichert; einstellbar oben
   in der Bibliotheksgruppe „Zahnräder“. Alt schaltet beides ab. Ein gewähltes Rad lässt sich über „Winkel am …“ um
   sein Nachbarrad drehen, der Achsabstand bleibt.
+- **Zielraster:** Eingeschaltet (`target`) landet auch ein Rad am Nachbarrad mit seiner Welle auf dem mm-Raster, aber nur
+  auf Punkten mit exaktem Achsabstand (`gridPoints`), dem Zeiger am nächsten. Das sind meist wenige: 28 mm im 1-mm-Raster
+  nur die vier auf den Achsen, 20 mm zwölf. Hat der Kreis keinen solchen Punkt (etwa weil das Nachbarrad selbst nicht im
+  Raster steht), gilt das Winkelraster, und die Statuszeile sagt es.
 - **Prüfung:** Räder, die sich berühren, ohne zu kämmen; ein Kreis aus Rädern, der sich sperrt; Wellen ohne Verbindung.
   LEGO und gedruckte Räder lassen sich noch nicht mischen, die Wellen sind verschieden.
 - **Mechanismus:** `compileTrain` erzeugt Grundplatte, Abtriebsachse, Körper, Gelenke und Kontakte wie die Getriebe-Demos,

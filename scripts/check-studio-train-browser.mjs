@@ -6,7 +6,7 @@ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'studio-train-'));
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,userDataDir:path.join(dir,'profil'),args:['--enable-unsafe-swiftshader']});
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const stored=p=>p.evaluate(async()=>{const dir=await (await navigator.storage.getDirectory()).getDirectoryHandle('projekte'),id=await (await (await dir.getFileHandle('geoeffnet.txt')).getFile()).text();return JSON.parse(await (await (await dir.getFileHandle(id+'.json')).getFile()).text());});
-const settled=async(p,test)=>{for(let i=0;i<80;i++){const f=await stored(p);if(test(f))return f;await wait(100);}throw Error('Datei nicht wie erwartet: '+JSON.stringify((await stored(p)).doc.builds?.[0]?.train).slice(0,400));};
+const settled=async(p,test)=>{for(let i=0;i<80;i++){const f=await stored(p).catch(()=>undefined);if(f&&test(f))return f;await wait(100);}throw Error('Datei nicht wie erwartet: '+JSON.stringify((await stored(p)).doc.builds?.[0]?.train).slice(0,400));};
 const gear=(p,teeth)=>p.$$eval('[data-gear]',(x,z)=>x.find(e=>e.textContent.startsWith(`LEGO z${z}`)).dataset.gear,teeth);
 const dragGear=async(p,id,to)=>{await p.evaluate(i=>{const e=document.querySelector(`[data-gear="${i}"]`);e.closest('details').open=true;e.scrollIntoView({block:'center'});},id);const r=await p.$eval(`[data-gear="${id}"]`,e=>{const b=e.getBoundingClientRect();return [b.x+b.width/2,b.y+b.height/2];}),[x,y]=await p.evaluate(a=>window.studioScreen(a),to);await p.mouse.move(...r);await p.mouse.down();await p.mouse.move(r[0]+30,r[1],{steps:3});await p.mouse.move(x,y,{steps:8});await wait(80);await p.mouse.up();await wait(200);};
 try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setViewport({width:1440,height:1000});await p.goto('http://localhost:4001/studio');await p.waitForSelector('canvas');
@@ -24,6 +24,10 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  assert.equal(await p.$eval('[data-field="Winkelraster am Nachbarrad"]',s=>s.value),'15');
  await p.evaluate(()=>[...document.querySelectorAll('[data-wheel]')].find(x=>x.textContent.includes('z40')).click());await p.waitForSelector('[data-field="Winkel am LEGO z16 [°]"]');
  await p.$eval('[data-field="Winkel am LEGO z16 [°]"]',e=>{e.value='90';e.dispatchEvent(new Event('change'));});f=await settled(p,x=>{const s=x.doc.builds[0].train.shafts;return Math.abs(s[1].at[0]-s[0].at[0])<1e-9;});t=f.doc.builds[0].train;assert.ok(Math.abs(t.shafts[1].at[1]-t.shafts[0].at[1]-28)<1e-9,JSON.stringify(t.shafts));await p.waitForFunction(()=>/2,50/.test(document.getElementById('train-ratio')?.textContent??''));
+ // Target grid: a z16 dropped near the z40 (now at 0/28) lands on the exact grid point 28/28; undo takes it back.
+ await p.click('[data-field="Zielraster"]');await settled(p,x=>x.doc.builds[0].train.target===true);
+ await dragGear(p,await gear(p,16),[25,0,30]);f=await settled(p,x=>x.doc.builds[0].train.wheels.length===3);assert.deepEqual(f.doc.builds[0].train.shafts.at(-1).at,[28,28]);assert.match(await p.$eval('#status',e=>e.textContent),/kämmt mit LEGO z40/);
+ await p.click('#undo');await settled(p,x=>x.doc.builds[0].train.wheels.length===2);
  // A reload keeps it; ② opens the train.
  await wait(500);await p.reload();await p.waitForSelector('[data-wheel]',{timeout:20000});await phase(p,2);await p.waitForSelector('#train-ratio',{timeout:20000});assert.match(await p.$eval('#train-ratio',e=>e.textContent),/2,50/);
  // The button: a mechanism with a slider, its train driven, bearings planned.

@@ -18,8 +18,9 @@ export type Shaft={id:string;at:[number,number]};
 /** `part`: a LEGO gear by id; without one a printed spur gear of `module`. */
 export type Wheel={id:string;shaft:string;z:number;teeth:number;module:number;width:number;part?:string};
 /** `input`, `output`: shafts. `drive`: what turns the input. `grid`: mm steps of a wheel standing alone, `angle`: degree
- * steps of a wheel around the one it meshes with (0: free). */
-export type Train={shafts:Shaft[];wheels:Wheel[];input?:string;output?:string;drive:string;grid?:number;angle?:number};
+ * steps of a wheel around the one it meshes with (0: free). `target`: a meshing wheel's shaft lands only on points of the
+ * mm grid where the mesh distance is exact. */
+export type Train={shafts:Shaft[];wheels:Wheel[];input?:string;output?:string;drive:string;grid?:number;angle?:number;target?:boolean};
 export const DEFAULT_ANGLE=15;
 export const newTrain=():Train=>({shafts:[],wheels:[],drive:'lego-achse'});
 export const parseTrain=(t:Train):Train=>{if(!t||!Array.isArray(t.shafts)||!Array.isArray(t.wheels)||t.wheels.length>64)throw Error('Ungültiges Getriebe');for(const w of t.wheels)if(!t.shafts.some(s=>s.id===w.shaft)||!(w.teeth>=6&&w.teeth<=200)||!(w.module>0)||!(w.width>0))throw Error('Getriebe: Rad ungültig');if(t.grid!==undefined&&!(t.grid>=0&&t.grid<=50)||t.angle!==undefined&&!(t.angle>=0&&t.angle<=180))throw Error('Getriebe: Raster ungültig');return structuredClone(t);};
@@ -45,14 +46,24 @@ export function trainIssues(t:Train):TrainIssue[]{const out:TrainIssue[]=[],pair
  for(const s of t.shafts)if(t.input&&!rate.has(s.id)&&t.wheels.some(w=>w.shaft===s.id))out.push({wheels:t.wheels.filter(w=>w.shaft===s.id).map(w=>w.id),message:'Eine Welle hängt nicht am Getriebe.'});
  if(t.wheels.some(w=>w.part)&&t.wheels.some(w=>!w.part))out.push({wheels:[],message:'LEGO und gedruckte Räder lassen sich noch nicht mischen: Die Wellen sind verschieden.'});
  return out;}
+/** Points of the `grid` (mm, from the origin) at exactly `d` from `c`. Few in general: 28 mm on a 1 mm grid has only the
+ * four on the axes, 20 mm also 12/16 and its mirrors. */
+export function gridPoints(c:[number,number],d:number,grid:number):[number,number][]{
+ if(!(grid>0)||!(d>0)||d/grid>2000)return [];const out:[number,number][]=[],on=(v:number)=>Math.abs(v/grid-Math.round(v/grid))<1e-6;
+ for(let i=Math.ceil((c[0]-d)/grid-1e-9);i*grid<=c[0]+d+1e-9;i++){const x=i*grid,rest=d*d-(x-c[0])**2;if(rest<-1e-6)continue;const dy=Math.sqrt(Math.max(0,rest));
+  for(const y of dy<1e-9?[c[1]]:[c[1]-dy,c[1]+dy])if(on(y)){const q:[number,number]=[x,Math.round(y/grid)*grid];if(Math.abs(Math.hypot(q[0]-c[0],q[1]-c[1])-d)<1e-6&&!out.some(o=>o[0]===q[0]&&o[1]===q[1]))out.push(q);}}
+ return out;}
 /** Where a wheel goes for a pointer at `p`: on a shaft under it, at the mesh distance of a wheel near it (around it in
- * steps of `step` degrees, 0: free), or on the grid of `grid` mm (0: free). `partner`, `angle`: the wheel it meshes with
- * and the direction from it, 0° along x, 90° up. */
-export function snapWheel(t:Train,w:Wheel,p:[number,number],grid=1,free=false,step=0):{at:[number,number];shaft?:string;z:number;partner?:string;angle?:number}{
+ * steps of `step` degrees, 0: free; with `target` on the exact grid point nearest the pointer), or on the grid of `grid`
+ * mm (0: free). `partner`, `angle`: the wheel it meshes with and the direction from it, 0° along x, 90° up; `exact`: how
+ * many exact grid points that circle has (0: none, so the angle steps were used). */
+export function snapWheel(t:Train,w:Wheel,p:[number,number],grid=1,free=false,step=0,target=false):{at:[number,number];shaft?:string;z:number;partner?:string;angle?:number;exact?:number}{
  const others=t.wheels.filter(o=>o.id!==w.id&&o.shaft!==w.shaft);if(free)return {at:p,z:w.z};
  for(const s of t.shafts){if(!t.wheels.some(o=>o.shaft===s.id&&o.id!==w.id)||Math.hypot(p[0]-s.at[0],p[1]-s.at[1])>Math.max(3,Math.min(pitchOf(w),6))||s.id===w.shaft)continue;const on=t.wheels.filter(o=>o.shaft===s.id&&o.id!==w.id);return {at:s.at,shaft:s.id,z:Math.max(...on.map(o=>o.z+o.width/2))+w.width/2+.5};}
- let best:{at:[number,number];z:number;partner:string;angle:number}|undefined,miss=Infinity;
- for(const o of others){if(o.module!==w.module)continue;const c=shaftOf(t,o).at,d=pitchOf(o)+pitchOf(w),r=Math.hypot(p[0]-c[0],p[1]-c[1]),off=Math.abs(r-d);if(off<miss&&off<Math.max(6,d*.35)&&r>.1){miss=off;const angle=stepped(Math.atan2(p[1]-c[1],p[0]-c[0])*180/Math.PI,step);best={at:around(c,d,angle),z:o.z,partner:o.id,angle};}}
+ let best:{at:[number,number];z:number;partner:string;angle:number;exact?:number}|undefined,miss=Infinity;
+ for(const o of others){if(o.module!==w.module)continue;const c=shaftOf(t,o).at,d=pitchOf(o)+pitchOf(w),r=Math.hypot(p[0]-c[0],p[1]-c[1]),off=Math.abs(r-d);if(!(off<miss&&off<Math.max(6,d*.35)&&r>.1))continue;miss=off;
+  const points=target?gridPoints(c,d,grid):[],q=points.sort((a,b)=>Math.hypot(a[0]-p[0],a[1]-p[1])-Math.hypot(b[0]-p[0],b[1]-p[1]))[0],angle=q?stepped(Math.atan2(q[1]-c[1],q[0]-c[0])*180/Math.PI,0):stepped(Math.atan2(p[1]-c[1],p[0]-c[0])*180/Math.PI,step);
+  best={at:q??around(c,d,angle),z:o.z,partner:o.id,angle,...(target?{exact:points.length}:{})};}
  const g=(v:number)=>grid>0?Math.round(v/grid)*grid:v;
  return best??{at:[g(p[0]),g(p[1])],z:w.z};
 }
