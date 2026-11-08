@@ -145,3 +145,26 @@ export function parseGroups(value:unknown):Group[]|undefined{
 /** Files and blocks from before the kinds said only fest or frei: fest is a Körper (parseBuild makes wheels on several
  * shafts a Träger). */
 function kindOfOld(g:{kind?:unknown;rigid?:unknown}):GroupKind{return typeof g.kind==='string'&&g.kind in kindNames?g.kind as GroupKind:g.rigid===false?'ordnung':'koerper';}
+
+// ---------- the tree: order and moving things around ----------
+/** The direct members of a group (or of the build) in the order of the tree: `order` first, the rest after. */
+export function orderedChildren(b:Build,id?:string):Member[]{const at=new Map((b.order??[]).map((k,i)=>[k,i]));return childrenOf(b,id).map((m,i)=>({m,i})).sort((x,y)=>(at.get(keyOf(x.m))??1e6+x.i)-(at.get(keyOf(y.m))??1e6+y.i)).map(x=>x.m);}
+/** The shaft a member turns with through the Körper it sits in (the innermost Körper with one shaft). */
+function turnsWith(b:Build,group:string|undefined){for(const g of chain(b,group))if(g.kind==='koerper'){const s=inShaft(b,g.id);return s.length===1?shaftBody(s[0]):undefined;}return undefined;}
+/** Moves a member in the tree: into a group (or to the top, without `into`), before `before` (else last). A wheel brings
+ * the wheels on its shaft, a plate the parts on it; a group cannot go into itself. What leaves a Körper lets go of its
+ * shaft, what comes into one turns with it; groups left empty go. */
+export function moveMember(b:Build,m:Member,into:string|undefined,before:Member|undefined,frames:Record<string,Frame>={}){
+ if(m.kind==='group'&&into&&(into===m.id||chain(b,into).some(g=>g.id===m.id)))throw Error('Eine Gruppe kann nicht in sich selbst.');
+ if(before&&keyOf(before)===keyOf(m))return;const from=parentOf(b,m),moving:Member[]=[m];
+ if(m.kind==='wheel'){const w=b.train?.wheels.find(x=>x.id===m.id);for(const o of b.train?.wheels??[])if(w&&o.id!==w.id&&o.shaft===w.shaft)moving.push({kind:'wheel',id:o.id});}
+ if(m.kind==='plate')for(const i of b.items)if(i.plate===m.id&&i.group===from)moving.push({kind:'item',id:i.id});
+ const f={...shaftFrames(b.train),...frames},loose=(x:Member)=>x.kind==='item'?b.items.find(i=>i.id===x.id)?.free:x.kind==='plate'?b.plates.find(p=>p.id===x.id)?.free:undefined,was=moving.map(x=>turnsWith(b,parentOf(b,x)));
+ for(const x of moving)setParent(b,x,into);
+ const target=groupsOf(b).find(g=>g.id===into);if(target?.kind==='koerper'&&inShaft(b,target.id).length>1)throw Error('Ein Körper dreht sich um eine Welle: Räder auf mehreren Wellen gehören in einen Träger.');
+ moving.forEach((x,k)=>{const free=loose(x),now=turnsWith(b,parentOf(b,x));if(!free||now===was[k])return;if(free.body===was[k]||now){const next=reframe(free,now,f);free.frame=next.frame;if(now)free.body=now;else delete free.body;}});
+ // The order: every member once; the moved ones before `before`.
+ const all=(id?:string):string[]=>childrenOf(b,id).flatMap(x=>[keyOf(x),...(x.kind==='group'?all(x.id):[])]),keys=new Set(moving.map(keyOf)),order=[...(b.order??[]).filter(k=>all().includes(k)),...all().filter(k=>!(b.order??[]).includes(k))].filter(k=>!keys.has(k)),at=before?order.indexOf(keyOf(before)):-1;
+ order.splice(at<0?order.length:at,0,...moving.map(keyOf));b.order=order;
+ // Groups left empty go, outwards.
+ for(let id=from;id;){const g=groupsOf(b).find(x=>x.id===id);if(!g||childrenOf(b,id).length)break;b.groups=groupsOf(b).filter(x=>x.id!==id);id=g.parent;}if(b.groups&&!b.groups.length)delete b.groups;}

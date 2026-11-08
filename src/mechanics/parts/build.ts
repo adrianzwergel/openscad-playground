@@ -29,7 +29,7 @@ export type PlateHole={id:string;at:P2;d:number};
 export type Plate={mode:'auto'|'fixed';size:P2;center:P2;margin:number;thickness:number;corner:number;holes:PlateHole[];mount:{on:boolean;d:number;inset:number};/** The housing's numbers, where they differ from the defaults. */housing?:{wall:number;lid:number;top:number;fit:number}};
 export type PlateNode=Plate&{id:string;free:Free;/** The group it sits in. */group?:string};
 /** `mechanism`: the mechanism it belongs to; without one it stands alone. */
-export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];parts:Part[];grid:number;mechanism?:string;/** The wheels and shafts of the build. */train?:Train;/** Groups of plates, parts and wheels (parts/groups.ts). */groups?:Group[]};
+export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];parts:Part[];grid:number;mechanism?:string;/** The wheels and shafts of the build. */train?:Train;/** Groups of plates, parts and wheels (parts/groups.ts). */groups?:Group[];/** Order of the scene tree, as member keys (parts/groups.ts). */order?:string[]};
 /** One plate with what sits on it: all the planar logic below works on this. */
 export type Sheet={plate:Plate;items:BuildItem[];parts:Part[];grid:number};
 export type Rect={corners:P2[]};
@@ -61,7 +61,7 @@ export function parseBuild(value:unknown):Build{
  // A member whose group is gone stands alone.
  for(const x of [...items,...plates,...(train?.wheels??[])])if(x.group!==undefined&&!known.has(x.group))delete x.group;
  for(const g of groups??[])if(before.has(g.id)&&g.kind==='koerper'&&new Set((train?.wheels??[]).filter(w=>w.group===g.id).map(w=>w.shaft)).size>1)g.kind='traeger';
- return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(train?{train}:{}),...(groups?.length?{groups}:{})};
+ return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(train?{train}:{}),...(groups?.length?{groups}:{}),...(Array.isArray(b.order)&&b.order.length<=2000?{order:b.order.filter((k:unknown)=>typeof k==='string')}:{})};
 }
 export const partOf=(b:{parts:Part[]},i:BuildItem)=>partById(i.part,b.parts)!;
 export const newItem=(id:string,part:Part,at:P2):BuildItem=>({id,part:part.id,at,angle:0,side:part.body>0?'top':'bottom',clearance:2,holder:defaultHolder(part)});

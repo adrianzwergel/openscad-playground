@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {partById} from '../../src/mechanics/parts/catalog.ts';
 import {newItem,newBuild,newPlateNode,parseBuild,worldOf} from '../../src/mechanics/parts/build.ts';
 import {newTrain,meshes,legoGears,ratioOf,motion,shaftFrames,inputsOf,outputsOf,trainIssues} from '../../src/mechanics/parts/train.ts';
-import {makeGroup,dissolve,setKind,unitOf,contents,childrenOf,moveGroup,centreOf,turnAxis,blockOf,insertBlock} from '../../src/mechanics/parts/groups.ts';
+import {makeGroup,dissolve,setKind,moveMember,orderedChildren,unitOf,contents,childrenOf,moveGroup,centreOf,turnAxis,blockOf,insertBlock} from '../../src/mechanics/parts/groups.ts';
 const lego=z=>legoGears.find(x=>x.teeth===z);
 const wheel=(id,shaft,z,at=0)=>({id,shaft,z:at,teeth:z,module:1,width:lego(z).size[2],part:lego(z).id});
 const make=()=>{const b={...newBuild('g','Gruppen'),plates:[{...newPlateNode('p1'),free:{frame:{position:[200,0,3],rotation:[0,0,0,1]}}}]};
@@ -60,4 +60,12 @@ b.train.inputs.push({shaft:'s3',drive:'lego-achse'});assert.ok(trainIssues(b.tra
 // Old files: one input and output become lists; fest groups with wheels on several shafts read as Träger, frei as Ordnung.
 const old=JSON.parse(JSON.stringify(make()));old.train.wheels.forEach(w=>{w.group='alt';});old.groups=[{id:'alt',label:'Alt',rigid:true}];const read=parseBuild(old);assert.equal(read.groups[0].kind,'traeger');assert.deepEqual(inputsOf(read.train).map(i=>i.shaft),['s1']);assert.deepEqual(outputsOf(read.train),['s3']);assert.equal(read.train.input,undefined);
 old.groups[0].rigid=false;assert.equal(parseBuild(old).groups[0].kind,'ordnung');
+// The tree: dragged into a Körper the part turns with its shaft, dragged out it lets go; order kept; empty groups go;
+// a group not into itself; a wheel brings its shaft mates.
+b=make();makeGroup(b,[{kind:'wheel',id:'w1'}],'kk','Welle 1');const f0=b.items.find(i=>i.id==='f');moveMember(b,{kind:'item',id:'f'},'kk',undefined);assert.equal(f0.free.body,'welle:s1');assert.equal(f0.group,'kk');
+moveMember(b,{kind:'item',id:'f'},undefined,{kind:'item',id:'a'});assert.equal(f0.free.body,undefined);
+assert.ok(orderedChildren(b).findIndex(m=>m.id==='f')<orderedChildren(b).findIndex(m=>m.id==='a'),'vor a eingeordnet');
+moveMember(b,{kind:'wheel',id:'w1'},undefined,undefined);assert.equal(b.groups,undefined,'leere Gruppe geht');
+makeGroup(b,[{kind:'wheel',id:'w2'}],'s','Stufe');assert.ok(b.train.wheels.filter(w=>w.group==='s').length===2);moveMember(b,{kind:'wheel',id:'w3'},undefined,undefined);assert.ok(b.train.wheels.filter(w=>w.shaft==='s2').every(w=>!w.group),'Welle als Stück');
+makeGroup(b,[{kind:'wheel',id:'w1'}],'o','O');makeGroup(b,[{kind:'group',id:'o'}],'p','P');assert.throws(()=>moveMember(b,{kind:'group',id:'p'},'o',undefined),/in sich selbst/);
 console.log('Gruppen: Welle als Stück, verschachtelt, äußere feste Gruppe zieht, Verschieben und Drehen halten Eingriffe, Baustein auf dem Boden, zweimal eingesetzt, Datei geprüft; Sensor dreht als Körper mit der Welle, zwei Eingänge, alte Dateien als Arten gelesen.');

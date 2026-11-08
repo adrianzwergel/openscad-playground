@@ -21,7 +21,7 @@ Antriebe übernommen. Die Expertenansicht ist aus dem Studio nicht mehr verlinkt
 |---|---|
 | Kopfzeile | Projekte, Name, Speicherstand, Phasen, Rückgängig/Wiederholen, `⋯` |
 | links oben | Bibliothek der Phase: in ① alles, was ein Gerät haben kann; in ② der Bestand für die Getriebesuche |
-| links unten | Szene: was die Phase bearbeitet; bei älteren Projekten mit mehreren Szenen die Umschaltung |
+| links unten | Szene: in ① ein Baum wie die Ebenen eines Zeichenprogramms (Gruppen als Ordner, Ziehen ordnet um und legt in Gruppen, ein Klick ins Leere wählt nichts und zeigt das Projekt); in ② und ③, was die Phase bearbeitet |
 | Mitte | 3D-Ansicht, Griff zum Verschieben/Drehen, Achsregler und die Bewegung über den ganzen Bereich |
 | rechts | Eigenschaften der Auswahl, darunter „Was fehlt noch“ mit dem nächsten Schritt |
 

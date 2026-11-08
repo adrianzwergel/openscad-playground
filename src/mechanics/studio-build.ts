@@ -26,7 +26,7 @@ import {separation} from './graph/space';
 import type {GripOptions} from './studio-mechanism';
 import {TrainEditor} from './studio-train';
 import {newTrain,trainIssues,snapWheel,meshes,ratioOf,DEFAULT_ANGLE,inputsOf,outputsOf,shaftFrames,shaftOfBody} from './parts/train';
-import {makeGroup,dissolve,setKind,kindNames,rigidOf,unitOf,contents,childrenOf,moveGroup,centreOf,turnAxis,blockOf,insertBlock,removeGroup,keyOf,memberOf} from './parts/groups';
+import {makeGroup,dissolve,setKind,moveMember,orderedChildren,parentOf,kindNames,rigidOf,unitOf,contents,childrenOf,moveGroup,centreOf,turnAxis,blockOf,insertBlock,removeGroup,keyOf,memberOf} from './parts/groups';
 import type {Block,Member,GroupKind} from './parts/groups';
 import {label as wheelLabel} from './studio-train';
 import type {Demo} from './demos';
@@ -89,6 +89,8 @@ export class BuildEditor{
  private preview?:Build;
  /** A group on the handle: the build and the handle's place when the handle was taken. */
  private pivot?:{start:Build;centre:V;axis:'y'|'z'};
+ /** The scene tree: folded groups, and what is being dragged in it. */
+ private folded=new Set<string>();private layerDrag?:Member;
  constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;},canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt,ensure:()=>{const b=this.ensure();return b.train??=newTrain();},mechanism:()=>this.attached,phase:()=>this.host.phase?.()??3,
   unit:w=>{const b=this.build(),id=b?unitOf(b,{kind:'wheel',id:w}):undefined;return b&&id?{id,label:this.groupLabel(id),wheels:new Set(contents(b,id).wheels.map(x=>x.id))}:undefined;},
   moveUnit:(unit,delta,message)=>{const frames=this.frames();this.host.change(()=>{moveGroup(this.build()!,unit,{delta},frames);},message);}});this.trains.onChange=()=>this.refresh();}
@@ -211,9 +213,9 @@ export class BuildEditor{
   const k=keyOf(m);if(this.multi.has(k))this.multi.delete(k);else this.multi.add(k);if(this.multi.size===1)this.selectMember(memberOf([...this.multi][0]));}
  /** Strg+G: the selection (or the one thing selected) becomes a rigid group. */
  groupSelection(){const b=this.build();if(!b)return;let ms=[...this.multi].map(memberOf);if(!ms.length){const one=this.single();if(one)ms=[one];}if(!ms.length){this.host.status('Erst etwas auswählen: Strg-Klick wählt mehrere.');return;}
-  const id='gruppe-'+crypto.randomUUID().slice(0,8),n=(b.groups?.length??0)+1;let along=0;
-  let kind:GroupKind='koerper';this.host.change(()=>{const r=makeGroup(this.build()!,ms,id,`Gruppe ${n}`,undefined,this.frames());along=r.along;kind=r.kind;},`Gruppe ${n} angelegt.`);
-  if(this.build()?.groups?.some(g=>g.id===id)){this.selectMember({kind:'group',id});this.refresh();this.host.leave();this.host.status(`Gruppe ${n} angelegt: ${kindNames[kind]}${kind==='koerper'?', ein Stück':kind==='traeger'?', hält die Wellen in festen Abständen':''}${along?`, dazu ${along} auf derselben Welle oder Platte`:''}.`);}}
+  const id='gruppe-'+crypto.randomUUID().slice(0,8);let along=0;
+  let kind:GroupKind='koerper',label='';this.host.change(()=>{const x=this.build()!,r=makeGroup(x,ms,id,'',undefined,this.frames());along=r.along;kind=r.kind;label=`${kindNames[kind]} ${(x.groups??[]).filter(g=>g.kind===kind).length}`;x.groups!.find(g=>g.id===id)!.label=label;},'Gruppe angelegt.');
+  if(this.build()?.groups?.some(g=>g.id===id)){this.selectMember({kind:'group',id});this.refresh();this.host.leave();this.host.status(`${label} angelegt${kind==='koerper'?', ein Stück':kind==='traeger'?', hält die Wellen in festen Abständen':''}${along?`, dazu ${along} auf derselben Welle oder Platte`:''}.`);}}
  private groupLabel(id:string){return this.build()?.groups?.find(g=>g.id===id)?.label??'Gruppe';}
  /** A rigid group follows one of its members: a wheel in the train's plane, snapping to wheels outside the group; a part
   * on the level it stands on, on the build's grid. */
@@ -310,28 +312,51 @@ export class BuildEditor{
    return;}
   if(phase===3){
    if(wheels&&!this.attached)row('⚙ Zahnräder: Lager und Gestell',{trainMake:'true'},this.trainOpen,()=>{this.openTrain();this.refresh();this.host.leave();});
-   if(this.active&&b&&!b.plates.length&&b.items.length)row('🕸 Träger (Baum-Netz)',{overview:'true'},nothing,()=>pick());
+   if(this.active&&b&&!b.plates.length&&b.items.length)row('🕸 Baum-Netz',{overview:'true'},nothing,()=>pick());
    for(const n of b?.plates??[])row('▭ Bodenplatte · Druckdateien',{plate:n.id},!this.selected&&this.plateId===n.id,()=>pick(undefined,n.id));
    if(!this.attached&&!b?.items.length&&!b?.plates.length&&!wheels)root.append(el('p',{className:'muted',textContent:'Noch nichts zu fertigen. In „① Aufbauen“ Teile, eine Bodenplatte oder ein 3D-Modell holen.'}));
    return;}
+  // Layers like in a drawing program: one tree in the order of the project, groups as folders; dragging a row moves it
+  // before or after another, or into a group. A click on the empty space selects nothing (the project's page).
   if(this.attached)root.append(el('div',{className:'tree-group',textContent:'Teile'}));
-  if(this.active)row('▦ Übersicht',{overview:'true'},nothing&&!this.groupId&&!this.multi.size,()=>pick());
+  const layers=el('div',{className:'layers'});root.append(layers);
+  layers.onclick=e=>{if(e.target===layers){this.deselect();this.refresh();this.host.leave();}};
+  layers.ondragover=e=>{if(this.layerDrag&&e.target===layers)e.preventDefault();};
+  layers.ondrop=e=>{if(e.target!==layers||!this.layerDrag)return;e.preventDefault();const what=this.layerDrag;this.layerDrag=undefined;this.dropLayer(what,undefined,'end');};
   if(b){const t=b.train,lit=(m:Member)=>this.multi.has(keyOf(m))||(m.kind==='group'?this.groupId===m.id:m.kind==='item'?this.selected===m.id:m.kind==='plate'?!this.selected&&this.plateId===m.id:this.trains.selectedId===m.id);
    // Strg-click adds to the selection, a click selects alone.
    const go=(m:Member)=>(ev:MouseEvent)=>{if(ev.ctrlKey||ev.metaKey)this.toggle(m);else this.selectMember(m);this.refresh();this.host.leave();};
    const line=(m:Member,depth:number)=>{let text='';const data:Record<string,string>={};
-    if(m.kind==='group'){const g=b.groups!.find(x=>x.id===m.id)!;text=`${g.kind==='traeger'?'▣':g.kind==='koerper'?'◆':'▢'} ${g.label} · ${kindNames[g.kind]}`;data.group=g.id;}
+    if(m.kind==='group'){const g=b.groups!.find(x=>x.id===m.id)!;text=`${g.kind==='traeger'?'▣':g.kind==='koerper'?'◆':'▢'} ${g.label}`;data.group=g.id;}
     else if(m.kind==='plate'){text='▭ Bodenplatte';data.plate=m.id;}
-    else if(m.kind==='item'){const i=b.items.find(x=>x.id===m.id)!;text=`${partOf(b,i).label}${i.free?.body?` → ${i.free.body}`:''}`;data.item=m.id;}
+    else if(m.kind==='item'){const i=b.items.find(x=>x.id===m.id)!;text=`${partOf(b,i).label}${i.free?.body?` → ${this.bodyName(i.free.body)}`:''}`;data.item=m.id;}
     else{const w=t!.wheels.find(x=>x.id===m.id)!;text=`⚙ ${wheelLabel(w)}${inputsOf(t!).some(i=>i.shaft===w.shaft)?' · Eingang':outputsOf(t!).includes(w.shaft)?' · Ausgang':''}`;data.wheel=m.id;}
-    const r=el('button',{textContent:text,...(m.kind==='item'||m.kind==='wheel'?{className:'tree-sub'}:{})});Object.assign(r.dataset,data);if(depth)r.style.paddingLeft=`${10+depth*16}px`;r.setAttribute('aria-selected',String(lit(m)));r.onclick=go(m);root.append(el('div',{className:'tree-row'},r));
-    if(m.kind==='group')nest(childrenOf(b,m.id),depth+1);};
+    const r=el('button',{textContent:text,className:'layer-name'});Object.assign(r.dataset,data);r.setAttribute('aria-selected',String(lit(m)));r.onclick=go(m);
+    const row=el('div',{className:'tree-row layer-row'});row.style.paddingLeft=`${depth*16}px`;row.draggable=true;
+    if(m.kind==='group'){const open=!this.folded.has(m.id),fold=el('button',{textContent:open?'▾':'▸',className:'layer-fold',title:open?'Zuklappen':'Aufklappen'});fold.dataset.fold=m.id;fold.onclick=e=>{e.stopPropagation();if(open)this.folded.add(m.id);else this.folded.delete(m.id);this.host.leave();};row.append(fold);}
+    else row.append(el('span',{className:'layer-fold'}));
+    row.append(r);if(m.kind==='group')row.append(el('small',{className:'layer-kind',textContent:kindNames[b.groups!.find(x=>x.id===m.id)!.kind]}));
+    row.ondragstart=e=>{this.layerDrag=m;e.dataTransfer?.setData('text/plain',keyOf(m));if(e.dataTransfer)e.dataTransfer.effectAllowed='move';};
+    row.ondragend=()=>{this.layerDrag=undefined;};
+    row.ondragover=e=>{const d=this.layerDrag;if(!d||keyOf(d)===keyOf(m))return;e.preventDefault();const box=row.getBoundingClientRect(),y=(e.clientY-box.top)/box.height;row.dataset.drop=m.kind==='group'&&y>.25&&y<.75?'into':y<.5?'before':'after';};
+    row.ondragleave=()=>{delete row.dataset.drop;};
+    row.ondrop=e=>{e.preventDefault();const zone=row.dataset.drop as 'into'|'before'|'after'|undefined;delete row.dataset.drop;const d=this.layerDrag;this.layerDrag=undefined;if(d&&zone)this.dropLayer(d,m,zone);};
+    layers.append(row);
+    if(m.kind==='group'&&!this.folded.has(m.id))nest(orderedChildren(b,m.id),depth+1);};
    // Parts on a plate of the same level hang under it.
    const nest=(list:Member[],depth:number)=>{const plates=new Set(list.filter(x=>x.kind==='plate').map(x=>x.id)),on=(x:Member)=>x.kind==='item'?b.items.find(i=>i.id===x.id)?.plate:undefined;for(const m of list){const p=on(m);if(p&&plates.has(p))continue;line(m,depth);if(m.kind==='plate')for(const x of list)if(on(x)===m.id)line(x,depth+1);}};
-   const top=childrenOf(b);nest(top.filter(x=>x.kind!=='wheel'),0);
-   const loose=top.filter(x=>x.kind==='wheel');if(loose.length){root.append(el('div',{className:'tree-subgroup',textContent:'Zahnräder'}));for(const m of loose)line(m,0);}
-   if(b.items.length+b.plates.length+(t?.wheels.length??0)>1)root.append(el('p',{className:'muted tree-hint',textContent:'Strg-Klick wählt mehrere, Strg+G gruppiert.'}));}
-  if(!b?.items.length&&!b?.plates.length&&!wheels)root.append(el('p',{className:'muted',textContent:this.attached?'Noch keine Teile. Aus der Bibliothek auf das Modell ziehen.':'Noch leer. Aus der Bibliothek links etwas in die Ansicht ziehen.'}));
+   nest(orderedChildren(b),0);
+   if(b.items.length+b.plates.length+(t?.wheels.length??0)>1)root.append(el('p',{className:'muted tree-hint',textContent:'Ziehen ordnet um und legt in Gruppen · Strg-Klick wählt mehrere · Strg+G gruppiert'}));}
+  if(!b?.items.length&&!b?.plates.length&&!wheels)layers.append(el('p',{className:'muted',textContent:this.attached?'Noch keine Teile. Aus der Bibliothek auf das Modell ziehen.':'Noch leer. Aus der Bibliothek links etwas in die Ansicht ziehen.'}));
+ }
+ /** A row dropped in the tree: before or after another (in its group), into a group, or at the end of the top. */
+ private dropLayer(what:Member,target:Member|undefined,zone:'into'|'before'|'after'|'end'){
+  const b=this.build();if(!b)return;const frames=this.frames(),name=this.memberText(b,what);
+  let into:string|undefined,before:Member|undefined;
+  if(target&&zone==='into'){into=target.id;}
+  else if(target&&zone!=='end'){into=parentOf(b,target);if(zone==='before')before=target;else{const list=orderedChildren(b,into),k=list.findIndex(x=>keyOf(x)===keyOf(target));before=list.slice(k+1).find(x=>keyOf(x)!==keyOf(what));}}
+  const group=b.groups?.find(g=>g.id===into);
+  this.host.change(()=>{moveMember(this.build()!,what,into,before,frames);},group?`${name} in „${group.label}“ gelegt.`:`${name} umgeordnet.`);
  }
  /** The library, the same in every project: a 3D model, plates, parts, gears, own parts. What does not fit the
   * project stays listed and says why. */

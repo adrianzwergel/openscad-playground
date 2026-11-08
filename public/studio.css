@@ -142,3 +142,13 @@ button.part-card{display:block;width:100%;text-align:left;cursor:pointer;color:i
 /* Groups: own blocks in the library carry a delete button; the tree hint stays small. */
 .block-card{position:relative;padding-right:28px}.block-card>button{position:absolute;right:4px;top:4px;padding:0 6px;min-height:0;font-size:12px}
 #tree .tree-hint{font-size:11px;margin:6px 0 0}
+
+/* The scene tree as layers: fold, name, kind; where a dragged row would land. */
+#tree .layers{min-height:90px;padding-bottom:24px}
+#tree .layer-row{display:flex;align-items:center;gap:2px;border-radius:5px}
+#tree .layer-row>.layer-name{flex:1;min-width:0;text-align:left}
+#tree .layer-fold{width:18px;flex:none;padding:0;min-height:0;background:none;border:0;color:var(--soft);cursor:pointer}
+#tree .layer-kind{flex:none;font-size:10px;color:#8fa6b5;padding:0 6px;text-transform:uppercase;letter-spacing:.04em}
+#tree .layer-row[data-drop=before]{box-shadow:inset 0 2px 0 var(--accent)}
+#tree .layer-row[data-drop=after]{box-shadow:inset 0 -2px 0 var(--accent)}
+#tree .layer-row[data-drop=into]{outline:1px dashed var(--accent);background:#1f3a3a}
