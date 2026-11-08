@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {legoParts} from './graph/lego-parts';
-import {inputsOf,outputsOf,setEnds,motion,legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
+import {inputsOf,outputsOf,setEnds,motion,trainNotes,legoGears,snapWheel,meshes,ratioOf,trainIssues,compileTrain,pitchOf,outerOf,newTrain,partnerOf,around,DEFAULT_ANGLE} from './parts/train';
 import type {Train,Wheel} from './parts/train';
 import type {Build} from './parts/build';
 import {joinShaft} from './parts/groups';
@@ -138,7 +138,7 @@ export class TrainEditor{
   const found=trainIssues(t),pairs=ins.flatMap(i=>outs.map(o=>({i:i.shaft,o,r:ratioOf(t,i.shaft,o)}))).filter(p=>p.r!==undefined);
   root.append(heading('Getriebe'),el('p',{id:'train-ratio',className:pairs.length?'state-pass':'muted',textContent:pairs.length?pairs.map(p=>`${name(p.i)} → ${name(p.o)}: 1 : ${Math.abs(p.r!).toFixed(2).replace('.',',')}, ${p.r!>0?'gleichsinnig':'gegensinnig'}`).join(' · '):'Noch keine Verbindung von einem Eingang zu einem Ausgang.'}),
    el('p',{className:'muted',textContent:`${ins.length} Eingang${ins.length===1?'':'e'}, ${outs.length} Ausgang${outs.length===1?'':'e'}: an der Welle eines Rads einstellen.`}));
-  const box=el('div',{id:'build-issues'});for(const f of found)box.append(el('p',{className:'state-fail',textContent:f.message}));if(!found.length)box.append(el('p',{className:'state-pass',textContent:'✓ Alle Räder kämmen und drehen frei.'}));root.append(heading('Prüfung'),box);
+  const box=el('div',{id:'build-issues'});for(const f of found)box.append(el('p',{className:'state-fail',textContent:f.message}));if(!found.length)box.append(el('p',{className:'state-pass',textContent:'✓ Alle Räder kämmen und drehen frei.'}));for(const n of trainNotes(t))box.append(el('p',{className:'muted',textContent:n}));root.append(heading('Prüfung'),box);
   root.append(el('p',{className:'muted',textContent:this.host.mechanism()?'Das Projekt hat schon einen Mechanismus: Getriebe für seine Achsen findet die Suche am Antrieb.':'Drehen: unten mit den Reglern. Lager & Wellen und Struktur entstehen in „③ Fertigen“ direkt aus diesen Rädern, links im Szenenbaum.'}));
  }
 }

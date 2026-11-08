@@ -47,13 +47,16 @@ Gruppen sind gemischt (Räder, Teile, Platten) und dürfen in Gruppen stecken; i
 Teile auf ihr mit, ein Rad die Räder auf seiner Welle: eine Welle ist ein Stück. Eine Gruppe sagt, was ihre Teile
 zueinander sind:
 
-| Art | Bedeutung | von selbst, wenn |
-|---|---|---|
-| ▣ Träger | hält Wellen in festen Achsabständen, die Räder drehen darin; dafür entstehen später Lager und Gehäuse | Räder auf mehreren Wellen |
-| ◆ Körper | ein Stück; mit einem Rad hängt alles darin an dessen Welle und dreht mit (Sensor, Nocken, Arm) | sonst |
-| ▢ Ordnung | hält nur im Baum zusammen | nur von Hand |
+| Art | Bewegung | heißt | Bedeutung |
+|---|---|---|---|
+| ◆ Körper | steht | ▣ Träger, wenn er Wellen lagert | ein starres Stück; die Räder darin drehen in ihren Wellen, deren Achsabstände fest sind (dafür entstehen Lager und Gehäuse); es kann selbst Teil einer größeren Mechanik sein, etwa ein Arm |
+| ◆ Körper | dreht mit Welle … | Körper | alles darin hängt an dieser Welle und dreht mit (Sensorscheibe, Nocke); alle seine Räder sitzen auf ihr |
+| ▢ Ordnung | – | Ordnung | hält nur im Baum zusammen |
 
-- Körper und Träger halten beim Bearbeiten ihre Abstände: Ziehst du ein Stück, kommt die Gruppe mit (die äußerste
+Von selbst: ein Körper; Teile zusammen mit den Rädern einer Welle drehen mit ihr. Räder, die an keinem Eingang hängen,
+sind kein Fehler: Sie stehen still, die Prüfung sagt es als Hinweis.
+
+- Körper halten beim Bearbeiten ihre Abstände: Ziehst du ein Stück, kommt die Gruppe mit (die äußerste
   solche), ein Rad rastet dabei an Räder außerhalb ein. Auch die Felder eines Rads verschieben dann die ganze Gruppe;
   Zähne, Modul und Breite gedruckter Räder sind gesperrt.
 - Liegen die Gewählten in verschiedenen Gruppen, kommt die neue Gruppe dorthin, wo das Rad ist: Ein Sensor mit dem z16

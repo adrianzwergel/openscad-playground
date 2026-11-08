@@ -60,7 +60,8 @@ export function parseBuild(value:unknown):Build{
  const before=new Set(Array.isArray(b.groups)?(b.groups as {id:string;kind?:string}[]).filter(g=>g&&!g.kind).map(g=>g.id):[]),groups=parseGroups(b.groups),known=new Set((groups??[]).map(g=>g.id)),train=b.train?parseTrain(b.train):undefined;
  // A member whose group is gone stands alone.
  for(const x of [...items,...plates,...(train?.wheels??[])])if(x.group!==undefined&&!known.has(x.group))delete x.group;
- for(const g of groups??[])if(before.has(g.id)&&g.kind==='koerper'&&new Set((train?.wheels??[]).filter(w=>w.group===g.id).map(w=>w.shaft)).size>1)g.kind='traeger';
+ // Körper from before `turns`: one whose parts hung on its one shaft turned with it.
+ for(const g of groups??[]){if(g.kind!=='koerper'||g.turns||before.has(g.id))continue;const shafts=[...new Set((train?.wheels??[]).filter(w=>w.group===g.id).map(w=>w.shaft))],body=shafts.length===1?`welle:${shafts[0]}`:'';if(body&&[...items,...plates].some(x=>x.group===g.id&&(x as {free?:{body?:string}}).free?.body===body))g.turns=shafts[0];}
  return {id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(train?{train}:{}),...(groups?.length?{groups}:{}),...(Array.isArray(b.order)&&b.order.length<=2000?{order:b.order.filter((k:unknown)=>typeof k==='string')}:{})};
 }
 export const partOf=(b:{parts:Part[]},i:BuildItem)=>partById(i.part,b.parts)!;

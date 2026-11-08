@@ -1,9 +1,8 @@
-// Groups of a build: parts, plates and wheels taken together, groups in groups. A group says what its members are to each
-// other. Ordnung only keeps them together in the tree. A Körper is one piece: it keeps its distances, and on a shaft it turns
-// with it (its parts hang on that shaft). A Träger holds shafts at fixed distances, the wheels turn in it; that is what
-// bearings and housings are made for. Körper and Träger are rigid while editing: a
-// member dragged moves the whole group, and so does its handle. A free group only keeps things together in the tree; the
-// handle still moves all of it. A rigid group can go into the library as a block and come out again in any project.
+// Groups of a build: parts, plates and wheels taken together, groups in groups. A group is a Körper (one rigid piece) or
+// an Ordnung (only kept together in the tree). A Körper either stands and bears the shafts of its wheels at fixed axis
+// distances (shown as Träger: what bearings and housings are made for), or it turns with one shaft (a sensor disc on the
+// wheel's shaft: everything in it hangs on that shaft). A Körper is rigid while editing: a member dragged moves it all,
+// and so does the handle. A Körper can go into the library as a block and come out again in any project.
 // Coordinates are the build's room (z up); a wheel stands at (x, z along its shaft, height) of its train, its shaft runs
 // along y. A group with wheels therefore turns only about y, one without about z.
 import type {Build,BuildItem,PlateNode,Free} from './build.ts';
@@ -15,11 +14,14 @@ import type {Input} from './train.ts';
 import {add,axisAngle,compose,inverse,multiply,rotate} from '../kinematics/math.ts';
 import type {Frame,V} from '../kinematics/math.ts';
 
-export type GroupKind='ordnung'|'koerper'|'traeger';
-export type Group={id:string;label:string;kind:GroupKind;parent?:string};
+export type GroupKind='ordnung'|'koerper';
+/** `turns`: the shaft a Körper turns with (its parts hang on it); without, it stands and bears its shafts. */
+export type Group={id:string;label:string;kind:GroupKind;turns?:string;parent?:string};
 /** Körper and Träger keep their distances while editing; Ordnung does not. */
-export const rigidOf=(g:Group)=>g.kind!=='ordnung';
-export const kindNames:Record<GroupKind,string>={ordnung:'Ordnung',koerper:'Körper',traeger:'Träger'};
+export const rigidOf=(g:Group)=>g.kind==='koerper';
+export const kindNames:Record<GroupKind,string>={ordnung:'Ordnung',koerper:'Körper'};
+/** What a group is called: a standing Körper with shafts is a Träger. */
+export function titleOf(b:Build,g:Group){return g.kind==='ordnung'?'Ordnung':!g.turns&&inShaft(b,g.id).length?'Träger':'Körper';}
 export type MemberKind='item'|'plate'|'wheel'|'group';
 export type Member={kind:MemberKind;id:string};
 /** A rigid group as the library keeps it: in the room, its middle over the origin and its lowest point on the floor. */
@@ -66,18 +68,21 @@ export function makeGroup(b:Build,members:Member[],id:string,label:string,kind?:
  // Without a choice: wheels on more than one shaft are a Träger, everything else one Körper.
  b.groups=[...groupsOf(b),{id,label,kind:'ordnung',...(parent?{parent}:{})}];for(const m of all)setParent(b,m,id);
  // Counted over everything inside, subgroups too.
- const chosen=kind??(inShaft(b,id).length>1?'traeger':'koerper');setKind(b,id,chosen,frames);
- return {group:id,along,kind:chosen};}
+ // Without a choice a Körper; parts with the wheels of one shaft turn with it (a sensor on a gear), else it bears its shafts.
+ const chosen=kind??'koerper',shafts=inShaft(b,id),turns=chosen==='koerper'&&shafts.length===1&&all.some(m=>m.kind!=='wheel')?shafts[0]:undefined;setKind(b,id,chosen,frames);if(turns)setTurns(b,id,turns,frames);
+ return {group:id,along,kind:chosen,turns};}
 const inShaft=(b:Build,id:string)=>[...new Set(contents(b,id).wheels.map(w=>w.shaft))];
-/** A Körper turns with the one shaft among its wheels: its parts and plates hang on that shaft, where they stand now. */
-function bind(b:Build,id:string,frames:Record<string,Frame>){const shafts=inShaft(b,id);if(shafts.length>1)throw Error('Ein Körper dreht sich um eine Welle: Räder auf mehreren Wellen sind ein Träger.');if(!shafts.length)return;
- const body=shaftBody(shafts[0]),f={...shaftFrames(b.train),...frames},c=contents(b,id);for(const p of c.plates)if(p.free.body!==body)p.free=reframe(p.free,body,f);for(const i of c.items)if(i.free&&i.free.body!==body)i.free=reframe(i.free,body,f);}
+/** A Körper turning with a shaft: its parts and plates hang on that shaft, where they stand now. All its wheels sit on it. */
+function bind(b:Build,id:string,shaft:string,frames:Record<string,Frame>){if(inShaft(b,id).some(s=>s!==shaft))throw Error('Dreht ein Körper mit einer Welle, sitzen alle seine Räder auf ihr. Räder auf anderen Wellen lagert er nur, solange er steht.');
+ const body=shaftBody(shaft),f={...shaftFrames(b.train),...frames},c=contents(b,id);for(const p of c.plates)if(p.free.body!==body)p.free=reframe(p.free,body,f);for(const i of c.items)if(i.free&&i.free.body!==body)i.free=reframe(i.free,body,f);}
 /** Lets go of the shaft: the parts stay where they are in the room. */
-function unbind(b:Build,id:string,frames:Record<string,Frame>){const bodies=new Set(inShaft(b,id).map(shaftBody)),f={...shaftFrames(b.train),...frames},c=contents(b,id);for(const p of c.plates)if(p.free.body&&bodies.has(p.free.body))p.free=reframe(p.free,undefined,f);for(const i of c.items)if(i.free?.body&&bodies.has(i.free.body))i.free=reframe(i.free,undefined,f);}
+function unbind(b:Build,id:string,shaft:string,frames:Record<string,Frame>){const bodies=new Set([shaftBody(shaft)]),f={...shaftFrames(b.train),...frames},c=contents(b,id);for(const p of c.plates)if(p.free.body&&bodies.has(p.free.body))p.free=reframe(p.free,undefined,f);for(const i of c.items)if(i.free?.body&&bodies.has(i.free.body))i.free=reframe(i.free,undefined,f);}
 /** What the group is: Ordnung, Körper (one piece; on a shaft it turns with it) or Träger (holds shafts at fixed distances). */
-export function setKind(b:Build,id:string,kind:GroupKind,frames:Record<string,Frame>={}){const g=groupsOf(b).find(x=>x.id===id);if(!g)return;if(kind==='koerper')bind(b,id,frames);else if(g.kind==='koerper')unbind(b,id,frames);g.kind=kind;}
+export function setKind(b:Build,id:string,kind:GroupKind,frames:Record<string,Frame>={}){const g=groupsOf(b).find(x=>x.id===id);if(!g)return;if(kind==='ordnung')setTurns(b,id,undefined,frames);g.kind=kind;}
+/** Lets a Körper turn with a shaft, or stand (`undefined`). */
+export function setTurns(b:Build,id:string,shaft:string|undefined,frames:Record<string,Frame>={}){const g=groupsOf(b).find(x=>x.id===id);if(!g||g.turns===shaft)return;if(shaft)bind(b,id,shaft,frames);if(g.turns)unbind(b,id,g.turns,frames);if(shaft)g.turns=shaft;else delete g.turns;}
 /** Takes a group apart: its members go to the group around it. */
-export function dissolve(b:Build,id:string,frames:Record<string,Frame>={}){const g=groupsOf(b).find(x=>x.id===id);if(!g)return;if(g.kind==='koerper')unbind(b,id,frames);for(const m of childrenOf(b,id))setParent(b,m,g.parent);b.groups=groupsOf(b).filter(x=>x.id!==id);if(!b.groups.length)delete b.groups;}
+export function dissolve(b:Build,id:string,frames:Record<string,Frame>={}){const g=groupsOf(b).find(x=>x.id===id);if(!g)return;if(g.turns)unbind(b,id,g.turns,frames);for(const m of childrenOf(b,id))setParent(b,m,g.parent);b.groups=groupsOf(b).filter(x=>x.id!==id);if(!b.groups.length)delete b.groups;}
 /** Removes a group with all it holds: its parts (and those on its plates), plates, wheels and their shafts. */
 export function removeGroup(b:Build,id:string){const c=contents(b,id),plates=new Set(c.plates.map(p=>p.id)),items=new Set(c.items.map(i=>i.id)),wheels=new Set(c.wheels.map(w=>w.id));
  b.items=b.items.filter(i=>!items.has(i.id)&&!(i.plate&&plates.has(i.plate)));b.plates=b.plates.filter(p=>!plates.has(p.id));b.groups=groupsOf(b).filter(g=>!c.groups.has(g.id));if(!b.groups.length)delete b.groups;
@@ -114,7 +119,7 @@ const fresh=(prefix:string)=>`${prefix}-${crypto.randomUUID().slice(0,8)}`;
  * the floor over the origin. */
 export function blockOf(b:Build,id:string,given:Record<string,Frame>):Block{
  const g=groupsOf(b).find(x=>x.id===id);if(!g)throw Error('Gruppe fehlt.');const c=contents(b,id),frames={...shaftFrames(b.train),...given},own=new Set(c.shafts.map(s=>shaftBody(s.id))),keep=(f:Free)=>f.body&&own.has(f.body)?structuredClone(f):{frame:worldOf(f,frames)};
- const groups=groupsOf(b).filter(x=>c.groups.has(x.id)).map(x=>x.id===id?{id:x.id,label:x.label,kind:x.kind}:structuredClone(x));
+ const groups=groupsOf(b).filter(x=>c.groups.has(x.id)).map(x=>x.id===id?{id:x.id,label:x.label,kind:x.kind,...(x.turns?{turns:x.turns}:{})}:structuredClone(x));
  const inside=new Set(c.plates.map(p=>p.id)),items=c.items.map(i=>{const x=structuredClone(i);if(x.free)x.free=keep(x.free);else if(!inside.has(x.plate!)){const n=b.plates.find(p=>p.id===x.plate)!,f=compose(worldOf(n.free,frames),{position:[x.at[0],x.at[1],0],rotation:[0,0,0,1]});delete x.plate;x.free={frame:f};}return x;});
  const plates=c.plates.map(p=>({...structuredClone(p),free:keep(p.free)})),shafts=structuredClone(c.shafts),wheels=structuredClone(c.wheels),used=new Set(items.map(i=>i.part));
  const part:Build={id:'baustein',label:g.label,plates,items,parts:[],grid:b.grid,groups,train:{...newTrain(),shafts,wheels}};
@@ -125,7 +130,7 @@ export function blockOf(b:Build,id:string,given:Record<string,Frame>):Block{
 export function insertBlock(b:Build,block:Block,at:V):string{
  const names=new Map<string,string>(),name=(old:string,prefix:string)=>{let n=names.get(`${prefix}:${old}`);if(!n){n=fresh(prefix);names.set(`${prefix}:${old}`,n);}return n;};
  const top=block.groups.find(g=>!g.parent||!block.groups.some(x=>x.id===g.parent))!;
- const groups=block.groups.map(g=>{const x:Group={id:name(g.id,'gruppe'),label:g.label,kind:kindOfOld(g)};if(g.id!==top.id&&g.parent)x.parent=name(g.parent,'gruppe');return x;});
+ const groups=block.groups.map(g=>{const x:Group={id:name(g.id,'gruppe'),label:g.label,kind:kindOfOld(g),...(g.turns?{turns:name(g.turns,'w')}:{})};if(g.id!==top.id&&g.parent)x.parent=name(g.parent,'gruppe');return x;});
  // On a shaft of the block: on the same shaft of the copy.
  const onto=(f:Free|undefined)=>{if(!f)return f;const s=shaftOfBody(f.body);return s?{...structuredClone(f),body:shaftBody(name(s,'w'))}:structuredClone(f);};
  const plates=block.plates.map(p=>({...structuredClone(p),id:name(p.id,'platte'),free:onto(p.free)!,...(p.group?{group:name(p.group,'gruppe')}:{})}));
@@ -138,19 +143,18 @@ export function insertBlock(b:Build,block:Block,at:V):string{
 /** Checks the groups of a parsed build: known parents, no loops, members that point at groups that exist. */
 export function parseGroups(value:unknown):Group[]|undefined{
  if(value===undefined)return undefined;if(!Array.isArray(value)||value.length>200)throw Error('Aufbau: Gruppen ungültig');
- const out=value.map(g=>{if(!g||typeof g.id!=='string'||!g.id||typeof g.label!=='string'||!(g.kind in kindNames)&&typeof g.rigid!=='boolean'||g.parent!==undefined&&typeof g.parent!=='string')throw Error('Aufbau: Gruppe ungültig');return {id:g.id,label:g.label.slice(0,80),kind:kindOfOld(g),...(g.parent?{parent:g.parent}:{})} as Group;});
+ const out=value.map(g=>{if(!g||typeof g.id!=='string'||!g.id||typeof g.label!=='string'||!(g.kind in kindNames||g.kind==='traeger')&&typeof g.rigid!=='boolean'||g.parent!==undefined&&typeof g.parent!=='string')throw Error('Aufbau: Gruppe ungültig');return {id:g.id,label:g.label.slice(0,80),kind:kindOfOld(g),...(typeof g.turns==='string'?{turns:g.turns}:{}),...(g.parent?{parent:g.parent}:{})} as Group;});
  if(new Set(out.map(g=>g.id)).size!==out.length)throw Error('Aufbau: Gruppe doppelt');
  for(const g of out){if(g.parent&&!out.some(x=>x.id===g.parent))throw Error('Aufbau: Gruppe ohne Obergruppe');const seen=new Set<string>();for(let x:Group|undefined=g;x;x=out.find(y=>y.id===x!.parent)){if(seen.has(x.id))throw Error('Aufbau: Gruppen im Kreis');seen.add(x.id);}}
  return out;}
-/** Files and blocks from before the kinds said only fest or frei: fest is a Körper (parseBuild makes wheels on several
- * shafts a Träger). */
-function kindOfOld(g:{kind?:unknown;rigid?:unknown}):GroupKind{return typeof g.kind==='string'&&g.kind in kindNames?g.kind as GroupKind:g.rigid===false?'ordnung':'koerper';}
+/** Files and blocks from before: fest and Träger are a Körper (standing), frei is an Ordnung. */
+function kindOfOld(g:{kind?:unknown;rigid?:unknown}):GroupKind{return g.kind==='ordnung'||g.rigid===false&&g.kind===undefined?'ordnung':'koerper';}
 
 // ---------- the tree: order and moving things around ----------
 /** The direct members of a group (or of the build) in the order of the tree: `order` first, the rest after. */
 export function orderedChildren(b:Build,id?:string):Member[]{const at=new Map((b.order??[]).map((k,i)=>[k,i]));return childrenOf(b,id).map((m,i)=>({m,i})).sort((x,y)=>(at.get(keyOf(x.m))??1e6+x.i)-(at.get(keyOf(y.m))??1e6+y.i)).map(x=>x.m);}
 /** The shaft a member turns with through the Körper it sits in (the innermost Körper with one shaft). */
-function turnsWith(b:Build,group:string|undefined){for(const g of chain(b,group))if(g.kind==='koerper'){const s=inShaft(b,g.id);return s.length===1?shaftBody(s[0]):undefined;}return undefined;}
+function turnsWith(b:Build,group:string|undefined){for(const g of chain(b,group))if(g.turns)return shaftBody(g.turns);return undefined;}
 /** Moves a member in the tree: into a group (or to the top, without `into`), before `before` (else last). A wheel brings
  * the wheels on its shaft, a plate the parts on it; a group cannot go into itself. What leaves a Körper lets go of its
  * shaft, what comes into one turns with it; groups left empty go. */
@@ -161,7 +165,7 @@ export function moveMember(b:Build,m:Member,into:string|undefined,before:Member|
  if(m.kind==='plate')for(const i of b.items)if(i.plate===m.id&&i.group===from)moving.push({kind:'item',id:i.id});
  const f={...shaftFrames(b.train),...frames},loose=(x:Member)=>x.kind==='item'?b.items.find(i=>i.id===x.id)?.free:x.kind==='plate'?b.plates.find(p=>p.id===x.id)?.free:undefined,was=moving.map(x=>turnsWith(b,parentOf(b,x)));
  for(const x of moving)setParent(b,x,into);
- const target=groupsOf(b).find(g=>g.id===into);if(target?.kind==='koerper'&&inShaft(b,target.id).length>1)throw Error('Ein Körper dreht sich um eine Welle: Räder auf mehreren Wellen gehören in einen Träger.');
+ for(const g of chain(b,into))if(g.turns&&inShaft(b,g.id).some(s=>s!==g.turns))throw Error(`„${g.label}“ dreht mit einer Welle: Räder auf anderen Wellen gehören in einen stehenden Körper.`);
  moving.forEach((x,k)=>{const free=loose(x),now=turnsWith(b,parentOf(b,x));if(!free||now===was[k])return;if(free.body===was[k]||now){const next=reframe(free,now,f);free.frame=next.frame;if(now)free.body=now;else delete free.body;}});
  // The order: every member once; the moved ones before `before`.
  const all=(id?:string):string[]=>childrenOf(b,id).flatMap(x=>[keyOf(x),...(x.kind==='group'?all(x.id):[])]),keys=new Set(moving.map(keyOf)),order=[...(b.order??[]).filter(k=>all().includes(k)),...all().filter(k=>!(b.order??[]).includes(k))].filter(k=>!keys.has(k)),at=before?order.indexOf(keyOf(before)):-1;

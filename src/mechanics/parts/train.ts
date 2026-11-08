@@ -56,6 +56,8 @@ export const shaftBody=(id:string)=>`welle:${id}`;
 export const shaftOfBody=(body:string|undefined)=>body?.startsWith('welle:')?body.slice(6):undefined;
 export function shaftFrames(t:Train|undefined,turns:Record<string,number>={}):Record<string,Frame>{if(!t)return {};const {angle}=motion(t,turns);return Object.fromEntries(t.shafts.map(s=>[shaftBody(s.id),{position:[s.at[0],0,s.at[1]] as V,rotation:axisAngle([0,1,0],angle.get(s.id)??0)}]));}
 export type TrainIssue={wheels:string[];message:string};
+/** What is fine but worth knowing: wheels no input reaches stand still (something else may move them later). */
+export function trainNotes(t:Train):string[]{const ins=inputsOf(t);if(!ins.length)return [];const {owner}=motion(t),still=t.wheels.filter(w=>!owner.has(w.shaft));return still.length?[`${still.map(nameOf).join(', ')} ${still.length===1?'hängt':'hängen'} an keinem Eingang und ${still.length===1?'steht':'stehen'} still.`]:[];}
 const nameOf=(w:Wheel)=>`${w.part?'LEGO ':''}z${w.teeth}`;
 export function trainIssues(t:Train):TrainIssue[]{const out:TrainIssue[]=[],pairs=meshes(t),ins=inputsOf(t),outs=outputsOf(t),{owner,clash}=motion(t),label=(s:string)=>{const w=t.wheels.find(x=>x.shaft===s);return w?nameOf(w):'Welle';};
  t.wheels.forEach((a,i)=>{for(const b of t.wheels.slice(i+1)){if(a.shaft===b.shaft){if(facing(a,b))out.push({wheels:[a.id,b.id],message:`${nameOf(a)} und ${nameOf(b)} sitzen auf derselben Welle ineinander.`});continue;}if(!facing(a,b)||pairs.some(p=>p.includes(a)&&p.includes(b)))continue;const d=apart(shaftOf(t,a),shaftOf(t,b));if(d<outerOf(a)+outerOf(b)+.5)out.push({wheels:[a.id,b.id],message:`${nameOf(a)} stößt an ${nameOf(b)}, ohne zu kämmen.`});}});
@@ -64,7 +66,6 @@ export function trainIssues(t:Train):TrainIssue[]{const out:TrainIssue[]=[],pair
  if(!ins.length)out.push({wheels:[],message:'Einen Eingang wählen: an der Welle, die angetrieben wird.'});
  if(!outs.length)out.push({wheels:[],message:'Einen Ausgang wählen.'});
  for(const o of outs){if(ins.some(i=>i.shaft===o))out.push({wheels:[],message:`Ausgang ${label(o)} ist zugleich Eingang.`});else if(ins.length&&!owner.has(o))out.push({wheels:t.wheels.filter(w=>w.shaft===o).map(w=>w.id),message:`Ausgang ${label(o)} hängt an keinem Eingang: Es fehlt ein Eingriff.`});}
- for(const s of t.shafts)if(ins.length&&!owner.has(s.id)&&!outs.includes(s.id)&&t.wheels.some(w=>w.shaft===s.id))out.push({wheels:t.wheels.filter(w=>w.shaft===s.id).map(w=>w.id),message:'Eine Welle hängt nicht am Getriebe.'});
  if(t.wheels.some(w=>w.part)&&t.wheels.some(w=>!w.part))out.push({wheels:[],message:'LEGO und gedruckte Räder lassen sich noch nicht mischen: Die Wellen sind verschieden.'});
  return out;}
 /** Points of the `grid` (mm, from the origin) at exactly `d` from `c`. Few in general: 28 mm on a 1 mm grid has only the

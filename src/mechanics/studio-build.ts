@@ -26,7 +26,7 @@ import {separation} from './graph/space';
 import type {GripOptions} from './studio-mechanism';
 import {TrainEditor} from './studio-train';
 import {newTrain,trainIssues,snapWheel,meshes,ratioOf,DEFAULT_ANGLE,inputsOf,outputsOf,shaftFrames,shaftOfBody} from './parts/train';
-import {makeGroup,dissolve,setKind,moveMember,orderedChildren,parentOf,kindNames,rigidOf,unitOf,contents,childrenOf,moveGroup,centreOf,turnAxis,blockOf,insertBlock,removeGroup,keyOf,memberOf} from './parts/groups';
+import {makeGroup,dissolve,setKind,setTurns,titleOf,moveMember,orderedChildren,parentOf,kindNames,rigidOf,unitOf,contents,childrenOf,moveGroup,centreOf,turnAxis,blockOf,insertBlock,removeGroup,keyOf,memberOf} from './parts/groups';
 import type {Block,Member,GroupKind} from './parts/groups';
 import {label as wheelLabel} from './studio-train';
 import type {Demo} from './demos';
@@ -216,8 +216,8 @@ export class BuildEditor{
  /** Strg+G: the selection (or the one thing selected) becomes a rigid group. */
  groupSelection(){const b=this.build();if(!b)return;let ms=[...this.multi].map(memberOf);if(!ms.length){const one=this.single();if(one)ms=[one];}if(!ms.length){this.host.status('Erst etwas auswählen: Strg-Klick wählt mehrere.');return;}
   const id='gruppe-'+crypto.randomUUID().slice(0,8);let along=0;
-  let kind:GroupKind='koerper',label='';this.host.change(()=>{const x=this.build()!,r=makeGroup(x,ms,id,'',undefined,this.frames());along=r.along;kind=r.kind;label=`${kindNames[kind]} ${(x.groups??[]).filter(g=>g.kind===kind).length}`;x.groups!.find(g=>g.id===id)!.label=label;},'Gruppe angelegt.');
-  if(this.build()?.groups?.some(g=>g.id===id)){this.selectMember({kind:'group',id});this.refresh();this.host.leave();this.host.status(`${label} angelegt${kind==='koerper'?', ein Stück':kind==='traeger'?', hält die Wellen in festen Abständen':''}${along?`, dazu ${along} auf derselben Welle oder Platte`:''}.`);}}
+  let title='',label='';this.host.change(()=>{const x=this.build()!,r=makeGroup(x,ms,id,'',undefined,this.frames());along=r.along;const g=x.groups!.find(y=>y.id===id)!;title=titleOf(x,g);label=`${title} ${(x.groups??[]).filter(y=>titleOf(x,y)===title).length}`;g.label=label;},'Gruppe angelegt.');
+  if(this.build()?.groups?.some(g=>g.id===id)){this.selectMember({kind:'group',id});this.refresh();this.host.leave();this.host.status(`${label} angelegt${title==='Träger'?': hält die Wellen in festen Abständen':title==='Körper'?': ein Stück':''}${along?`, dazu ${along} auf derselben Welle oder Platte`:''}.`);}}
  private groupLabel(id:string){return this.build()?.groups?.find(g=>g.id===id)?.label??'Gruppe';}
  /** A rigid group follows one of its members: a wheel in the train's plane, snapping to wheels outside the group; a part
   * on the level it stands on, on the build's grid. */
@@ -331,7 +331,7 @@ export class BuildEditor{
    // Strg-click adds to the selection, a click selects alone.
    const go=(m:Member)=>(ev:MouseEvent)=>{if(ev.ctrlKey||ev.metaKey)this.toggle(m);else this.selectMember(m);this.refresh();this.host.leave();};
    const line=(m:Member,depth:number)=>{let text='';const data:Record<string,string>={};
-    if(m.kind==='group'){const g=b.groups!.find(x=>x.id===m.id)!;text=`${g.kind==='traeger'?'▣':g.kind==='koerper'?'◆':'▢'} ${g.label}`;data.group=g.id;}
+    if(m.kind==='group'){const g=b.groups!.find(x=>x.id===m.id)!;const title=titleOf(b,g);text=`${title==='Träger'?'▣':title==='Körper'?'◆':'▢'} ${g.label}`;data.group=g.id;}
     else if(m.kind==='plate'){text='▭ Bodenplatte';data.plate=m.id;}
     else if(m.kind==='item'){const i=b.items.find(x=>x.id===m.id)!;text=`${partOf(b,i).label}${i.free?.body?` → ${this.bodyName(i.free.body)}`:''}`;data.item=m.id;}
     else{const w=t!.wheels.find(x=>x.id===m.id)!;text=`⚙ ${wheelLabel(w)}${inputsOf(t!).some(i=>i.shaft===w.shaft)?' · Eingang':outputsOf(t!).includes(w.shaft)?' · Ausgang':''}`;data.wheel=m.id;}
@@ -339,7 +339,7 @@ export class BuildEditor{
     const row=el('div',{className:'tree-row layer-row'});row.style.paddingLeft=`${depth*16}px`;row.draggable=true;
     if(m.kind==='group'){const open=!this.folded.has(m.id),fold=el('button',{textContent:open?'▾':'▸',className:'layer-fold',title:open?'Zuklappen':'Aufklappen'});fold.dataset.fold=m.id;fold.onclick=e=>{e.stopPropagation();if(open)this.folded.add(m.id);else this.folded.delete(m.id);this.host.leave();};row.append(fold);}
     else row.append(el('span',{className:'layer-fold'}));
-    row.append(r);if(m.kind==='group')row.append(el('small',{className:'layer-kind',textContent:kindNames[b.groups!.find(x=>x.id===m.id)!.kind]}));
+    row.append(r);if(m.kind==='group')row.append(el('small',{className:'layer-kind',textContent:titleOf(b,b.groups!.find(x=>x.id===m.id)!)}));
     row.ondragstart=e=>{this.layerDrag=m;e.dataTransfer?.setData('text/plain',keyOf(m));if(e.dataTransfer)e.dataTransfer.effectAllowed='move';};
     row.ondragend=()=>{this.layerDrag=undefined;};
     row.ondragover=e=>{const d=this.layerDrag;if(!d||keyOf(d)===keyOf(m))return;e.preventDefault();const box=row.getBoundingClientRect(),y=(e.clientY-box.top)/box.height;row.dataset.drop=m.kind==='group'&&y>.25&&y<.75?'into':y<.5?'before':'after';};
@@ -439,15 +439,19 @@ export class BuildEditor{
   const g=b.groups!.find(x=>x.id===this.groupId)!,c=contents(b,g.id),set=(message:string,fn:(y:NonNullable<Build['groups']>[number])=>void)=>this.host.change(()=>{const y=this.build()!.groups?.find(x=>x.id===g.id);if(y)fn(y);},message);
   const name=el('input',{type:'text',value:g.label});name.dataset.field='Name der Gruppe';name.setAttribute('aria-label','Name der Gruppe');name.onchange=()=>{const v=name.value.trim();if(v)set('Gruppe umbenannt',y=>{y.label=v;});};
   // What the members are to each other.
-  const kind=el('select');kind.dataset.field='Art';for(const [k,text] of [['traeger','▣ Träger: hält Wellen in festen Abständen'],['koerper','◆ Körper: ein Stück, dreht mit seiner Welle'],['ordnung','▢ Ordnung: nur zusammen im Baum']] as [GroupKind,string][])kind.add(new Option(text,k));kind.value=g.kind;
+  const kind=el('select');kind.dataset.field='Art';kind.add(new Option('◆ Körper: ein starres Stück','koerper'));kind.add(new Option('▢ Ordnung: nur zusammen im Baum','ordnung'));kind.value=g.kind;
   kind.onchange=()=>{const k=kind.value as GroupKind,frames=this.frames();this.host.change(()=>{setKind(this.build()!,g.id,k,frames);},`${g.label}: ${kindNames[k]}.`);};
-  root.append(heading('Gruppe'),el('label',{},'Name',name),el('label',{},'Art',kind));
-  const shafts=[...new Set(c.wheels.map(w=>w.shaft))],shaftName=shafts.length===1?this.bodyName(`welle:${shafts[0]}`):'';
-  root.append(el('p',{id:'group-kind',className:'muted',textContent:g.kind==='traeger'?'Die Wellen der Gruppe stehen fest zueinander, die Räder drehen darin. Für diese Abstände entstehen später Lager und Gehäuse.':g.kind==='koerper'?(shafts.length===1?`Ein Stück: Alles darin hängt an der ${shaftName} und dreht mit ihr.`:shafts.length?'Ein Körper dreht sich um eine Welle: Räder auf mehreren Wellen sind ein Träger.':'Ein Stück: Alles darin bewegt sich zusammen.'):'Ordnet nur: Jedes Stück bewegt sich einzeln.'}));
-  const parent=b.groups!.find(x=>x.id===g.parent);if(parent)root.append(el('p',{className:'muted',textContent:`Steckt in „${parent.label}“ (${kindNames[parent.kind]}${rigidOf(parent)?': zieht beim Bearbeiten mit':''}).`}));
+  const shafts=[...new Set(c.wheels.map(w=>w.shaft))],title=titleOf(b,g);
+  // A Körper stands and bears its shafts, or turns with one shaft (then all its wheels sit on that one).
+  const motion=el('select');motion.dataset.field='Bewegung';motion.add(new Option(shafts.length?`steht, lagert ${shafts.length===1?'die Welle':`${shafts.length} Wellen`} (Träger)`:'steht',''));for(const s of shafts){const o=new Option(`dreht mit der ${this.bodyName(`welle:${s}`)}${shafts.length>1?' (nur wenn alle Räder auf ihr sitzen)':''}`,s);o.disabled=shafts.length>1;motion.add(o);}motion.value=g.turns??'';
+  motion.onchange=()=>{const v=motion.value||undefined,frames=this.frames();this.host.change(()=>{setTurns(this.build()!,g.id,v,frames);},v?`${g.label} dreht mit der ${this.bodyName(`welle:${v}`)}.`:`${g.label} steht.`);};
+  root.append(heading(title),el('label',{},'Name',name),el('label',{},'Art',kind));if(g.kind==='koerper')root.append(el('label',{},'Bewegung',motion));
+
+  root.append(el('p',{id:'group-kind',className:'muted',textContent:g.kind==='ordnung'?'Ordnet nur: Jedes Stück bewegt sich einzeln.':g.turns?`Ein Stück: Alles darin hängt an der ${this.bodyName(`welle:${g.turns}`)} und dreht mit ihr.`:shafts.length?`Ein starres Stück, das ${shafts.length===1?'eine Welle':`${shafts.length} Wellen`} in festen Abständen lagert; die Räder drehen darin. Für diese Abstände entstehen Lager und Gehäuse. Es kann selbst ein Teil einer größeren Mechanik sein, etwa ein Arm.`:'Ein starres Stück: Alles darin bewegt sich zusammen.'}));
+  const parent=b.groups!.find(x=>x.id===g.parent);if(parent)root.append(el('p',{className:'muted',textContent:`Steckt in „${parent.label}“ (${titleOf(b,parent)}${rigidOf(parent)?': zieht beim Bearbeiten mit':''}).`}));
   root.append(el('p',{className:'muted',textContent:[`${c.items.length} Teile`,`${c.plates.length} Platten`,`${c.wheels.length} Räder`,...(c.groups.size>1?[`${c.groups.size-1} Untergruppen`]:[])].join(' · ')}));
   if(c.wheels.length){const t=b.train!,sub={...t,wheels:c.wheels,shafts:c.shafts},n=meshes(sub).length,mine=(s:string)=>c.shafts.some(x=>x.id===s),ends=inputsOf(t).filter(i=>mine(i.shaft)).flatMap(i=>outputsOf(t).filter(mine).map(o=>({i:i.shaft,o,r:ratioOf(sub,i.shaft,o)}))).filter(p=>p.r!==undefined),name=(s:string)=>{const w=c.wheels.find(x=>x.shaft===s);return w?wheelLabel(w):'';};
-   const pairs=meshes(sub);if(pairs.length)root.append(el('p',{id:'group-distances',className:g.kind==='traeger'?'state-pass':'muted',textContent:`Achsabstände${g.kind==='traeger'?' (fest)':''}: ${pairs.map(([x,y])=>`${wheelLabel(x)} ↔ ${wheelLabel(y)} ${mm(Math.hypot(...[0,1].map(k=>c.shafts.find(s=>s.id===x.shaft)!.at[k]-c.shafts.find(s=>s.id===y.shaft)!.at[k]) as [number,number]))} mm`).join(' · ')}`}));
+   const pairs=meshes(sub);if(pairs.length)root.append(el('p',{id:'group-distances',className:rigidOf(g)?'state-pass':'muted',textContent:`Achsabstände${rigidOf(g)?' (fest)':''}: ${pairs.map(([x,y])=>`${wheelLabel(x)} ↔ ${wheelLabel(y)} ${mm(Math.hypot(...[0,1].map(k=>c.shafts.find(s=>s.id===x.shaft)!.at[k]-c.shafts.find(s=>s.id===y.shaft)!.at[k]) as [number,number]))} mm`).join(' · ')}`}));
    root.append(el('p',{id:'group-ratio',className:ends.length?'state-pass':'muted',textContent:`${n} Eingriff${n===1?'':'e'} in der Gruppe${ends.length?` · ${ends.map(p=>`${name(p.i)} → ${name(p.o)} 1 : ${Math.abs(p.r!).toFixed(2).replace('.',',')}`).join(' · ')}`:' · kein Eingang und Ausgang beide in der Gruppe'}`}));}
   root.append(el('p',{className:'muted',textContent:`Verschieben und Drehen mit dem Griff in der Ansicht (Drehen ${turnAxis(b,g.id)==='y'?'um die Wellen':'um die Senkrechte'}).${rigidOf(g)?' Ziehst du ein Rad oder Teil der Gruppe, kommt die ganze Gruppe mit; ein Rad rastet dabei an Räder außerhalb ein.':''}`}));
   const keep=el('button',{textContent:'📚 In die Bibliothek legen',className:'primary'});keep.dataset.groupSave='true';keep.disabled=!rigidOf(g);keep.title=rigidOf(g)?'Steht dann in jedem Projekt unter „Eigene Bausteine“.':'Nur Körper und Träger: ein Baustein hält seine Abstände.';
