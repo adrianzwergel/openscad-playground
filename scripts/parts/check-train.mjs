@@ -1,7 +1,7 @@
 // Gear trains built by hand: what meshes, the ratio, snapping, what is refused; the compiled mechanism turns at the
 // ratio, closes, gets its bearings and its structures like the gearbox demos.
 import assert from 'node:assert/strict';
-import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,trainMechanism,trainNotes,motion,shaftFrames,rackMeshes,rackBody,beltLength,legoGears,parseTrain,gridPoints} from '../../src/mechanics/parts/train.ts';
+import {newTrain,meshes,ratioOf,rates,trainIssues,snapWheel,compileTrain,trainMechanism,trainNotes,motion,shaftFrames,rackMeshes,rackBody,beltLength,solveMotion,carriedFrames,legoGears,parseTrain,gridPoints} from '../../src/mechanics/parts/train.ts';
 import {solve} from '../../src/mechanics/kinematics/solver.ts';
 import {heldTrains} from '../../src/mechanics/kinematics/drive.ts';
 import {planBearings,applyBearings} from '../../src/mechanics/kinematics/bearings.ts';
@@ -63,6 +63,17 @@ for(const [name,train,nuts,axis] of [['Spindel',(()=>{const r=newTrain();r.shaft
  const d=trainMechanism(train,name,false,'test-'+name,nuts),m=d.mechanism;assert.ok(m.joints.some(j=>j.joint.kind==='prismatic'),name+': Schiebegelenk');
  for(const v of [0,360]){const h=await solve({...structuredClone(m),range:{from:v,to:v,samples:1}},{yield:false,fixed:heldTrains(d.drives,{[axis]:v})});assert.deepEqual(h.checks.filter(c=>c.state==='fail').map(c=>c.message),[],`${name} bei ${v}°`);}
  const plan=planBearings(m,d.drives,id=>id===d.asset.id?d.asset:undefined,d.fabrication?.bearings??{});assert.ok(plan.seats.some(s=>s.kind==='linear'),name+': Linearlager '+plan.seats.map(s=>s.kind).join(','));console.log(`${name}: ${plan.seats.length} Sitze (${[...new Set(plan.seats.map(s=>s.kind))].join(', ')})`);}
+// A planet riding on a carrier and meshing with a fixed sun (Willis): 90° of the carrier turn the z40 by 90·(1+16/40) = 126°,
+// 36° against the carrier; its axle goes round to (0, -28) and its frame is turned by 126°.
+{const p=newTrain();p.shafts.push({id:'S',at:[0,0],fixed:true},{id:'C',at:[0,0]},{id:'P',at:[28,0],on:{body:'welle:C',frame:{position:[28,0,0],rotation:[0,0,0,1]}}});p.wheels.push(wheel('sun','S',16),wheel('steg','C',24,20),wheel('planet','P',40));p.inputs=[{shaft:'C',drive:'lego-achse'}];p.outputs=['P'];
+ const s=solveMotion(p,{C:90});assert.equal(s.locked,false);assert.ok(Math.abs(s.angle.get('P')-126)<1e-9,'Planet absolut '+s.angle.get('P'));assert.equal(s.angle.get('S'),0);assert.ok(Math.abs(ratioOf(p,'C','P')-2.5)<1e-9);assert.deepEqual(trainIssues(p),[]);
+ const fr=carriedFrames(p,shaftFrames(p,{C:90}),motion(p,{C:90}).angle),q=fr['welle:P'];assert.ok(Math.hypot(q.position[0],q.position[2]+28)<1e-9,'Achse fährt herum: '+q.position);assert.ok(Math.abs(2*Math.atan2(q.rotation[1],q.rotation[3])*180/Math.PI-126)<1e-6,'Planet gedreht');
+ // Derived for ③: the planet's shaft turns on the carrier, the sun is part of the frame; it closes, and the planet is borne in the carrier.
+ const d=trainMechanism(p,'Planet',false,'test-planet'),m=d.mechanism,pj=m.joints.find(j=>j.a.body!=='ground');assert.ok(pj,'Planet auf dem Steg: '+m.joints.map(j=>j.id+'@'+j.a.body).join(', '));assert.ok(m.elements.some(e=>e.mounts[0].body==='ground'),'Sonne im Gestell');assert.equal(pj.id,'Abtrieb','der Planet ist der Ausgang');assert.ok(Math.abs(d.drives[0].gear.rates['H1/ground/s0']-2.5)<1e-9,'Steg 2,5 je Grad des Planeten gegen den Steg');
+ for(const v of [0,60]){const h=await solve({...structuredClone(m),range:{from:v,to:v,samples:1}},{yield:false,fixed:heldTrains(d.drives,{Abtrieb:v})});assert.deepEqual(h.checks.filter(c=>c.state==='fail').map(c=>c.message),[],'Planet bei '+v);}
+ const plan=planBearings(m,d.drives,id=>id===d.asset.id?d.asset:undefined,d.fabrication?.bearings??{});assert.ok(plan.seats.some(s=>s.line==='Abtrieb'&&s.link===pj.a.body),'Lager des Planeten im Steg: '+plan.seats.map(s=>s.line+'@'+s.link+':'+s.kind).join(', '));console.log(`Planet: ${plan.seats.length} Sitze, im Steg: ${plan.seats.filter(s=>s.link===pj.a.body).length}`);
+ const off=structuredClone(p);off.shafts[0].at=[0,5];off.shafts[2].at=[28,5];off.shafts[2].on.frame.position=[28,0,5];assert.ok(trainIssues(off).some(x=>/nicht auf der Achse seines Trägers/.test(x.message)),'Sonne neben der Stegachse');
+ const jam=structuredClone(p);jam.shafts[2].fixed=true;assert.ok(trainIssues(jam).some(x=>/sperren sich/.test(x.message)),'Planet fest auf dem Steg an fester Sonne sperrt');}
 // Derived live: two inputs, two chains, two drives; the shafts stay where the Studio shows them; it closes and is borne.
 const dual=structuredClone(t);dual.shafts.push({id:'c',at:[0,80]},{id:'d',at:[28,80]});dual.wheels.push(wheel('w7','c',16),wheel('w8','d',40));dual.inputs=[{shaft:'a',drive:'lego-achse'},{shaft:'c',drive:'lego-achse'}];dual.outputs=['b','d'];delete dual.input;delete dual.output;
 {const d=trainMechanism(dual,'Zwei',false,'test-zwei'),m=d.mechanism;assert.deepEqual(d.drives.map(x=>x.axis),['Abtrieb-1','Abtrieb-2']);assert.deepEqual(m.bodies.find(x=>x.id==='Abtrieb-2').frame.position,[28,0,80]);

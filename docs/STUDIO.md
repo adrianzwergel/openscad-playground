@@ -49,8 +49,12 @@ Mates in Onshape. Logik: `parts/links.ts`, `parts/train.ts`; geprüft von `scrip
   **dreht** in ihrem Träger oder **steht fest** (Achse). Ein Rad sitzt **fest** auf ihr oder läuft **lose** (Losrad); auf
   einer feststehenden Achse laufen Räder lose. Eingänge (mit Antrieb) und Ausgänge setzt man an der Welle.
   Eine Welle oder Achse kann selbst **verbunden** sein mit einem bewegten Körper (einer anderen Welle, einem Teil, einer
-  Platte): Dann fährt sie mit ihm, samt ihren Rädern, z. B. ein z36 auf einer Achse, die an der Welle des z24 sitzt. Eingriffe
-  rechnet das Studio dabei noch für ruhende Wellen; ein Planetengetriebe, dessen Planeten mitfahren und kämmen, noch nicht.
+  Platte): Dann fährt sie mit ihm, samt ihren Rädern, z. B. ein z36 auf einer Achse, die an der Welle des z24 sitzt.
+  Fahren Wellen mit, rechnet das Studio alle Winkel aus einem Gleichungssystem (`solveMotion`): Eingriffe nach Willis
+  (z_a·(θ_a − φ) + z_b·(θ_b − φ) = 0 mit dem Winkel φ des Trägers), so laufen Planeten auf einem Steg um eine feste oder
+  angetriebene Sonne. Ein mitfahrendes Rad kämmt nur mit einem auf der Achse seines Trägers (sonst meldet die Prüfung es).
+  In ③ sitzt eine mitfahrende Welle in einem Drehgelenk auf dem Körper ihres Trägers (ihre Lager dort), Räder feststehender
+  Achsen gehören zum Gestell; Gehäuse bohren nur für Wellen, die nicht mitfahren.
 - **Teile und Platten** sind **verbunden mit** der Welt, einem Glied des Modells, einer Welle, einem losen Rad, einem Teil
   oder einer Platte. Die Verbindung ist **fest**, **dreht** um X/Y/Z durch einen Drehpunkt oder **schiebt** entlang X/Y/Z
   (Richtungen dessen, womit verbunden), mit Bereich und auf Wunsch als **Eingang** mit Regler. Was daran hängt, fährt

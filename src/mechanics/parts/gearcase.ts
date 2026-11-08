@@ -14,7 +14,8 @@ const alongY=axisAngle([1,0,0],-90);
 /** The housing of these wheels (by id): solids, holes, its outer size and the hole of each shaft. */
 export function gearCase(t:Train,wheels:ReadonlySet<string>,c:GearCase=defaultGearCase){
  const own=t.wheels.filter(w=>wheels.has(w.id));if(!own.length)throw Error('Keine Räder in der Gruppe.');
- const shafts=t.shafts.filter(s=>own.some(w=>w.shaft===s.id)),y0=Math.min(...own.map(w=>w.z-w.width/2))-c.gap,y1=Math.max(...own.map(w=>w.z+w.width/2))+c.gap;
+ // A shaft that rides on a carrier goes round with it: its bearing is in the carrier, not in the shields.
+ const shafts=t.shafts.filter(s=>!s.on&&own.some(w=>w.shaft===s.id)),y0=Math.min(...own.map(w=>w.z-w.width/2))-c.gap,y1=Math.max(...own.map(w=>w.z+w.width/2))+c.gap;
  const x0=Math.min(...own.map(w=>t.shafts.find(s=>s.id===w.shaft)!.at[0]-outerOf(w)))-c.margin,x1=Math.max(...own.map(w=>t.shafts.find(s=>s.id===w.shaft)!.at[0]+outerOf(w)))+c.margin;
  const z0=Math.min(...own.map(w=>t.shafts.find(s=>s.id===w.shaft)!.at[1]-outerOf(w)))-c.margin,z1=Math.max(...own.map(w=>t.shafts.find(s=>s.id===w.shaft)!.at[1]+outerOf(w)))+c.margin;
  const cx=(x0+x1)/2,hx=(x1-x0)/2,hz=(z1-z0)/2,cz=(z0+z1)/2;
