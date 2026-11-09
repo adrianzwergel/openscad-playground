@@ -38,4 +38,22 @@ export const buildExamples:Example[]=[
   const arm={...newPlateNode('arm',at([60,0,40])),mode:'fixed' as const,size:[160,30] as [number,number],center:[0,0] as [number,number]};arm.free.joint={kind:'drehen',axis:'z',at:[-10,0,40],min:-90,max:90,input:{drive:'nema17'}};b.plates.push(arm);
   b.items.push({...newItem('pico',partById('rpi-pico')!,[50,0]),plate:'arm'},item('motor','nema17-40',at([-10,0,0])));}},
  {key:'aufhaengung',title:'Pushrod-Aufhängung 1:10',text:'Doppelquerlenker, Pushrod auf Umlenkhebel und Öldämpfer, Spurstange: Gelenkpunkte setzen, Lenker und Halter entstehen daraus.',make:b=>{b.linkage={links:pushrodCorner()};}},
+ {key:'hoehe',title:'Höhenverstellung über Spindel',text:'Eine Spindel in Fahrtrichtung schiebt einen Schlitten; eine Stellstange dreht den Umlenkhebel um 90° auf den Pushrod: Der Motor stellt die Höhe statt einer Feder.',make:rideHeight},
 ];
+/** The pushrod corner turned to drive along y (the Studio's shafts run along y), its damper replaced by a stab to the nut
+ * of a lead screw. The rocker is a bell crank: it turns about the normal of the plane of driving direction and pushrod,
+ * one arm reaches 16 mm forward to the pushrod, the other 16 mm along the pushrod to the stab, which runs parallel to the
+ * screw. Moving the nut forward pushes the pushrod down the wishbone: the wheel goes down, the car goes up. */
+function rideHeight(b:Build){
+ const corner=pushrodCorner().filter(l=>l.kind!=='feder'),rod=corner.find(l=>l.id==='pushrod')!,top=rod.points[1].at,len=Math.hypot(...top.map((v,k)=>v-rod.points[0].at[k])),d=top.map((v,k)=>(v-rod.points[0].at[k])/len) as V;
+ const arm=16,pivot:V=[top[0]-arm,top[1],top[2]],crank:V=pivot.map((v,k)=>v+arm*d[k]) as V,axis:V=[0,-d[2],d[1]],eye:V=[crank[0]-40,crank[1],crank[2]];
+ // Car (x ahead, y left) into the room: ahead becomes +y, the stab's end on the nut lands on y = 0.
+ const room=(p:V):V=>[-p[1],p[0]-eye[0],p[2]],spin=(v:V):V=>[-v[1],v[0],v[2]];
+ const rocker=corner.find(l=>l.id==='hebel')!;rocker.points=[{id:'achse',kind:'dreh',at:pivot.map((v,k)=>v-6*axis[k]) as V,to:pivot.map((v,k)=>v+6*axis[k]) as V,body:''}];
+ corner.push({id:'stellstange',label:'Stellstange',kind:'stab',points:[{id:'hebel',kind:'kugel',at:crank,body:'lenker:hebel'},{id:'schlitten',kind:'kugel',at:eye,body:'teil:mutter'}]});
+ for(const l of corner){for(const p of l.points){p.at=room(p.at);if(p.to)p.to=room(p.to);}if(l.wheel)l.wheel={...l.wheel,at:room(l.wheel.at),to:room(l.wheel.to)};delete l.input;}
+ b.linkage={links:corner,forward:spin([1,0,0])};
+ // The lead screw along y above the stab's end, its nut the slide; a plate on it stands for the slide's body.
+ const s=room(eye),t=train(b),high=s[2]+13.5;t.shafts.push({id:'spindel',at:[s[0],high],kind:'spindel',lead:8,d:8,length:140,z:0});setEnds(t,[{shaft:'spindel',drive:'nema17'}],[]);
+ const nut=at([0,0,0],axisAngle([1,0,0],-90));b.items.push(item('mutter','tr8-mutter',nut,{body:'welle:spindel',joint:{kind:'mutter',axis:'y',lead:8,min:-6,max:6}}));
+ b.plates.push({...newPlateNode('schlitten',compose(inverse(at([s[0],0,high],nut.rotation)),at([s[0],0,high+22])),'teil:mutter'),mode:'fixed' as const,size:[50,40] as [number,number]});}

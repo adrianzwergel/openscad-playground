@@ -174,10 +174,12 @@ export class LinkageEditor{
   root.append(el('h3',{textContent:'Gestänge bewegen'}));
   for(const l of driven){const i=l.input!,value=Math.min(i.max,Math.max(i.min,this.inputs[l.id]??0)),slider=el('input',{type:'range',min:String(i.min),max:String(i.max),step:'0.1',value:String(value)}),out=el('output',{textContent:`${de(value)}°`});
    slider.dataset.linkageInput=l.id;slider.setAttribute('aria-label',`${l.label} bewegen`);slider.oninput=()=>{this.inputs[l.id]=Number(slider.value);out.textContent=`${de(Number(slider.value))}°`;};root.append(el('label',{className:'axis-row'},el('span',{textContent:l.label}),slider,out));}
-  if(!driven.length)root.append(el('p',{className:'muted',textContent:'Noch kein Eingang: an einer Drehachse „Eingang (Regler)“ ankreuzen, zum Beispiel am unteren Querlenker.'}));
+  // Without an input of its own the linkage may hang on something that moves (a nut, a part on a joint).
+  const outside=[...new Set(g.links.flatMap(l=>l.points.map(p=>p.body)).filter(k=>k&&!linkOfBody(k)))];
+  if(!driven.length)root.append(el('p',{className:'muted',textContent:outside.length?`Bewegt vom Aufbau: ${outside.map(k=>this.host.name(k)).join(', ')}. Deren Regler stellt das Gestänge.`:'Noch kein Eingang: an einer Drehachse „Eingang (Regler)“ ankreuzen, zum Beispiel am unteren Querlenker.'}));
   const now=el('p',{id:'linkage-reading',className:'muted'});this.readout=now;root.append(now);
   const range=this.rangeText(g);if(range)root.append(el('p',{id:'linkage-range',className:'muted',textContent:range}));
-  const zero=el('button',{textContent:'Auf Konstruktionslage'});zero.dataset.linkageZero='true';zero.onclick=()=>{this.inputs={};this.host.leave();};root.append(zero);
+  const zero=el('button',{textContent:'Auf Konstruktionslage'});zero.dataset.linkageZero='true';zero.onclick=()=>{this.inputs={};this.host.leave();};if(driven.length)root.append(zero);
   return true;}
  /** Over the whole range of the first input: what the wheel and the damper do, and the motion ratio. */
  private rangeText(g:Linkage){const l=g.links.find(x=>x.input);if(!l||linkageIssues(g).length)return '';const key=JSON.stringify(g.links);if(this.range?.key===key)return this.range.text;

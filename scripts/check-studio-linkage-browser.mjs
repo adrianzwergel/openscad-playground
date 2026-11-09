@@ -38,5 +38,11 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await phase(p,1);
  // The example on the start page.
  await start(p,'data-example="aufhaengung"');await p.waitForFunction(()=>document.body.dataset.view==='project');await p.waitForSelector('input[data-linkage-input]',{timeout:20000});
- assert.deepEqual(errors,[]);console.log(`Studio Gestänge: Pushrod-Ecke aus der Bibliothek, ${r1.lift.toFixed(1)} mm Radhub bei 6°, Stab am Umlenkhebel eingerastet, Dämpferpunkt geprüft, ③ Lenker als STL (${Math.round(size/1024)} kB), Beispiel öffnet.`);
+ // Ride height: a lead screw's nut pushes the rocker through a stab; the screw's slider sets the height.
+ await start(p,'data-example="hoehe"');await p.waitForFunction(()=>document.body.dataset.view==='project');await p.waitForSelector('input[data-axis]',{timeout:20000});await wait(400);
+ assert.match(await p.$eval('#axes',e=>e.textContent),/Bewegt vom Aufbau: Spindelmutter/);
+ await p.$eval('input[data-axis]',e=>{e.value=e.max;e.dispatchEvent(new Event('input'));});await wait(500);const down=await L('reading');
+ await p.$eval('input[data-axis]',e=>{e.value=e.min;e.dispatchEvent(new Event('input'));});await wait(500);const up=await L('reading');assert.ok(down.lift<-3&&up.lift>3,`Höhe ${down.lift} / ${up.lift}`);
+ if(shots){await p.click('#fit');await wait(500);await p.screenshot({path:path.join(shots,'hoehe.png')});}
+ assert.deepEqual(errors,[]);console.log(`Studio Gestänge: Pushrod-Ecke aus der Bibliothek, ${r1.lift.toFixed(1)} mm Radhub bei 6°, Stab am Umlenkhebel eingerastet, Dämpferpunkt geprüft, ③ Lenker als STL (${Math.round(size/1024)} kB), Beispiel öffnet, Höhenverstellung über Spindel ${down.lift.toFixed(1)} … +${up.lift.toFixed(1)} mm.`);
 }finally{await browser.close();await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}

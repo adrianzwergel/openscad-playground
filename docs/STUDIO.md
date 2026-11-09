@@ -110,6 +110,11 @@ Logik: `parts/linkage.ts`, Editor: `studio-linkage.ts`; geprüft von `scripts/pa
   Hand eingetragen (offene CAD-Daten mit klarer Lizenz gibt es kaum). Baustein **Pushrod-Ecke 1:10** und das Beispiel
   „Pushrod-Aufhängung 1:10“: Doppelquerlenker, Pushrod auf Umlenkhebel und Dämpfer, Spurstange (Spuränderung unter 0,01°
   über ±9 mm Federweg).
+- Ein Punkt kann an etwas hängen, das sich selbst bewegt (eine Spindelmutter, ein Teil mit Drehverbindung): Das Gestänge
+  wird dann für dessen Stellung gelöst (gegen seine Lage mit allen Reglern auf 0). Beispiel **„Höhenverstellung über
+  Spindel“**: Die Ecke ist um 90° gedreht (Fahrtrichtung y, `forward` des Gestänges für Sturz und Spur), der Dämpfer ist
+  durch eine Stellstange zur Mutter einer TR8-Spindel in Fahrtrichtung ersetzt, der Umlenkhebel ist ein Winkelhebel um die
+  Normale der Ebene aus Fahrtrichtung und Pushrod. ±6 mm Schlitten stellen etwa ±10 mm Höhe.
 - **③:** „Gestänge · Druckteile & Halter“ gibt jeden gedruckten Lenker als STL aus (Rohre zwischen den Punkten, Hülse an
   Drehachsen mit Bohrung Ø 3,2 für M3, Kernloch Ø 2,5 für Kugelbolzen bzw. den Gewindestift der Pfanne) und die
   **Halter am Chassis** (Säule mit Fuß und Schraubloch bis zum einstellbaren Boden, Laschen an Drehachsen). Die Stückliste

@@ -19,8 +19,9 @@ export type LinkKind='lenker'|'stab'|'feder';
 /** `d`: tube Ø of a printed link. `part`: the damper of a `feder`. `wheel`: hub face (`at`) and wheel centre (`to`) on a
  * link that carries a wheel. `input`: a slider turns the link about its axis point `point`, in degrees. */
 export type Link={id:string;label:string;kind:LinkKind;points:Point[];d?:number;part?:string;wheel?:{at:V;to:V;part:string};input?:{point:string;min:number;max:number}};
-/** `floor`: where the brackets on the world stand (z); without, a little below the lowest of them. */
-export type Linkage={links:Link[];floor?:number};
+/** `floor`: where the brackets on the world stand (z); without, a little below the lowest of them. `forward`: the
+ * direction the car drives in, for camber and toe (x without). */
+export type Linkage={links:Link[];floor?:number;forward?:V};
 
 // ---------- bought parts, 1:10 ----------
 /** An oil damper: eye to eye extended (`length`) and its stroke; body and spring Ø for the view. */
@@ -107,7 +108,9 @@ export class LinkageSolver{private last?:{key:string;pose:LinkPose};private warm
 export type Reading={/** wheel centre up from the design pose (mm) */lift?:number;/** degrees, negative: top of the wheel inwards */camber?:number;/** degrees, positive: front of the wheel inwards */toe?:number;
  dampers:{id:string;label:string;length:number;/** compressed from the design pose (mm) */travel:number;/** within its stroke */fits:boolean}[]};
 export function read(g:Linkage,pose:LinkPose):Reading{const out:Reading={dampers:[]};
- const wheel=g.links.find(l=>l.wheel);if(wheel?.wheel){const key=linkBody(wheel.id),c=pose.at(key,wheel.wheel.to),h=pose.at(key,wheel.wheel.at),a=unit(sub(c,h));out.lift=c[2]-wheel.wheel.to[2];out.camber=-Math.atan2(a[2],Math.abs(a[1]))*180/Math.PI;out.toe=Math.atan2(a[0],Math.abs(a[1]))*180/Math.PI*Math.sign(a[1]||1);}
+ const wheel=g.links.find(l=>l.wheel);if(wheel?.wheel){const key=linkBody(wheel.id),c=pose.at(key,wheel.wheel.to),h=pose.at(key,wheel.wheel.at),a=unit(sub(c,h)),f=g.forward??[1,0,0],ahead=unit([f[0],f[1],0]),side=cross([0,0,1],ahead),across=Math.abs(dot(a,side));
+  // Both sides alike: camber negative with the top of the wheel inwards, toe positive with its front inwards.
+  out.lift=c[2]-wheel.wheel.to[2];out.camber=-Math.atan2(a[2],across)*180/Math.PI;out.toe=Math.atan2(dot(a,ahead),across)*180/Math.PI;}
  for(const l of g.links)if(l.kind==='feder'&&l.points.length===2){const [a,b]=l.points,d=damperOf(l.part),length=dist(pose.at(a.body,a.at),pose.at(b.body,b.at));out.dampers.push({id:l.id,label:l.label,length,travel:dist(a.at,b.at)-length,fits:length<=d.length+1e-6&&length>=d.length-d.stroke-1e-6});}
  return out;}
 /** The linkage over the range of its first input: readings at `samples` steps. From the design pose outwards both
@@ -210,7 +213,7 @@ export function parseLinkage(value:unknown):Linkage{const g=value as Linkage;if(
   if(l.input){const i=l.input;if(typeof i.point!=='string'||!Number.isFinite(i.min)||!Number.isFinite(i.max)||i.min>i.max)throw Error('Gestänge: Eingang ungültig');out.input={point:i.point,min:i.min,max:i.max};}
   return out;});
  if(new Set(links.map(l=>l.id)).size!==links.length)throw Error('Gestänge: Lenker doppelt');
- return {links,...(typeof g.floor==='number'&&Number.isFinite(g.floor)?{floor:g.floor}:{})};}
+ return {links,...(typeof g.floor==='number'&&Number.isFinite(g.floor)?{floor:g.floor}:{}),...(g.forward?{forward:vec(g.forward,'Fahrtrichtung')}:{})};}
 
 // ---------- a corner to start from ----------
 /** A front corner of a 1:10 formula car, left side: double wishbones, pushrod onto a rocker, damper across, tie rod.

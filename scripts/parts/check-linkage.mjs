@@ -26,3 +26,11 @@ assert.deepEqual(parseLinkage(JSON.parse(JSON.stringify(g))),g);assert.throws(()
 assert.equal(linkBody('a'),'lenker:a');
 console.log(`Gestänge: Pushrod-Ecke bestimmt, ${r.lift.toFixed(1)} mm Einfedern bei 6°, Dämpfer ${r.dampers[0].travel.toFixed(1)} mm, Sturz ${r.camber.toFixed(2)}°, MR ${mr.toFixed(2)}, ${ms.toFixed(1)} ms / Pose, ${step.toFixed(1)} ms je Reglerschritt.`);
 {const rows=sweep(g,around,21),toe=rows.map(x=>x.reading.toe),d=rows.map(x=>x.reading.dampers[0]);assert.ok(Math.max(...toe)-Math.min(...toe)<.05,'kaum Spuränderung');assert.ok(d.every(x=>x.fits),'Dämpfer bleibt im Hub');}
+// Driven from outside: the ride height example's stab hangs on the nut of a lead screw. The nut ahead lowers the wheel
+// (the car rises), back raises it; every pose closes, camber and toe are read along the car's own direction.
+{const {buildExamples}=await import('../../src/mechanics/parts/examples.ts');const {newBuild}=await import('../../src/mechanics/parts/build.ts');
+ const b={...newBuild('h','H'),plates:[]};buildExamples.find(x=>x.key==='hoehe').make(b);const h=b.linkage;assert.equal(freedomOf(h),0);assert.deepEqual(linkageIssues(h,new Set(['teil:mutter'])),[]);
+ const id={position:[0,0,0],rotation:[0,0,0,1]},at=v=>({now:{'teil:mutter':{position:[0,v,0],rotation:[0,0,0,1]}},rest:{'teil:mutter':id}});
+ const r=v=>{const p=solveLinkage(h,at(v),{});assert.ok(p.error<1e-6,`schließt bei ${v} mm: ${p.error}`);return read(h,p);};
+ const z=r(0),fw=r(6),bw=r(-6);assert.ok(Math.abs(z.lift)<1e-9&&Math.abs(z.camber)<1e-9&&Math.abs(z.toe)<1e-9);assert.ok(fw.lift<-3,`vor: ${fw.lift}`);assert.ok(bw.lift>3,`zurück: ${bw.lift}`);
+ console.log(`Höhenverstellung: Schlitten ±6 mm → Radhub ${fw.lift.toFixed(1)} / +${bw.lift.toFixed(1)} mm, Sturz ${fw.camber.toFixed(2)}° / ${bw.camber.toFixed(2)}°, Spur ${fw.toe.toFixed(2)}° / ${bw.toe.toFixed(2)}°.`);}
