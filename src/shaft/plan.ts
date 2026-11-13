@@ -117,7 +117,7 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
  for(const side of ['links','rechts'] as Side[]){const mine=bodies.filter(b=>b.side===side);if(!mine.length)continue;const o=side==='links'?mine.reduce((a,b)=>b.x0<a.x0?b:a):mine.reduce((a,b)=>b.x1>a.x1?b:a),face=side==='links'?o.x0:o.x1;
   if(!rings.some(r=>Math.abs(r.x-face)<3)&&!ends.some(e=>e.end===side&&Math.abs(face-(side==='links'?0:L))<3))issues.push({level:'hinweis',message:`${o.label} ist nach ${side} nicht gesichert: Sicherungsring, Stellring oder Gewinde mit Scheibe, oder das Gehäuse hält es`,ref:o.id});}
  // Shafts inside.
- for(const i of p.inserts){const wall=Math.min(...within(i.x0,i.x1).map(c=>(inner(c.profile)-outer(i.profile))/2));if(wall<=eps)issues.push({level:'fehler',message:`${i.label} (${label(i.profile)}) passt nicht in die Welle: dort ${within(i.x0,i.x1).map(c=>label(c.profile)).join(', ')}`,ref:i.id});else if(wall<i.wall-eps)issues.push({level:wall<s.minWall?'fehler':'warnung',message:`Wand um ${i.label} nur ${mm(wall)} (gewünscht ${mm(i.wall)})`,ref:i.id});}
+ for(const i of p.inserts){const wall=Math.min(...within(i.x0,i.x1).map(c=>(inner(c.profile)-outer(i.profile))/2));if(wall<=eps)issues.push({level:'fehler',message:`${i.label} (${label(i.profile)}) passt nicht in die Welle: dort ${[...new Set(within(i.x0,i.x1).map(c=>label(c.profile)))].join(', ')}`,ref:i.id});else if(wall<i.wall-eps)issues.push({level:wall<s.minWall?'fehler':'warnung',message:`Wand um ${i.label} nur ${mm(wall)} (gewünscht ${mm(i.wall)})`,ref:i.id});}
  // Machining.
  const covered=(a:number,b:number)=>bodies.find(t=>overlaps(t.x0,t.x1,a,b));
  for(const w of doc.works){const m:Machining={work:w};p.machining.push(m);

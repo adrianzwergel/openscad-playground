@@ -12,7 +12,8 @@ Position auf der Welle (mm). Dazu eine 3D-Vorschau, die nur zeigt.
 | Schritt | Stand |
 |---|---|
 | 1 | fertig: `welle.html` (Karte „Wellen-Generator“ auf der Studio-Startseite), Wellen als eigene Dateien im OPFS (Ordner `wellen`, Format `shaft-1`), Längsschnitt, Meldungen, Stückliste, drei Beispiele. Prüfung: `scripts/shaft/check-plan.mjs`, `scripts/shaft/check-page-browser.mjs` |
-| 2–5 | offen |
+| 2 | fertig: Zeitleiste in `editor.ts` mit den Spuren Welle, Auf, Erzeugt, In, Bearbeitung, Abschnitte; Ziehen aus dem Katalog oder Klick (Teil in die Mitte, Steckung ans freie Ende), Verschieben, Kanten ziehen, Wellenende ziehen, Einrasten an Kanten und im 0,5-mm-Raster (`snap.ts`, Alt: frei), Teile weichen auf den nächsten freien Platz aus, Eigenschaften mit genauen Werten, Meldungen wählen ihr Teil, Entf, Strg+Z/Strg+Shift+Z, Zoom (Strg+Mausrad). Prüfung: `scripts/shaft/check-snap.mjs`, `scripts/shaft/check-page-browser.mjs` |
+| 3–5 | offen |
 
 **Code:** `src/shaft/profile.ts` (Profile, `passes`, `largestPassing`), `din.ts`, `catalog.ts` (aus Lagerkatalog, LDraw,
 Teilekatalog), `model.ts` (Dokument), `plan.ts` (`planShaft`), `draw.ts` (SVG), `page.ts`.

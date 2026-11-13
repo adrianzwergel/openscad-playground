@@ -8,19 +8,19 @@ import type {Profile} from './profile.ts';
 
 /** Sits on the shaft: its bore, how wide it is along the shaft, its outer Ø. `stop`: the largest shoulder that touches
  * only what turns with the shaft (a bearing's inner ring). `own`: bore and width can be set per piece. */
-export type OnPart={id:string;label:string;group:string;bore:Profile;width:number;outer:number;stop?:number;source:string;checked:boolean;note?:string;own?:boolean;/** A spacer: its bore follows the piece it sits on. */spacer?:boolean};
+export type OnPart={id:string;label:string;/** For narrow clips. */short:string;group:string;bore:Profile;width:number;outer:number;stop?:number;source:string;checked:boolean;note?:string;own?:boolean;/** A spacer: its bore follows the piece it sits on. */spacer?:boolean};
 /** Goes into the shaft from one end. `length`: how long it is (a motor's shaft), the most it can go in. */
 export type InPart={id:string;label:string;group:string;profile:Profile;length?:number;source:string;checked:boolean;note?:string};
 
 export const onGroups=['Lager','LEGO-Zahnräder','Stirnräder','Riemenscheiben','Hülsen'];
 export const inGroups=['Motorwellen','LEGO','Wellen'];
 
-const bearings:OnPart[]=bearingCatalog.filter(b=>b.kind==='ball').map(b=>({id:`lager-${b.id}`,label:b.label,group:'Lager',bore:rund(b.d),width:b.B,outer:b.D,stop:b.d+.4*(b.D-b.d),source:'Lagerkatalog des Studios',checked:true}));
+const bearings:OnPart[]=bearingCatalog.filter(b=>b.kind==='ball').map(b=>({id:`lager-${b.id}`,label:b.label,short:b.id,group:'Lager',bore:rund(b.d),width:b.B,outer:b.D,stop:b.d+.4*(b.D-b.d),source:'Lagerkatalog des Studios',checked:true}));
 // One gear per LDraw part a LEGO axle drives; reinforced and sliding versions have the same seat.
-const lego:OnPart[]=legoParts.filter(p=>p.search&&p.teeth>0&&p.mount==='cross').map(p=>({id:`lego-${p.id}`,label:`LEGO z${p.teeth} · ${p.name.replace(/^Technic Gear\s+/,'').replace(/\s+/g,' ')}`,group:'LEGO-Zahnräder',bore:{kind:'kreuz'} as Profile,width:Math.min(...p.size),outer:2*p.radius,source:'LDraw',checked:true})).sort((a,b)=>a.outer-b.outer);
-const spur=(teeth:number,module:number):OnPart=>({id:`stirnrad-m${module}-z${teeth}`,label:`Stirnrad z${teeth} m${module} (gedruckt)`,group:'Stirnräder',bore:rund(5),width:10,outer:module*(teeth+2),source:'Generator des Studios',checked:true,own:true,note:'Bohrung und Breite am Teil einstellbar; das Rad selbst macht das Studio.'});
-const pulley=(teeth:number):OnPart=>({id:`gt2-z${teeth}`,label:`GT2-Scheibe z${teeth}`,group:'Riemenscheiben',bore:rund(5),width:16,outer:Math.max(2*(teeth/Math.PI+1.5),16),source:'Generator des Studios',checked:true,own:true,note:'6 mm Riemen, Nabe 8 mm lang.'});
-export const spacerPart:OnPart={id:'huelse',label:'Distanzhülse',group:'Hülsen',bore:rund(5),width:5,outer:0,source:'Wellen-Generator',checked:true,own:true,spacer:true,note:'Innen passt sie sich dem Abschnitt an, auf dem sie sitzt.'};
+const lego:OnPart[]=legoParts.filter(p=>p.search&&p.teeth>0&&p.mount==='cross').map(p=>({id:`lego-${p.id}`,short:`z${p.teeth}`,label:`LEGO z${p.teeth} · ${p.name.replace(/^Technic Gear\s+/,'').replace(/\s+/g,' ')}`,group:'LEGO-Zahnräder',bore:{kind:'kreuz'} as Profile,width:Math.min(...p.size),outer:2*p.radius,source:'LDraw',checked:true})).sort((a,b)=>a.outer-b.outer);
+const spur=(teeth:number,module:number):OnPart=>({id:`stirnrad-m${module}-z${teeth}`,short:`z${teeth} m${module}`,label:`Stirnrad z${teeth} m${module} (gedruckt)`,group:'Stirnräder',bore:rund(5),width:10,outer:module*(teeth+2),source:'Generator des Studios',checked:true,own:true,note:'Bohrung und Breite am Teil einstellbar; das Rad selbst macht das Studio.'});
+const pulley=(teeth:number):OnPart=>({id:`gt2-z${teeth}`,short:`GT2 z${teeth}`,label:`GT2-Scheibe z${teeth}`,group:'Riemenscheiben',bore:rund(5),width:16,outer:Math.max(2*(teeth/Math.PI+1.5),16),source:'Generator des Studios',checked:true,own:true,note:'6 mm Riemen, Nabe 8 mm lang.'});
+export const spacerPart:OnPart={id:'huelse',short:'Hülse',label:'Distanzhülse',group:'Hülsen',bore:rund(5),width:5,outer:0,source:'Wellen-Generator',checked:true,own:true,spacer:true,note:'Innen passt sie sich dem Abschnitt an, auf dem sie sitzt.'};
 export const onParts:OnPart[]=[...bearings,...lego,...[[12,1],[20,1],[30,1],[40,1],[15,2],[20,2]].map(([z,m])=>spur(z,m)),...[16,20,40].map(pulley),spacerPart];
 
 // NEMA motors have a D shaft; the depth of the flat is the usual one, the catalog only knows the Ø.
