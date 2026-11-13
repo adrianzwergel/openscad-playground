@@ -5,14 +5,14 @@
 
 /** The open scene and phase; `build`, `mechanism`: what files from before the phases name. */
 export type ProjectView={scene?:string;phase?:number;build?:string;mechanism?:string};
-export type ProjectFile={format:'studio-project-1';name:string;updated:string;doc:unknown;view?:ProjectView};
+export type ProjectFile={format:string;name:string;updated:string;doc:unknown;view?:ProjectView};
 export type ProjectEntry={id:string;name:string;updated:string};
-const dirName='projekte',activeName='geoeffnet.txt',fileOf=(id:string)=>`${id}.json`,stashKey=(id:string)=>`studio-projekt-kopie:${id}`;
+const activeName='geoeffnet.txt',fileOf=(id:string)=>`${id}.json`,stashKey=(id:string)=>`studio-projekt-kopie:${id}`;
 const stashed=(id:string)=>{try{const t=localStorage.getItem(stashKey(id));return t?JSON.parse(t) as ProjectFile:undefined;}catch{return undefined;}};
 
 /** Where the files live: OPFS, or memory where the browser has none (then nothing survives a reload). */
 type Backend={read:(name:string)=>Promise<string|undefined>;write:(name:string,text:string)=>Promise<void>;remove:(name:string)=>Promise<void>;list:()=>Promise<string[]>};
-async function opfs():Promise<Backend|undefined>{
+async function opfs(dirName:string):Promise<Backend|undefined>{
  if(!navigator.storage?.getDirectory)return undefined;
  let dir:FileSystemDirectoryHandle;try{dir=await (await navigator.storage.getDirectory()).getDirectoryHandle(dirName,{create:true});}catch{return undefined;}
  return {
@@ -28,13 +28,14 @@ export class ProjectStore{
  /** Saves run one after the other; only the newest waiting one is written. */
  private chain:Promise<void>=Promise.resolve();private queued=new Map<string,string>();
  private release?:()=>void;
- private constructor(private files:Backend,readonly persistent:boolean){}
- static async open(){const b=await opfs();if(b)void navigator.storage.persist?.().catch(()=>{});return new ProjectStore(b??memory(),!!b);}
+ private constructor(private files:Backend,readonly persistent:boolean,private format:string){}
+ /** `dir`: the folder in OPFS, `format`: what its files must say they are (the Studio's projects by default). */
+ static async open(dir='projekte',format='studio-project-1'){const b=await opfs(dir);if(b)void navigator.storage.persist?.().catch(()=>{});return new ProjectStore(b??memory(),!!b,format);}
  async list():Promise<ProjectEntry[]>{
   const out:ProjectEntry[]=[];for(const name of await this.files.list()){if(!name.endsWith('.json'))continue;try{const f=JSON.parse(await this.files.read(name)??'') as ProjectFile;out.push({id:name.slice(0,-5),name:f.name,updated:f.updated});}catch{out.push({id:name.slice(0,-5),name:`${name} (beschädigt)`,updated:''});}}
   return out.sort((a,b)=>a.name.localeCompare(b.name,'de'));
  }
- async read(id:string){const text=await this.files.read(fileOf(id)),kept=stashed(id);if(text===undefined&&!kept)throw Error('Projektdatei fehlt');const f=text===undefined?kept!:JSON.parse(text) as ProjectFile;if(f.format!=='studio-project-1')throw Error('Unbekanntes Dateiformat');
+ async read(id:string){const text=await this.files.read(fileOf(id)),kept=stashed(id);if(text===undefined&&!kept)throw Error('Projektdatei fehlt');const f=text===undefined?kept!:JSON.parse(text) as ProjectFile;if(f.format!==this.format)throw Error('Unbekanntes Dateiformat');
   // A page that was closed or reloaded while its last write was still on the way left a copy: the newer one wins.
   if(kept&&kept.updated>f.updated){await this.write(id,kept);return kept;}return f;}
  /** Synchronous copy for a page going away: an asynchronous write may not finish before the next page reads. */

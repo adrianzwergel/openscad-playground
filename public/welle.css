@@ -1,0 +1,30 @@
+/* Shaft generator: the Studio's look, its own layout. */
+a.button{color:inherit;text-decoration:none;padding:7px 10px;border-radius:6px}a.button:hover{background:#2a3742}
+#shaft-name{margin-left:12px;color:var(--soft)}
+body[data-view=start] .shaft-only{display:none!important}body[data-view=shaft] .start-only{display:none!important}
+#generator{grid-row:2;display:grid;grid-template-columns:260px minmax(0,1fr) 320px;min-height:0}
+body[data-view=start] #generator{grid-template-columns:260px minmax(0,1fr)}
+#generator>*{overflow:auto;padding:14px}
+#shafts,#report{background:var(--panel);border-right:1px solid var(--line)}#report{border-right:0;border-left:1px solid var(--line)}
+#generator h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:#b9c9d2;margin:18px 0 8px}
+#examples{display:flex;flex-direction:column;gap:6px}#examples .start-card{min-height:0;padding:10px 12px}
+#shaft-list{display:flex;flex-direction:column;gap:4px}.shaft-open{text-align:left}.shaft-open[aria-current=true]{border-color:var(--accent)}
+#new-shaft{width:100%}
+#shaft-settings{display:flex;gap:16px;align-items:center;margin-bottom:12px}#shaft-settings input{width:90px}
+#drawing{overflow:auto;background:#10161c;border:1px solid var(--line);border-radius:8px;padding:8px}
+.columns{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+#generator ol,#generator ul{margin:0;padding-left:18px;line-height:1.6}
+#issues{list-style:none;padding:0!important}#issues li{padding:6px 8px;border-radius:6px;margin-bottom:4px;border-left:3px solid}
+#issues li.fehler{background:#3a2226;border-color:#e06c6c}#issues li.warnung{background:#3a3322;border-color:#e0b56c}#issues li.hinweis{background:#22303a;border-color:#6ca8e0}
+footer{grid-row:3;padding:4px 12px;font-size:12px;color:var(--soft);border-top:1px solid var(--line)}
+/* Drawing */
+.silhouette rect{stroke-width:1}
+.silhouette .section rect{fill:#7d8b96;stroke:#c6d2da}.silhouette .section.bund rect{fill:#8e9ba5}.silhouette .section.kreuz rect{fill:#6e9a8a}.silhouette .section.d rect{fill:#8a8a6e}.silhouette .section.eigen rect{stroke:#72dac1;stroke-dasharray:3 2}
+.silhouette .part rect{fill:#4a607433;stroke:#9fb4c4;stroke-dasharray:4 3}
+.silhouette .sleeve rect{fill:#c58a4a99;stroke:#f0b46e}.silhouette .sleeve.huelse rect{fill:#b07fc699;stroke:#d6a9ec}
+.silhouette .insert rect{fill:#151b22;stroke:#f0d36e;stroke-dasharray:3 2}
+.silhouette .core{stroke:#1d262e;stroke-dasharray:2 2}
+.silhouette .drill{fill:#151b22;stroke:#ff8d8d}.silhouette .groove{stroke:#ff8d8d;stroke-width:2}.silhouette .key{fill:#ff8d8d}
+.silhouette .axis{stroke:#72dac1;stroke-dasharray:8 4 2 4}
+.silhouette .tick{stroke:#6b7c88;fill:#8fa1ad;font-size:10px;text-anchor:middle}
+#generator #workspace{display:block;position:static}

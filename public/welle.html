@@ -1,0 +1,27 @@
+<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wellen-Generator</title><link rel="stylesheet" href="./studio.css"><link rel="stylesheet" href="./welle.css">
+<body data-view="start" class="generator">
+<header>
+ <a class="ghost button" href="./studio.html" title="Zurück ins Studio">← Studio</a>
+ <b>Wellen-Generator</b><b id="shaft-name"></b><span id="save-state" class="muted" role="status"></span>
+ <span class="spacer"></span>
+ <button id="shaft-close" class="ghost shaft-only">Alle Wellen</button><button id="shaft-rename" class="ghost shaft-only">Umbenennen</button><button id="shaft-delete" class="ghost danger shaft-only">Löschen</button>
+</header>
+<main id="generator">
+ <aside id="shafts">
+  <button id="new-shaft" class="primary">＋ Neue Welle</button>
+  <h2>Beispiele</h2><div id="examples"></div>
+  <h2>Deine Wellen</h2><div id="shaft-list"></div>
+ </aside>
+ <section id="workspace">
+  <div id="shaft-settings" class="shaft-only"></div>
+  <div id="drawing" class="shaft-only"></div>
+  <p class="muted start-only">Eine Welle aus dem, was auf ihr sitzt und in ihr steckt: Lager, Zahnräder, Riemenscheiben, Motorwellen und LEGO-Achsen aus dem Katalog des Studios. Der Generator legt Abschnitte, Absätze, Adapter und Distanzhülsen so fest, dass sich alles montieren lässt.</p>
+  <div class="shaft-only columns"><section><h2>Abschnitte</h2><ol id="sections"></ol></section><section><h2>Auf und in der Welle</h2><ul id="things"></ul></section></div>
+ </section>
+ <aside id="report" class="shaft-only">
+  <h2 id="issues-title">Meldungen</h2><ul id="issues"></ul>
+  <h2>Stückliste</h2><ul id="bom"></ul>
+ </aside>
+</main>
+<footer id="status" role="status">Bereit</footer>
+<script src="./welle.js"></script></body></html>
