@@ -63,3 +63,6 @@ footer{grid-row:3;padding:4px 12px;font-size:12px;color:var(--soft);border-top:1
 .silhouette .axis{stroke:#72dac1;stroke-dasharray:8 4 2 4}
 .silhouette .tick{stroke:#6b7c88;fill:#8fa1ad;font-size:10px;text-anchor:middle}
 .clip.from-links{border-left:4px solid var(--accent)}.clip.from-rechts{border-right:4px solid var(--accent)}
+#preview-box{margin-top:12px}#preview{height:320px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#10161c}
+#preview-state{font-size:12px;margin:6px 2px}#preview-state[data-state=error]{color:#ff9d9d}
+#files{list-style:none;padding:0!important}.file-row{display:flex;align-items:center;gap:4px;margin-bottom:2px}.file-row span{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-row button{padding:3px 8px;font-size:12px;border-color:#40515e}

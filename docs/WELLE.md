@@ -13,7 +13,8 @@ Position auf der Welle (mm). Dazu eine 3D-Vorschau, die nur zeigt.
 |---|---|
 | 1 | fertig: `welle.html` (Karte „Wellen-Generator“ auf der Studio-Startseite), Wellen als eigene Dateien im OPFS (Ordner `wellen`, Format `shaft-1`), Längsschnitt, Meldungen, Stückliste, drei Beispiele. Prüfung: `scripts/shaft/check-plan.mjs`, `scripts/shaft/check-page-browser.mjs` |
 | 2 | fertig: Zeitleiste in `editor.ts` mit den Spuren Welle, Auf, Erzeugt, In, Bearbeitung, Abschnitte; Ziehen aus dem Katalog oder Klick (Teil in die Mitte, Steckung ans freie Ende), Verschieben, Kanten ziehen, Wellenende ziehen, Einrasten an Kanten und im 0,5-mm-Raster (`snap.ts`, Alt: frei), Teile weichen auf den nächsten freien Platz aus, Eigenschaften mit genauen Werten, Meldungen wählen ihr Teil, Entf, Strg+Z/Strg+Shift+Z, Zoom (Strg+Mausrad). Prüfung: `scripts/shaft/check-snap.mjs`, `scripts/shaft/check-page-browser.mjs` |
-| 3–5 | offen |
+| 3 | fertig: replicad 1.2.0 mit OpenCascade 1.1.0 (`replicad-opencascadejs`, LGPL-2.1) im Worker `welle-cad-worker.js`; `cad.ts` baut Welle, Adapter, Hülsen und Platzhalter der Kaufteile; 3D-Vorschau (`preview.ts`), Dateien je Teil als STEP und binäres STL, Baugruppe als STEP. Prüfung: `scripts/shaft/check-cad.mjs` (Node), `scripts/shaft/check-cad-browser.mjs` |
+| 4–5 | offen |
 
 **Code:** `src/shaft/profile.ts` (Profile, `passes`, `largestPassing`), `din.ts`, `catalog.ts` (aus Lagerkatalog, LDraw,
 Teilekatalog), `model.ts` (Dokument), `plan.ts` (`planShaft`), `draw.ts` (SVG), `page.ts`.
@@ -25,6 +26,15 @@ das, was nach innen noch durch muss, bekommt es einen Adapter. Hält nichts ein 
 dazu, bei einem Adapter dessen Bund. Der Bund ist um `shoulder` größer als die Nachbarn und berührt bei Lagern nur den
 Innenring. Danach prüft ein eigener Durchgang alles unabhängig davon, wie es entstand, auch von Hand gesetzte Abschnitte.
 Gewertet wird: Fehler ≫ Adapter > Warnungen > Hülsen.
+
+**Geometrie (`cad.ts`):** Gleiche Profile nebeneinander werden ein Körper. Runde Abschnitte am Stück sind ein gedrehtes
+Umrissprofil mit den Fasen darin, andere Profile werden entlang x extrudiert (Ebene YZ, die Abflachung einer D-Welle zeigt
+nach +z). Gesteckte Wellen werden vom Ende her abgezogen. Druck: Bohrungen `play` je Seite größer, Kreuz/D/Sechskant als
+Zapfen `play` kleiner, runde Sitze nennmaßig; CNC: alles nennmaßig.
+
+**Speicher:** Boolesche Operationen von OpenCascade lassen je Aufruf etwas WASM-Speicher liegen (gemessen etwa 1,6 MB je
+Bau des Beispiels, ohne Drehprofil waren es 8 MB). Daher so wenige Booleans wie möglich, `localGC` je Bau, und
+`CadClient` ersetzt den Worker nach einer Antwort, wenn er über 700 MB liegt (`?cadlimit=` zum Prüfen).
 
 ## Bedienung
 

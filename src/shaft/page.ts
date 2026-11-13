@@ -7,6 +7,8 @@ import {planShaft} from './plan.ts';
 import type {Plan} from './plan.ts';
 import {shaftExamples} from './examples.ts';
 import {ShaftEditor} from './editor.ts';
+import {CadClient} from './cad-client.ts';
+import {ShaftPreview} from './preview.ts';
 
 const FORMAT='shaft-1';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
@@ -17,6 +19,17 @@ let open:{id:string;name:string;doc:ShaftDoc;readOnly:boolean}|undefined;
 let plan:Plan|undefined,saveTimer:ReturnType<typeof setTimeout>|undefined;
 let past:string[]=[],future:string[]=[],before:string|undefined;
 const status=(m:string)=>{$('status').textContent=m;};
+// ---------- CAD: preview a moment after a change, files on request ----------
+const cad=new CadClient(Number(new URLSearchParams(location.search).get('cadlimit'))||undefined);
+let preview:ShaftPreview|undefined,meshed='',meshTimer:ReturnType<typeof setTimeout>|undefined,filesFor='',files:Promise<{name:string;data:ArrayBuffer}[]>|undefined;
+const previewState=(text:string,state:string)=>{const e=$('preview-state');e.textContent=text;e.dataset.state=state;};
+function schedulePreview(){if(!open)return;const key=JSON.stringify(open.doc);if(key===meshed)return;meshed=key;clearTimeout(meshTimer);previewState('3D-Modell rechnet …','busy');
+ meshTimer=setTimeout(()=>{const doc=JSON.parse(key);void cad.request('mesh',doc).then(r=>{if(meshed!==key)return;if(r.kind==='error'){previewState(`Kein 3D-Modell: ${r.message}`,'error');return;}if(r.kind!=='mesh')return;preview??=new ShaftPreview($('preview'));preview.show(r.meshes);previewState('Ziehen dreht, Rad zoomt, rechte Taste verschiebt. Gekaufte Teile sind durchsichtig.','ready');},e=>{if(meshed===key){meshed='';previewState(`Kein 3D-Modell: ${e.message}`,'error');}});},250);}
+/** The files of the open shaft, made once per state. */
+function shaftFiles(){const key=JSON.stringify(open!.doc);if(key!==filesFor||!files){filesFor=key;files=cad.request('files',JSON.parse(key)).then(r=>{if(r.kind==='error')throw Error(r.message);if(r.kind!=='files')throw Error('Unerwartete Antwort');return r.files;});files.catch(()=>{if(filesFor===key)files=undefined;});}return files;}
+function download(name:string){const base=open!.name.replace(/[^wäöüÄÖÜß-]+/g,'_');status('Datei wird erzeugt …');void shaftFiles().then(all=>{const f=all.find(x=>x.name===name);if(!f)throw Error(`${name} fehlt`);const url=URL.createObjectURL(new Blob([f.data],{type:name.endsWith('.stl')?'model/stl':'model/step'})),a=el('a',{href:url,download:`${base}-${name}`});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status(`${base}-${name} gespeichert.`);},e=>status(`Datei nicht erzeugt: ${e.message}`));}
+function renderFiles(p:Plan){const row=(label:string,file:string,formats:string[])=>el('li',{className:'file-row'},el('span',{textContent:label}),...formats.map(x=>{const b=el('button',{className:'ghost',textContent:x.toUpperCase()});b.dataset.file=`${file}.${x}`;b.onclick=()=>download(`${file}.${x}`);return b;}));
+ $('files').replaceChildren(row('Welle','welle',['step','stl']),...p.sleeves.map((sl,i)=>row(sl.label,`${sl.kind}-${i+1}`,['step','stl'])),row('Baugruppe mit Kaufteilen','baugruppe',['step']));}
 const editor=new ShaftEditor({
  doc:()=>open!.doc,plan:()=>plan!,readOnly:()=>!!open?.readOnly,
  begin:()=>{before??=JSON.stringify(open!.doc);},
@@ -48,6 +61,7 @@ function draw(){
  const counts=['fehler','warnung','hinweis'].map(l=>p.issues.filter(i=>i.level===l).length);
  $('issues-title').textContent=counts[0]?`Meldungen · ${counts[0]} Fehler`:counts[1]?`Meldungen · ${counts[1]} ${counts[1]===1?'Warnung':'Warnungen'}`:'Meldungen · alles montierbar';
  $('issues').replaceChildren(...p.issues.map(i=>{const li=el('li',{className:i.level,textContent:i.message});li.dataset.level=i.level;if(i.ref){li.classList.add('link');li.onclick=()=>{editor.selectRef(i.ref!);draw();};}return li;}));
+ renderFiles(p);schedulePreview();
  $('bom').replaceChildren(...p.bom.map(b=>el('li',{},`${b.count} × ${b.what}`,b.note?el('small',{className:'muted',textContent:` · ${b.note}`}):'')));
 }
 
