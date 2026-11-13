@@ -1,4 +1,4 @@
-# Wellen-Generator (Plan)
+# Wellen-Generator
 
 Eine eigene Seite neben dem Studio, mit demselben Katalog. Man setzt eine Welle aus dem zusammen, was auf ihr sitzt und was
 in ihr steckt; der Generator legt Abschnitte, Absätze, Hülsen und Adapter so fest, dass sich alles montieren lässt, und gibt
@@ -14,7 +14,10 @@ Position auf der Welle (mm). Dazu eine 3D-Vorschau, die nur zeigt.
 | 1 | fertig: `welle.html` (Karte „Wellen-Generator“ auf der Studio-Startseite), Wellen als eigene Dateien im OPFS (Ordner `wellen`, Format `shaft-1`), Längsschnitt, Meldungen, Stückliste, drei Beispiele. Prüfung: `scripts/shaft/check-plan.mjs`, `scripts/shaft/check-page-browser.mjs` |
 | 2 | fertig: Zeitleiste in `editor.ts` mit den Spuren Welle, Auf, Erzeugt, In, Bearbeitung, Abschnitte; Ziehen aus dem Katalog oder Klick (Teil in die Mitte, Steckung ans freie Ende), Verschieben, Kanten ziehen, Wellenende ziehen, Einrasten an Kanten und im 0,5-mm-Raster (`snap.ts`, Alt: frei), Teile weichen auf den nächsten freien Platz aus, Eigenschaften mit genauen Werten, Meldungen wählen ihr Teil, Entf, Strg+Z/Strg+Shift+Z, Zoom (Strg+Mausrad). Prüfung: `scripts/shaft/check-snap.mjs`, `scripts/shaft/check-page-browser.mjs` |
 | 3 | fertig: replicad 1.2.0 mit OpenCascade 1.1.0 (`replicad-opencascadejs`, LGPL-2.1) im Worker `welle-cad-worker.js`; `cad.ts` baut Welle, Adapter, Hülsen und Platzhalter der Kaufteile; 3D-Vorschau (`preview.ts`), Dateien je Teil als STEP und binäres STL, Baugruppe als STEP. Prüfung: `scripts/shaft/check-cad.mjs` (Node), `scripts/shaft/check-cad-browser.mjs` |
-| 4–5 | offen |
+| 4 | fertig: Bearbeitungen in der Geometrie (`machiningTools` in `cad.ts`): Kernloch der Madenschraube radial unter ihrem Winkel, Kernloch im Ende, Passfedernut Form A mit runden Enden, Nut für den Sicherungsring, Abflachung. Prüfung: Volumen je Bearbeitung in `scripts/shaft/check-cad.mjs` |
+| 5 | fertig: „Alles als ZIP“ mit STEP und STL jedes gefertigten Teils, Baugruppe, `stueckliste.csv` und `fertigung.txt` (`notes.ts`): bei CNC die üblichen Passungen je Abschnitt (Lagersitz k6, Schiebesitz h7, Bohrung H7, Nut N9, sonst ISO 2768-m), beim Druck das eingerechnete Spiel, dazu jeder Arbeitsschritt und die offenen Meldungen. Prüfung: `scripts/shaft/check-notes.mjs`, ZIP in `check-cad-browser.mjs` |
+
+**Offen:** Probedrucke für das Spiel (0,1 mm je Seite, Kreuz) stehen aus; Zahnräder mit Passfedernut in der Bohrung fehlen im Katalog; Abflachung der NEMA-Wellen von Hand angenommen; Passungen stehen in `fertigung.txt`, nicht als PMI in der STEP-Datei; Welle aus dem Studio öffnen und zurückgeben.
 
 **Code:** `src/shaft/profile.ts` (Profile, `passes`, `largestPassing`), `din.ts`, `catalog.ts` (aus Lagerkatalog, LDraw,
 Teilekatalog), `model.ts` (Dokument), `plan.ts` (`planShaft`), `draw.ts` (SVG), `page.ts`.

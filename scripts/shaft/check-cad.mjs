@@ -29,8 +29,21 @@ const expect=(doc,plan,s)=>{const g=doc.making==='druck'?doc.settings.play:0;ret
 // 2. Chamfers and the motor's D bore from the left end.
 {const doc=ex('motor'),plan=planShaft(doc),{parts,free}=buildParts(doc,plan),shaft=parts[0].shape;
  const solid=plan.sections.reduce((a,s)=>a+area.rund(s.profile.d)*(s.x1-s.x0),0),dArea=(()=>{const r=2.5+doc.settings.play,h=r-(.5+doc.settings.play)*0-(.5-doc.settings.play)*1,a=Math.acos((2.5-.5+doc.settings.play)/r);return Math.PI*r*r-(r*r*a-(2.5-.5+doc.settings.play)*Math.sqrt(r*r-(2.5-.5+doc.settings.play)**2));})();
- const v=measureVolume(shaft);assert.ok(v<solid-dArea*15*.98&&v>solid-dArea*15-30,`D-Bohrung und Fasen abgezogen: ${v.toFixed(1)} (voll ${solid.toFixed(1)}, Bohrung ${(dArea*15).toFixed(1)})`);free();}
+ const v=measureVolume(shaft);assert.ok(v<solid-dArea*15*.98&&v>solid-dArea*15-80,`D-Bohrung und Fasen abgezogen: ${v.toFixed(1)} (voll ${solid.toFixed(1)}, Bohrung ${(dArea*15).toFixed(1)})`);free();}
+// Machining, each alone on a plain Ø10 shaft 40 long without chamfers: what it takes away against a hand count.
+{const base={...shaftExamples[0].make(),length:40,items:[],inserts:[],works:[],collar:10,settings:{...shaftExamples[0].make().settings,chamfer:0}};
+ const vol=works=>{const doc={...base,works},plan=planShaft(doc),b=buildParts(doc,plan),v=measureVolume(b.parts[0].shape);b.free();return {v,plan};};
+ const full=vol([]).v;near(full,Math.PI*25*40,.5,'glatte Welle');
+ const seg=(r,h)=>{const d=r-h,a=Math.acos(d/r);return r*r*a-d*Math.sqrt(r*r-d*d);};
+ let k=vol([{id:'n',kind:'nut',x0:10,x1:30}]);const key=k.plan.machining[0].key;assert.deepEqual([key.b,key.t1],[3,1.8]);
+ // A slot under a flat top would take (len−b)·b·t1 + π(b/2)²·t1; the round top leaves a sliver above the slot's floor.
+ const slot=(20-3)*3*1.8+Math.PI*1.5**2*1.8;near(full-k.v,slot,slot*.12,'Passfedernut');
+ k=vol([{id:'r',kind:'ring',x:20}]);near(full-k.v,Math.PI*(25-4.8**2)*1.1,.05,'Sicherungsring-Nut Ø9,6 × 1,1');
+ k=vol([{id:'f',kind:'abflachung',x0:5,x1:15,depth:.5}]);near(full-k.v,seg(5,.5)*10,.05,'Abflachung');
+ k=vol([{id:'g',kind:'gewinde',end:'rechts',m:4,depth:8}]);near(full-k.v,Math.PI*1.65**2*8,.05,'Kernloch M4 im Ende');
+ k=vol([{id:'s',kind:'madenschraube',x:20,m:3}]);const hole=Math.PI*1.25**2*5;near(full-k.v,hole,hole*.06,'Kernloch M3 radial');
+ k=vol([{id:'s',kind:'madenschraube',x:20,m:3,angle:90}]);near(full-k.v,hole,hole*.06,'gedreht');}
 // 3. Profiles draw for every kind; memory stays flat over many builds.
 for(const p of [{kind:'rund',d:5},{kind:'d',d:5,flat:.5},{kind:'kreuz'},{kind:'sechskant',sw:5}])assert.ok(profileDrawing(p).boundingBox.width>0,p.kind);
 {const doc=ex('lego-mitte'),plan=planShaft(doc),heap=()=>oc.wasmMemory.buffer.byteLength;for(let i=0;i<3;i++){const b=buildParts(doc,plan);meshParts(b.parts);b.free();}const h0=heap();for(let i=0;i<40;i++){const b=buildParts(doc,plan);meshParts(b.parts);b.free();}assert.ok((heap()-h0)/40<2.5e6,`Speicher je Bau: ${((heap()-h0)/40/1e6).toFixed(2)} MB`);}
-console.log('Wellen-CAD: Welle und Adapter als Volumen mit stimmenden Maßen, STEP, binäres STL und Baugruppe, D-Bohrung und Fasen, Speicher je Bau unter 2,5 MB (der Worker startet bei Bedarf neu).');
+console.log('Wellen-CAD: Welle und Adapter als Volumen mit stimmenden Maßen, STEP, binäres STL und Baugruppe, D-Bohrung und Fasen, Passfedernut, Sicherungsring-Nut, Abflachung, Kernlöcher radial und im Ende, Speicher je Bau unter 2,5 MB (der Worker startet bei Bedarf neu).');

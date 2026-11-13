@@ -9,6 +9,8 @@ import {shaftExamples} from './examples.ts';
 import {ShaftEditor} from './editor.ts';
 import {CadClient} from './cad-client.ts';
 import {ShaftPreview} from './preview.ts';
+import {partsCsv,makingNotes} from './notes.ts';
+import JSZip from 'jszip';
 
 const FORMAT='shaft-1';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
@@ -28,8 +30,12 @@ function schedulePreview(){if(!open)return;const key=JSON.stringify(open.doc);if
 /** The files of the open shaft, made once per state. */
 function shaftFiles(){const key=JSON.stringify(open!.doc);if(key!==filesFor||!files){filesFor=key;files=cad.request('files',JSON.parse(key)).then(r=>{if(r.kind==='error')throw Error(r.message);if(r.kind!=='files')throw Error('Unerwartete Antwort');return r.files;});files.catch(()=>{if(filesFor===key)files=undefined;});}return files;}
 function download(name:string){const base=open!.name.replace(/[^wäöüÄÖÜß-]+/g,'_');status('Datei wird erzeugt …');void shaftFiles().then(all=>{const f=all.find(x=>x.name===name);if(!f)throw Error(`${name} fehlt`);const url=URL.createObjectURL(new Blob([f.data],{type:name.endsWith('.stl')?'model/stl':'model/step'})),a=el('a',{href:url,download:`${base}-${name}`});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status(`${base}-${name} gespeichert.`);},e=>status(`Datei nicht erzeugt: ${e.message}`));}
+/** Everything in one archive: STEP and STL of every made part, the assembly, the parts list and the making notes. */
+function downloadZip(){const o=open!,p=plan!,base=o.name.replace(/[^wäöüÄÖÜß-]+/g,'_');status('ZIP wird erzeugt …');
+ void shaftFiles().then(async all=>{const zip=new JSZip();for(const f of all)zip.file(f.name,f.data);zip.file('stueckliste.csv','﻿'+partsCsv(p));zip.file('fertigung.txt',makingNotes(o.name,o.doc,p));
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'}),url=URL.createObjectURL(blob),a=el('a',{href:url,download:`${base}.zip`});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status(`${base}.zip gespeichert.`);},e=>status(`ZIP nicht erzeugt: ${e.message}`));}
 function renderFiles(p:Plan){const row=(label:string,file:string,formats:string[])=>el('li',{className:'file-row'},el('span',{textContent:label}),...formats.map(x=>{const b=el('button',{className:'ghost',textContent:x.toUpperCase()});b.dataset.file=`${file}.${x}`;b.onclick=()=>download(`${file}.${x}`);return b;}));
- $('files').replaceChildren(row('Welle','welle',['step','stl']),...p.sleeves.map((sl,i)=>row(sl.label,`${sl.kind}-${i+1}`,['step','stl'])),row('Baugruppe mit Kaufteilen','baugruppe',['step']));}
+ $('files').replaceChildren(row('Welle','welle',['step','stl']),...p.sleeves.map((sl,i)=>row(sl.label,`${sl.kind}-${i+1}`,['step','stl'])),row('Baugruppe mit Kaufteilen','baugruppe',['step']),(()=>{const b=el('button',{className:'primary',textContent:'Alles als ZIP (mit Stückliste und Fertigung)'});b.dataset.file='zip';b.onclick=downloadZip;return el('li',{className:'file-row zip'},b);})());}
 const editor=new ShaftEditor({
  doc:()=>open!.doc,plan:()=>plan!,readOnly:()=>!!open?.readOnly,
  begin:()=>{before??=JSON.stringify(open!.doc);},

@@ -1,7 +1,7 @@
 // The shaft generator's CAD in the browser: the example opens with a 3D preview that shows something; STEP and STL of
 // the shaft, the adapter's STL and the assembly download as real files; an edit makes a new preview. With a tiny
 // memory limit (?cadlimit=1) the worker is replaced after every answer and the preview still follows.
-import puppeteer from 'puppeteer';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
+import puppeteer from 'puppeteer';import JSZip from 'jszip';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 const dir=await fs.mkdtemp(path.join(os.tmpdir(),'welle-cad-')),downloads=path.join(dir,'dl'),shots=process.argv[2];await fs.mkdir(downloads);
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,userDataDir:path.join(dir,'profil'),args:['--enable-unsafe-swiftshader']});
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
@@ -18,6 +18,10 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.click('[data-file="welle.stl"]');const stl=await file('welle.stl');assert.equal(stl.length,84+50*stl.readUInt32LE(80),'binäres STL');
  await p.click('[data-file="adapter-1.stl"]');assert.ok((await file('adapter-1.stl')).length>1000);
  await p.click('[data-file="baugruppe.step"]');assert.match((await file('baugruppe.step')).toString(),/Rillenkugellager 626/);
+ // Everything as one ZIP.
+ await p.click('[data-file="zip"]');const zip=await JSZip.loadAsync(await file('.zip'));const names=Object.keys(zip.files).sort();
+ assert.deepEqual(names,['adapter-1.step','adapter-1.stl','baugruppe.step','fertigung.txt','stueckliste.csv','welle.step','welle.stl']);
+ assert.match(await zip.file('stueckliste.csv').async('string'),/2;Rillenkugellager 626/);assert.match(await zip.file('fertigung.txt').async('string'),/Abschnitte/);
  // An edit: the shaft longer, a new preview.
  await p.$eval('.tl-length',()=>{});const before=await p.$eval('#preview-state',e=>e.textContent);
  await p.evaluate(()=>document.querySelector('#properties')).then(()=>0);await p.keyboard.press('Escape');await wait(100);
@@ -27,5 +31,5 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  const q=await browser.newPage();q.on('pageerror',e=>errors.push(e.message));await q.setViewport({width:1500,height:1000});await q.goto('http://localhost:4001/welle?cadlimit=1');await q.waitForSelector('body[data-ready=true] #timeline .tl-lane',{visible:true});
  r=await ready(q);assert.equal(r.state,'ready',r.text);await q.keyboard.press('Escape');for(const v of ['80','75']){const i=await q.$('#properties .prop input');await i.evaluate(e=>{e.value='';e.focus();});await i.type(v);await q.keyboard.press('Tab');await wait(400);r=await ready(q);assert.equal(r.state,'ready',`nach Neustart: ${r.text}`);}
  assert.ok(await painted(q)>.03,'nach Neustarts gezeichnet');
- assert.deepEqual(errors,[]);console.log('Wellen-CAD im Browser: 3D-Vorschau, STEP, binäres STL, Adapter und Baugruppe als Dateien, neue Vorschau nach einer Änderung, Worker-Neustart.');
+ assert.deepEqual(errors,[]);console.log('Wellen-CAD im Browser: 3D-Vorschau, STEP, binäres STL, Adapter und Baugruppe als Dateien, alles als ZIP, neue Vorschau nach einer Änderung, Worker-Neustart.');
 }finally{await browser.close();}

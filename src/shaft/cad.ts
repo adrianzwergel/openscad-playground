@@ -5,7 +5,7 @@
 // Fits: what is made is nominal except, when printed, `play` per side: bores grow by it, non-round pieces (cross, D,
 // hexagon) shrink by it, round seats stay nominal (a bearing wants them tight). At the CNC everything is nominal; the fit
 // belongs to the machinist.
-import {draw,drawCircle,drawRectangle,drawPolysides,makeCylinder,localGC,exportSTEP} from 'replicad';
+import {draw,drawCircle,drawRectangle,drawRoundedRectangle,drawPolysides,makeCylinder,makeBox,localGC,exportSTEP} from 'replicad';
 import type {Drawing,Shape3D} from 'replicad';
 import type {Plan,Sleeve} from './plan.ts';
 import type {ShaftDoc} from './model.ts';
@@ -48,7 +48,23 @@ function body(keep:Keep,doc:ShaftDoc,pieces:Piece[],chamfer=0){
 function shaftSolid(keep:Keep,doc:ShaftDoc,plan:Plan){
  let s=body(keep,doc,plan.sections,doc.settings.chamfer);
  for(const i of plan.inserts){const g=fitOf(doc,i.profile,false),x0=i.end==='links'?-1:i.x0,x1=i.end==='links'?i.x1:plan.length+1;s=keep(s.cut(along(keep,i.profile,x0,x1,g)) as Shape3D);}
+ for(const t of machiningTools(keep,plan))s=keep(s.cut(t) as Shape3D);
  return s;}
+/** What machining takes away, from the plan's numbers (steps the checks refused have none and are left out):
+ * - set screw: the tap drill from the axis out, turned `angle` about x (0: up, towards a D shaft's flat);
+ * - thread in an end face: the tap drill, `depth` deep;
+ * - keyway (DIN 6885 form A): a slot with round ends, b wide, t1 deep from the top;
+ * - ring groove (DIN 471): turned down to d2 over m;
+ * - flat: cut `depth` from the top. */
+export function machiningTools(keep:Keep,plan:Plan):Shape3D[]{
+ const L=plan.length,r=(x:number)=>{const c=plan.sections.find(s=>x>=s.x0-1e-6&&x<=s.x1+1e-6);return c?outer(c.profile)/2:0;},out:Shape3D[]=[];
+ for(const m of plan.machining){const w=m.work;
+  if(w.kind==='madenschraube'&&m.drill){const a=(w.angle??0)*Math.PI/180;out.push(keep(makeCylinder(m.drill/2,r(w.x)+2,[w.x,0,0],[0,-Math.sin(a),Math.cos(a)])));}
+  else if(w.kind==='gewinde'&&m.drill){const left=w.end==='links';out.push(keep(makeCylinder(m.drill/2,w.depth+1,[left?-1:L+1,0,0],[left?1:-1,0,0])));}
+  else if(w.kind==='nut'&&m.key){const len=w.x1-w.x0,b=m.key.b,R=r((w.x0+w.x1)/2);if(len<=b)continue;out.push(keep(drawRoundedRectangle(len,b,b/2-1e-3).translate((w.x0+w.x1)/2,0).sketchOnPlane('XY',R-m.key.t1).extrude(m.key.t1+2) as Shape3D));}
+  else if(w.kind==='ring'&&m.ring){const R=r(w.x)+1,h=m.ring.m/2;out.push(keep(draw([w.x-h,m.ring.d2/2]).lineTo([w.x+h,m.ring.d2/2]).lineTo([w.x+h,R]).lineTo([w.x-h,R]).close().sketchOnPlane('XY').revolve([1,0,0]) as Shape3D));}
+  else if(w.kind==='abflachung'){const R=Math.max(r(w.x0),r(w.x1))+1;out.push(keep(makeBox([w.x0,-R,r((w.x0+w.x1)/2)-w.depth],[w.x1,R,R])));}}
+ return out;}
 function sleeveSolid(keep:Keep,doc:ShaftDoc,s:Sleeve){
  return keep(body(keep,doc,s.steps.map(st=>({x0:st.x0,x1:st.x1,profile:st.outer})),Math.min(.3,doc.settings.chamfer)).cut(along(keep,s.inner,s.x0-1,s.x1+1,fitOf(doc,s.inner,false))) as Shape3D);}
 /** A bought part as a ring: its outer Ø, its bore. */

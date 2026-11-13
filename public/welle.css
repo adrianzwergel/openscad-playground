@@ -66,3 +66,4 @@ footer{grid-row:3;padding:4px 12px;font-size:12px;color:var(--soft);border-top:1
 #preview-box{margin-top:12px}#preview{height:320px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#10161c}
 #preview-state{font-size:12px;margin:6px 2px}#preview-state[data-state=error]{color:#ff9d9d}
 #files{list-style:none;padding:0!important}.file-row{display:flex;align-items:center;gap:4px;margin-bottom:2px}.file-row span{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-row button{padding:3px 8px;font-size:12px;border-color:#40515e}
+.file-row.zip{margin-top:6px}.file-row.zip button{width:100%;font-size:13px;padding:7px}
