@@ -1,0 +1,30 @@
+<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Getriebe-Generator</title><link rel="stylesheet" href="./studio.css"><link rel="stylesheet" href="./welle.css"><link rel="stylesheet" href="./getriebe.css">
+<body data-view="start" class="generator">
+<header>
+ <a class="ghost button" href="./studio.html" title="Zurück ins Studio">← Studio</a><a class="ghost button" href="./welle.html" title="Wellen bearbeiten">Wellen-Generator</a>
+ <b>Getriebe-Generator</b><b id="gear-name"></b><span id="save-state" class="muted" role="status"></span>
+ <span class="spacer"></span>
+ <button id="gear-close" class="ghost gear-only">Alle Getriebe</button><button id="gear-delete" class="ghost danger gear-only">Löschen</button>
+</header>
+<main id="generator">
+ <aside id="gears" class="start-only">
+  <button id="new-gear" class="primary">＋ Neues Getriebe</button>
+  <h2>Deine Getriebe</h2><div id="gear-list"></div>
+ </aside>
+ <section id="intro" class="start-only">
+  <h1>Getriebe-Generator</h1>
+  <p class="muted">Wellen aus dem Wellen-Generator senkrecht auf eine Ebene stellen; was kämmt oder mit einem Riemen läuft, legt die Abstände fest. Aus den Lagern entsteht ein Gestell aus Platten: Ringe um die Lager, Stege dazwischen, Schicht für Schicht.</p>
+  <h2>Beispiele</h2><div id="examples" class="start-grid"></div>
+ </section>
+ <aside id="shafts-box" class="gear-only"><h2>Wellen</h2><ul id="linked"></ul><h2>Schichten</h2><ul id="layers"></ul></aside>
+ <section id="workspace" class="gear-only">
+  <div id="layer-tabs"></div>
+  <div id="top"></div>
+ </section>
+ <aside id="report" class="gear-only">
+  <h2>Antrieb</h2><ul id="drives"></ul>
+  <h2 id="issues-title">Meldungen</h2><ul id="issues"></ul>
+ </aside>
+</main>
+<footer id="status" role="status">Bereit</footer>
+<script src="./getriebe.js"></script></body></html>

@@ -1,0 +1,128 @@
+# Getriebe-Generator
+
+Eine eigene Seite neben Studio und Wellen-Generator. Fertige Wellen aus dem Wellen-Generator werden senkrecht auf eine
+Ebene gestellt; was kämmt oder mit einem Riemen läuft, sagt man an, der Generator setzt die Achsabstände. Aus den Lagern
+entsteht ein Gestell aus Flachmaterial: Ringe um die Lager, Stege dazwischen, Schicht für Schicht, mit Distanzbolzen
+verschraubt. Ausgabe wie beim Wellen-Generator: STEP und STL je Platte, Baugruppe, ZIP.
+
+Ziel wie dort: **einfach**. Nichts wird gezeichnet, was sich ableiten lässt.
+
+## Stand
+
+| Schritt | Stand |
+|---|---|
+| 1 | fertig: `getriebe.html` (Karte auf der Studio-Startseite), Getriebe als eigene Dateien (OPFS-Ordner `getriebe`, Format `gear-1`), Wellen verknüpft mit dem Ordner `wellen`; `src/gear/model.ts`, `plan.ts` (`planGear`: Welt aus den Wellen, Eingriffe, Riemen mit Normlänge, Drehzahlen, Klemmen, Schichten aus den Lagerhöhen, Stege kämmend/kürzeste/von Hand, Freilöcher, Platten gegen Räder, Riemen und Hülsen, Rad am eigenen Lager), `draw.ts` (Draufsicht je Schicht), zwei Beispiele, die ihre Wellen in den Wellen-Generator schreiben. Prüfung: `scripts/gear/check-plan.mjs`, `scripts/gear/check-page-browser.mjs` |
+| 2–6 | offen |
+
+Der Katalog des Wellen-Generators kennt jetzt Zähne und Modul der Räder und Scheiben (`teeth`, `module`, `pulley`).
+
+## Begriffe
+
+- **Ebene:** x/y, die Draufsicht. Alle Wellen stehen senkrecht darauf (z nach oben). Die Lage einer Welle ist ihr Punkt
+  (x, y), ihre Höhe z0 (wo ihr Ende liegt) und ob sie umgedreht steht. Längs der Welle wird so x zu z.
+- **Verbindung:** Zahneingriff (zwei Räder, gleiches Modul, gleiche Höhe) oder Riemen (zwei GT2-Scheiben). Der Eingriff
+  legt den Achsabstand fest; offen bleibt nur der Winkel um das Partnerrad.
+- **Schicht:** ein Höhenbereich (z0 bis z1). Die Lager in diesem Bereich werden in ihr gehalten.
+- **Platte:** das Flachmaterial einer Schicht. Eine Lagerschicht besteht aus einem Plattenpaar, das die Lager zwischen
+  sich einklemmt.
+
+## Bedienung
+
+```
+┌ Wellen ──────┐┌ Draufsicht (x/y) ──────────────────────────┐┌ Eigenschaften ┐
+│ Welle A  ✎   ││   ○A ── z16·z40 ── ○B                       ││ Schicht 2     │
+│ Welle B  ✎   ││        \            |                       ││ Dicke 4 mm    │
+│ Motor+Welle C││         ○C ──────── ┘    (Stege der Schicht)││ Rand 3 mm     │
+│ ＋ neue Welle ││                                             ││ Stege …       │
+└──────────────┘└─────────────────────────────────────────────┘└───────────────┘
+                ┌ Schichten (Höhe z, wie die Zeitleiste) ─────┐
+                │ A  ──[626]────[z16]────[625]──               │
+                │ B  ──[608]──[z40]──────[608]──               │
+                │  ▓▓ Schicht 1 ▓▓        ▓▓ Schicht 2 ▓▓      │ ← Bänder ziehen
+                └──────────────────────────────────────────────┘
+```
+
+- **Wellen** links: die gespeicherten Wellen des Wellen-Generators, **verknüpft** (eine Änderung dort ändert das Getriebe).
+  ✎ öffnet den Wellen-Editor direkt hier als Fenster über der Seite, gespeichert wird in die Welle selbst. „＋ neue Welle“
+  legt eine an und öffnet sie gleich.
+- **Draufsicht:** Wellen hineinziehen. Auf einen Radkreis gezogen rastet die Welle im Eingriff ein (wie im Studio), dann
+  um das Partnerrad im Winkelraster (Vorgabe 15°); ohne Partner im mm-Raster. Riemen: zwei Scheiben anwählen,
+  „Riemen“; Länge und nächste Normlänge stehen dabei.
+- **Schichten:** unten die Wellen von der Seite, wie die Zeitleiste gedreht. Der Generator schlägt Schichten aus den
+  Lagerhöhen vor; Bänder lassen sich verschieben, teilen, zusammenlegen, ihre Dicke ziehen.
+- **Stege:** In einer Schicht werden alle Lager automatisch verbunden (kürzeste Stege, die alles zusammenhalten, plus die
+  Verbindungen zwischen kämmenden Wellen, weil dort der Achsabstand stimmen muss). Jeder Steg lässt sich wegnehmen, eigene
+  lassen sich hinzufügen.
+
+## Platten
+
+```
+ Ring    = Lager-Außen-Ø / 2 + Rand (einstellbar je Schicht, je Lager überschreibbar)
+ Steg    = äußere Tangenten zweier Ringe (volle Lasche) oder Steg mit eigener Breite
+
+      ___________________
+    /   _               _  \
+   |  ( ○ )-------------( ○ ) |
+    \___________________ /
+```
+
+**Lager eingeklemmt:** Jede Lagerschicht ist ein Plattenpaar. Jede Platte hat eine Tasche über die halbe Lagerbreite und
+darunter einen Bord, der den Außenring hält (Bord-Ø kleiner als der Außenring, größer als der Innenring-Bund). Die
+Schrauben der Distanzbolzen ziehen das Paar zusammen und klemmen das Lager.
+
+```
+   Platte oben   ████▏      ▕████   ← Bord hält den Außenring
+                 ██  ┌────┐  ██     ← Tasche, halbe Lagerbreite
+   ─ ─ ─ ─ ─ ─ ─ ─ ─ │ 608│ ─ ─ ─   (Trennfuge)
+                 ██  └────┘  ██
+   Platte unten  ████▏      ▕████
+```
+
+**Dicken:** Ringe sind so dick, wie ihr Lager es braucht (halbe Lagerbreite plus Bord), Stege haben die Dicke der
+Schicht. Verschieden breite Lager in einer Schicht gehen also.
+
+**Wellen ohne Lager in einer Schicht:** bekommen ein Freiloch mit Spiel. **Teile im Weg:** Ein Steg oder Ring, der in
+seiner Höhe ein Rad, eine Scheibe oder einen Riemen schneidet, wird gemeldet, mit Lösungen zur Wahl:
+1. **außen herum:** Der Steg läuft im Bogen um den Radkreis (mit Abstand),
+2. **in die Tiefe:** Der Steg wird an der Stelle abgesenkt (Stufe), sodass er unter oder über dem Rad durchgeht,
+3. **weglassen:** Der Steg entfällt, wenn die Platte auch ohne ihn zusammenhängt.
+
+## Zusammenhalt
+
+- **Distanzbolzen** zwischen den Schichten (Vorgabe M3, Sechskant-Abstandshalter in Normlängen, sonst gedruckte
+  Säulen) an Punkten, die der Generator an den Rand der Platten legt; verschiebbar.
+- **Befestigungslöcher** für eine Grundplatte als Element, frei setzbar.
+
+## Antrieb
+
+- **Motor (NEMA 14/17/23 aus dem Katalog)** auf einer Schicht: Flansch mit Bohrbild und Zentrierung. Steckt in einer
+  verknüpften Welle eine Motorwelle (Wellen-Generator, „In der Welle“), steht der Motor dort von selbst.
+- **Langlöcher zum Spannen:** Bei einem Riemen zeigen die Langlöcher des Motors (oder eines Spannlagers) in Richtung
+  des Riemens, Länge einstellbar; die Prüfung rechnet die Riemenlänge über den ganzen Spannweg.
+
+## Schnecke und Kegelräder (später)
+
+Eine Schnecke dreht um eine Achse, die **in** der Ebene liegt, das Schneckenrad um eine senkrechte. Damit liegt die
+Schneckenwelle quer: Sie wird von zwei **Lagerböcken** gehalten, die auf einer Platte stehen.
+
+```
+ Draufsicht                       Seitenansicht
+   ┌─┐  ═══════════  ┌─┐            ┌─┐ ══(Schnecke)══ ┌─┐   ← Lagerböcke
+   └─┘   (Schnecke)  └─┘            │ │      ◎         │ │
+            ◎  ← Schneckenrad       ███████████████████████  ← Platte
+```
+
+Das braucht liegende Wellen im Wellen-Generator-Sinn und Lagerböcke als neues Element. Kegelräder genauso. Deshalb ein
+eigener Schritt nach dem Rest.
+
+## Schritte
+
+| Schritt | Inhalt |
+|---|---|
+| 1 | Seite `getriebe.html`, Dokument (verknüpfte Wellen mit Lage, Verbindungen, Schichten, Stege, Bolzen), Planung ohne UI: Eingriffe und Riemen prüfen, Schichten aus den Lagerhöhen, Stege automatisch, Kollisionen; Prüfskript |
+| 2 | Draufsicht mit Ziehen und Einrasten (Eingriff, Winkelraster, mm-Raster), Verbindungen ansagen, Schichten-Ansicht mit Bändern, Eigenschaften |
+| 3 | Plattengeometrie: Umriss aus Ringen und Tangenten-Stegen, Taschen mit Bord, Freilöcher, Bolzenlöcher; Vorschau mit Wellen und Rädern, STEP/STL/ZIP |
+| 4 | Teile im Weg: außen herum, Stufe in die Tiefe, weglassen |
+| 5 | Motor mit Flansch, Langlöcher zum Spannen, Riemenlänge über den Spannweg |
+| 6 | Wellen-Editor im Getriebe öffnen, neue Welle von hier |
+| später | Schnecke und Kegelräder mit liegenden Wellen und Lagerböcken |
