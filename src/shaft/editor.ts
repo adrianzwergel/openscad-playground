@@ -25,8 +25,8 @@ const workTemplates:WorkTemplate[]=[
  ...[3,4,5].map(m=>({key:`madenschraube-${m}`,label:`Madenschraube M${m}`,text:'Kernloch nach DIN 13, Gewinde selbst schneiden',make:(x:number)=>({id:'',kind:'madenschraube',x,m}) as Work})),
  ...[3,4,5].map(m=>({key:`gewinde-${m}`,label:`Gewinde M${m} am Ende`,text:'Kernloch in der Stirnfläche',make:(x:number,d:ShaftDoc)=>({id:'',kind:'gewinde',end:x<d.length/2?'links':'rechts',m,depth:2*m+2}) as Work})),
  {key:'nut',label:'Passfedernut',text:'DIN 6885, Maße nach Wellen-Ø',make:x=>({id:'',kind:'nut',x0:x-6,x1:x+6})},
- {key:'ring',label:'Sicherungsring DIN 471',text:'Nut nach Wellen-Ø; Ring wird über das Ende gespreizt',make:x=>({id:'',kind:'ring',x,norm:'471'})},
- {key:'eclip',label:'E-Ring DIN 6799',text:'Nut nach Wellen-Ø; Ring wird von der Seite gesteckt',make:x=>({id:'',kind:'ring',x,norm:'6799'})},
+ {key:'ring',label:'Sicherungsring DIN 471',text:'Nut nach Wellen-Ø, auch ins LEGO-Kreuz; Ring wird über das Ende gespreizt',make:x=>({id:'',kind:'ring',x,norm:'471'})},
+ {key:'eclip',label:'E-Ring DIN 6799',text:'Nut nach Wellen-Ø, auch ins LEGO-Kreuz; Ring wird von der Seite gesteckt',make:x=>({id:'',kind:'ring',x,norm:'6799'})},
  {key:'abflachung',label:'Abflachung',text:'Fläche für eine Madenschraube',make:x=>({id:'',kind:'abflachung',x0:x-5,x1:x+5,depth:.5})},
 ];
 

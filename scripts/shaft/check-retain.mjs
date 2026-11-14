@@ -12,7 +12,9 @@ import {rund} from '../../src/shaft/profile.ts';
 const plan=o=>planShaft(parseShaft({...newShaft(),...o})),errors=p=>p.issues.filter(i=>i.level==='fehler'),sec=(p,x)=>p.sections.find(c=>x>=c.x0&&x<=c.x1).profile;
 const user={length:47,items:[{id:'a',part:'lager-626',x:24.5},{id:'z',part:'lego-4019',x:31},{id:'b',part:'lager-625',x:41}],inserts:[{id:'m',part:'motor-nema17-27',end:'links',depth:24}],works:[{id:'s',kind:'madenschraube',x:11,m:4},{id:'r',kind:'ring',x:46.5}]};
 {const p=plan(user);assert.ok(sec(p,10).kind==='rund'&&sec(p,10).d>=9,'Motor bleibt im Bund');assert.ok(p.placed.every(t=>t.side==='rechts'),'alles von rechts');
- assert.ok(!errors(p).some(i=>!i.work),`keine Montagefehler: ${errors(p).map(i=>i.message)}`);const ring=errors(p).find(i=>i.ref==='r');assert.ok(ring?.work&&/LEGO-Buchse/.test(ring.message),'Ring auf dem Kreuz: Buchse vorgeschlagen');}
+ assert.ok(!errors(p).some(i=>!i.work),`keine Montagefehler: ${errors(p).map(i=>i.message)}`);assert.deepEqual(errors(p),[],'Ring ins Kreuz gestochen: kein Fehler');const r=p.machining.find(m=>m.work.id==='r').ring;assert.deepEqual(r,{d2:3.8,m:.5,norm:'471',label:'Sicherungsring DIN 471 4 × 0,4'},'Ring für Ø4, Nut Ø3,8');
+ assert.ok(p.issues.some(i=>i.ref==='r'&&i.level==='hinweis'&&/gespreizt/.test(i.message)));assert.ok(!p.issues.some(i=>/nach rechts nicht gesichert/.test(i.message)),'Ring sichert');
+ const e=plan({...user,works:[user.works[0],{id:'r',kind:'ring',x:46.5,norm:'6799'}]});assert.deepEqual(e.machining.find(m=>m.work.id==='r').ring.d2,3.2,'E-Ring 3,2 im Kreuz');assert.ok(!e.issues.some(i=>i.ref==='r'));}
 {const p=plan({...user,items:[user.items[0],user.items[1],{id:'bu',part:'lego-buchse-halb',x:41}],works:[user.works[0]]});
  assert.deepEqual(errors(p),[]);assert.equal(p.sleeves.length,0,'Buchse braucht keine Hülse');assert.ok(!p.issues.some(i=>/nach rechts nicht gesichert/.test(i.message)),'Buchse sichert');assert.ok(p.bom.some(b=>/LEGO-Buchse ½/.test(b.what)));}
 // A bush in the middle of the cross, far from anything: it clamps, no spacer, no missing stop.
@@ -25,4 +27,4 @@ assert.equal(eclipFor(5).d2,4);assert.equal(eclipFor(6).d2,5);assert.equal(eclip
  assert.ok(p.issues.some(i=>i.ref==='r'&&/nicht aufschieben.*E-Ring/.test(i.message)),'471 eingesperrt');assert.ok(!p.issues.some(i=>i.ref==='e'));assert.deepEqual(p.machining.find(m=>m.work.id==='e').ring,{d2:7,m:.94,norm:'6799',label:'Sicherungsscheibe DIN 6799 7'});assert.ok(p.bom.some(b=>b.what==='Sicherungsscheibe DIN 6799 7'));}
 {const p=plan({length:20,collar:6.5,works:[{id:'r',kind:'ring',x:10}]});assert.ok(p.issues.some(i=>i.ref==='r'&&/Ein E-Ring DIN 6799 passt/.test(i.message)),'Ø6,5: kein 471, aber 6799');}
 assert.throws(()=>parseShaft({...newShaft(),works:[{id:'r',kind:'ring',x:1,norm:'999'}]}),/Bearbeitung/);
-console.log('Sicherungen: Bearbeitungen drehen die Welle nicht um, LEGO-Buchse klemmt auf dem Kreuz, Stellring mit Madenschraube, E-Ring DIN 6799 wo DIN 471 nicht aufgeht.');
+console.log('Sicherungen: Bearbeitungen drehen die Welle nicht um, Sicherungsring DIN 471 Ø4 und E-Ring 3,2 ins LEGO-Kreuz gestochen, LEGO-Buchse klemmt auf dem Kreuz, Stellring mit Madenschraube, E-Ring DIN 6799 wo DIN 471 nicht aufgeht.');

@@ -43,7 +43,12 @@ const expect=(doc,plan,s)=>{const g=doc.making==='druck'?doc.settings.play:0;ret
  k=vol([{id:'g',kind:'gewinde',end:'rechts',m:4,depth:8}]);near(full-k.v,Math.PI*1.65**2*8,.05,'Kernloch M4 im Ende');
  k=vol([{id:'s',kind:'madenschraube',x:20,m:3}]);const hole=Math.PI*1.25**2*5;near(full-k.v,hole,hole*.06,'Kernloch M3 radial');
  k=vol([{id:'s',kind:'madenschraube',x:20,m:3,angle:90}]);near(full-k.v,hole,hole*.06,'gedreht');}
+// A ring groove turned into the LEGO cross: over m the arms are cut down to the groove's Ø.
+{const doc={...shaftExamples[0].make(),length:30,items:[],inserts:[],works:[],settings:{...shaftExamples[0].make().settings,chamfer:0,play:0},sections:[{x0:0,x1:30,profile:{kind:'kreuz'}}]};
+ const cross=r=>{const b=1.8,h=Math.sqrt(r*r-(b/2)**2),bar=2*(b/2*h+r*r*Math.asin(b/2/r));return 2*bar-b*b;};
+ const vol=works=>{const d={...doc,works},p=planShaft(d),b=buildParts(d,p),v=measureVolume(b.parts[0].shape);b.free();return v;};
+ near(vol([])-vol([{id:'r',kind:'ring',x:15}]),(cross(2.4)-cross(1.9))*.5,.01,'Nut Ø3,8 × 0,5 im Kreuz');}
 // 3. Profiles draw for every kind; memory stays flat over many builds.
 for(const p of [{kind:'rund',d:5},{kind:'d',d:5,flat:.5},{kind:'kreuz'},{kind:'sechskant',sw:5}])assert.ok(profileDrawing(p).boundingBox.width>0,p.kind);
 {const doc=ex('lego-mitte'),plan=planShaft(doc),heap=()=>oc.wasmMemory.buffer.byteLength;for(let i=0;i<3;i++){const b=buildParts(doc,plan);meshParts(b.parts);b.free();}const h0=heap();for(let i=0;i<40;i++){const b=buildParts(doc,plan);meshParts(b.parts);b.free();}assert.ok((heap()-h0)/40<2.5e6,`Speicher je Bau: ${((heap()-h0)/40/1e6).toFixed(2)} MB`);}
-console.log('Wellen-CAD: Welle und Adapter als Volumen mit stimmenden Maßen, STEP, binäres STL und Baugruppe, D-Bohrung und Fasen, Passfedernut, Sicherungsring-Nut, Abflachung, Kernlöcher radial und im Ende, Speicher je Bau unter 2,5 MB (der Worker startet bei Bedarf neu).');
+console.log('Wellen-CAD: Welle und Adapter als Volumen mit stimmenden Maßen, STEP, binäres STL und Baugruppe, D-Bohrung und Fasen, Passfedernut, Sicherungsring-Nut (auch im LEGO-Kreuz), Abflachung, Kernlöcher radial und im Ende, Speicher je Bau unter 2,5 MB (der Worker startet bei Bedarf neu).');
