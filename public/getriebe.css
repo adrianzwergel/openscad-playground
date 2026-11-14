@@ -25,3 +25,8 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 .prop-row{display:flex;align-items:center;gap:6px;margin:4px 0}.prop-row span{flex:1;font-size:12px}
 #properties button{margin:3px 0}#properties h3{margin-top:12px}
 #top .wheel,#top .belt,#top .mesh,#top .pocket,#top .hole,#top .ring{pointer-events:none}
+#top .web.hit,#top .web.hit polygon{fill:#7a3b40}
+#top .web.stepped{fill:#4a6170;stroke:#9fb4c4;stroke-dasharray:4 3}
+#top g.web polygon,#top g.web .joint{fill:#3d5566}#top g.web.selected polygon,#top g.web.selected .joint{fill:#5b7f96;stroke:#fff;stroke-width:1}
+#top g.web .joint{pointer-events:auto}
+.topview .bolt{fill:#10161c;stroke:#c58a4a;stroke-width:1.5}

@@ -44,5 +44,12 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.click('#gear-close');await p.waitForSelector('[data-example="riemen"]',{visible:true});await p.click('[data-example="riemen"]');await p.waitForSelector('#top svg .belt');
  await p.click('#top [data-shaft="a"]');await wait(100);await p.evaluate(()=>[...document.querySelectorAll('#properties button')].find(b=>b.textContent==='entfernen').click());await wait(150);assert.equal(await p.$$eval('#top .belt',e=>e.length),0);
  await p.click('[data-belt]');await wait(150);assert.equal(await p.$$eval('#top .belt',e=>e.length),1);assert.match(await p.$eval('#drives',e=>e.textContent),/Normlänge 280 mm/);
- assert.deepEqual(errors,[]);console.log('Getriebe-Editor: vom Studio erreichbar, Einrasten im Eingriff bei 45°, weg ohne Eingriff, Klick setzt kämmend, Winkel genau, Schicht-Band von Hand, Steg entfernt und Strg+Z, Neuladen, Welle per ?open, Riemen weg und wieder dran.');
+ // A web in a wheel's way: round it, in the depth, straight again.
+ await p.click('#gear-close');await p.waitForSelector('[data-example="umweg"]',{visible:true});await p.click('[data-example="umweg"]');await p.waitForSelector('#top .web.hit');
+ assert.match(await p.$eval('#issues',e=>e.textContent),/geht durch z30 m1 auf Rad unten z30/);
+ const choose=async label=>{const hit=await p.$('#top [data-web="a/l1|c/l1"]');await hit.click();await wait(100);await p.evaluate(t=>[...document.querySelectorAll('#properties button')].find(b=>b.textContent===t).click(),label);await wait(200);};
+ await choose('Außen herum');assert.ok(await p.$('#top g.web.round[data-web="a/l1|c/l1"]'),'außen herum gezeichnet');assert.doesNotMatch(await p.$eval('#issues',e=>e.textContent),/geht durch/);
+ await choose('In die Tiefe');assert.ok(await p.$('#top .web.stepped[data-web="a/l1|c/l1"]'),'in der Tiefe');assert.match(await p.$eval('#issues',e=>e.textContent),/in der Tiefe nur 6,5 mm/);
+ await choose('Gerade');assert.ok(await p.$('#top .web.hit[data-web="a/l1|c/l1"]'),'wieder gerade');
+ assert.deepEqual(errors,[]);console.log('Getriebe-Editor: vom Studio erreichbar, Einrasten im Eingriff bei 45°, weg ohne Eingriff, Klick setzt kämmend, Winkel genau, Schicht-Band von Hand, Steg entfernt und Strg+Z, Neuladen, Welle per #open, Riemen weg und wieder dran, Steg außen herum, in der Tiefe und wieder gerade.');
 }finally{await browser.close();}

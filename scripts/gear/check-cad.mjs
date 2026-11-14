@@ -7,7 +7,7 @@ import opencascade from 'replicad-opencascadejs';
 import {setOC,measureVolume,localGC} from 'replicad';
 import {parseShaft} from '../../src/shaft/model.ts';
 import {exportParts} from '../../src/shaft/cad.ts';
-import {parseGear} from '../../src/gear/model.ts';
+import {parseGear,newGear as newGearDoc} from '../../src/gear/model.ts';
 import {planGear} from '../../src/gear/plan.ts';
 import {buildGearParts,plateOutline} from '../../src/gear/cad.ts';
 import {gearExamples} from '../../src/gear/examples.ts';
@@ -26,4 +26,12 @@ const build=doc=>{const plan=planGear(doc,files),[keep,gc]=localGC();return {pla
  assert.equal(names.filter(n=>/^saeule-1\./.test(n)).length,2,'eine Säule je Spalt');assert.equal(new Set(names).size,names.length,'keine doppelten Dateien');gc();}
 // Flipped: its gear moves from 20..30 to 30..40, its left end on top.
 {const doc=parseGear({...ex.make(ids),shafts:[{id:'a',shaft:'an',at:[0,0],z:0,flip:true}]}),{parts,gc}=build(doc);const g=parts.find(p=>p.kind==='kauf'&&/z20/.test(p.name)).shape.boundingBox.bounds;near(g[0][2],30,.01,'umgedreht: Rad ab 30');near(g[1][2],40,.01,'bis 40');gc();}
-console.log('Getriebe-CAD: Plattenpaare aus Umriss minus Taschen in ihren Bändern, Säulen im Spalt, Wellen aufrecht an ihrem Platz und umgedreht, Dateien je Platte, Spalt und Welle.');
+// Webs past a wheel: straight the plates of layer 1 cut into the wheel on shaft D; round it or in the depth it
+// does not (the wheel's stand-in and the plate share no volume).
+{const {rund}=await import('../../src/shaft/profile.ts'),{newShaft}=await import('../../src/shaft/model.ts');
+ const sh=(name,items,length=60)=>({name,doc:parseShaft({...newShaft(),length,items})}),bearing=(id,x)=>({id,part:'lager-608',x}),gear=(id,x,t)=>({id,part:`stirnrad-m1-z${t}`,x,bore:rund(8)});
+ const F={A:sh('A',[bearing('l1',2),gear('g',20,20),bearing('l2',50)]),B:sh('B',[bearing('l1',2),gear('g',20,40),bearing('l2',50)]),C:sh('C',[bearing('l1',2),bearing('l2',50)]),D:sh('D',[gear('g',2,30)],20),E:sh('E',[gear('g',14,30)],30)};
+ const shared=(d,route)=>{const doc=parseGear({...newGearDoc(),shafts:[{id:'a',shaft:'A',at:[0,0],z:0},{id:'b',shaft:'B',at:[30,0],z:0},{id:'c',shaft:'C',at:[0,-40],z:0},{id:'d',shaft:d,at:[-25,-20],z:d==='E'?-8:0}],bolts:[[45,-20]],...(route?{webs:{add:[],remove:[],route}}:{})}),plan=planGear(doc,F),[keep,gc]=localGC(),parts=buildGearParts(doc,plan,F,keep);
+  const wheel=parts.find(p=>p.kind==='kauf'&&/auf D|auf E|· D|· E/.test(p.name)&&/z30/.test(p.name)).shape,v=parts.filter(p=>/^schicht-1-/.test(p.file)).reduce((t,p)=>t+measureVolume(keep(p.shape.intersect(wheel))),0);gc();return v;};
+ assert.ok(shared('D')>10,'gerade: Platte im Rad');near(shared('D',{'a/l1|c/l1':'aussen'}),0,1e-3,'außen herum: frei');near(shared('E',{'a/l1|c/l1':'tiefe'}),0,1e-3,'in der Tiefe: frei');assert.ok(shared('E')>1,'ohne Tiefe: Platte im Rad');}
+console.log('Getriebe-CAD: Stege außen herum und in der Tiefe frei vom Rad, Plattenpaare aus Umriss minus Taschen in ihren Bändern, Säulen im Spalt, Wellen aufrecht an ihrem Platz und umgedreht, Dateien je Platte, Spalt und Welle.');

@@ -23,7 +23,9 @@ export type Obstacle={key:string;label:string;z0:number;z1:number;a:[number,numb
 export type ShaftInWorld={id:string;label:string;at:[number,number];z0:number;z1:number;plan:ShaftPlan;/** Its round pieces in the world: z0..z1 and radius. */pieces:{z0:number;z1:number;r:number}[]};
 export type Mesh={a:string;b:string;ratio:number};
 export type BeltPlan={id:string;a:string;b:string;center:number;length:number;stock?:number};
-export type WebPlan={a:string;b:string;auto:boolean;forced:boolean};
+/** A web: straight (the hull of both rings), round a part (`path`: points it goes through, `width` its half width there),
+ * or `z`: only that high, under or over a part. `route`: what the user chose; `hits`: what it still runs into. */
+export type WebPlan={a:string;b:string;auto:boolean;forced:boolean;route?:'aussen'|'tiefe';path?:[number,number][];width?:number;z?:[number,number];hits:string[]};
 export type LayerPlan={id:string;z0:number;z1:number;band:[number,number];split:number;auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];holes:{on:string;r:number}[];parts:number};
 export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string};
 /** A bolt through all plates: where, the eye round it, which bearing of each layer its eye is joined to. */
@@ -105,8 +107,8 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   // Webs: meshing shafts first (their distance must hold), then the shortest that join everything (Kruskal).
   const parent=new Map(list.map(b=>[b.key,b.key])),find=(k:string):string=>{const p=parent.get(k)!;if(p===k)return k;const r=find(p);parent.set(k,r);return r;},join=(a:string,b:string)=>{const x=find(a),y=find(b);if(x===y)return false;parent.set(x,y);return true;};
   const pairs=list.flatMap((a,k)=>list.slice(k+1).map(b=>({a,b,c:dist(a.at,b.at),forced:meshPairs.has([a.on,b.on].sort().join('|'))}))).sort((x,y)=>Number(y.forced)-Number(x.forced)||x.c-y.c);
-  const webs:WebPlan[]=[];for(const p of pairs){if(p.forced||join(p.a.key,p.b.key)){if(p.forced)join(p.a.key,p.b.key);const [a,b]=webKey(p.a.key,p.b.key);if(!remove.has(`${a}|${b}`))webs.push({a,b,auto:true,forced:p.forced});}}
-  for(const [a,b] of add){if(!list.some(x=>x.key===a)||!list.some(x=>x.key===b)){if(list.some(x=>x.key===a)||list.some(x=>x.key===b))issues.push({level:'warnung',message:`Steg ${a} – ${b}: beide Lager müssen in ${name} liegen`});continue;}if(!webs.some(w=>w.a===a&&w.b===b))webs.push({a,b,auto:false,forced:false});}
+  const webs:WebPlan[]=[];for(const p of pairs){if(p.forced||join(p.a.key,p.b.key)){if(p.forced)join(p.a.key,p.b.key);const [a,b]=webKey(p.a.key,p.b.key);if(!remove.has(`${a}|${b}`))webs.push({a,b,auto:true,forced:p.forced,hits:[]});}}
+  for(const [a,b] of add){if(!list.some(x=>x.key===a)||!list.some(x=>x.key===b)){if(list.some(x=>x.key===a)||list.some(x=>x.key===b))issues.push({level:'warnung',message:`Steg ${a} – ${b}: beide Lager müssen in ${name} liegen`});continue;}if(!webs.some(w=>w.a===a&&w.b===b))webs.push({a,b,auto:false,forced:false,hits:[]});}
   for(const k of remove){const [a,b]=k.split('|');if(meshPairs.has([list.find(x=>x.key===a)?.on,list.find(x=>x.key===b)?.on].sort().join('|'))&&list.some(x=>x.key===a))issues.push({level:'hinweis',message:`Steg zwischen kämmenden Wellen in ${name} entfernt: der Achsabstand hängt dann an anderen Stegen`});}
   // How many pieces the plate falls into.
   const comp=new Map(list.map(b=>[b.key,b.key])),f2=(k:string):string=>{const p=comp.get(k)!;if(p===k)return k;const r=f2(p);comp.set(k,r);return r;};for(const w of webs){const x=f2(w.a),y=f2(w.b);if(x!==y)comp.set(x,y);}
@@ -116,8 +118,27 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   // What the plate hits: rings and webs against wheels, pulleys, sleeves and belts in the band's heights.
   const at=(k:string)=>list.find(b=>b.key===k)!;
   for(const o of obstacles){if(overlap(o.z0,o.z1,band[0],band[1])<=eps)continue;
-   for(const b of list){if(o.on.includes(b.on)&&!o.b){if(o.ra+s.clearance>b.D/2-s.lipIn+eps)issues.push({level:'fehler',message:`${name}: ${o.label} sitzt zu nah am Lager ${b.label}, die Platte reicht ${mm(s.lip)} über das Lager (Bord); Abstand oder Distanzhülse nötig`,ref:b.on});continue;}const c=o.b?hullDistance(b.at,o.a,o.ra,o.b,o.rb!):dist(b.at,o.a)-o.ra;if(c<ring(b)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um ${b.label} trifft ${o.label}`,ref:b.on});}
-   for(const w of webs){const a=at(w.a),b=at(w.b);if(o.on.includes(a.on)||o.on.includes(b.on))continue;const gap=hullsApart(o,{a:a.at,ra:ring(a),b:b.at,rb:ring(b)});if(gap<s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Steg ${a.label} – ${b.label} geht durch ${o.label}`,ref:`steg:${w.a}|${w.b}`});}}
+   for(const b of list){if(o.on.includes(b.on)&&!o.b){if(o.ra+s.clearance>b.D/2-s.lipIn+eps)issues.push({level:'fehler',message:`${name}: ${o.label} sitzt zu nah am Lager ${b.label}, die Platte reicht ${mm(s.lip)} über das Lager (Bord); Abstand oder Distanzhülse nötig`,ref:b.on});continue;}const c=o.b?hullDistance(b.at,o.a,o.ra,o.b,o.rb!):dist(b.at,o.a)-o.ra;if(c<ring(b)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um ${b.label} trifft ${o.label}`,ref:b.on});}}
+  // Webs against what is in the band's heights: straight, or as the user chose round or under/over it.
+  const inBand=obstacles.filter(o=>overlap(o.z0,o.z1,band[0],band[1])>eps),route=doc.webs?.route??{};
+  for(const w of webs){const a=at(w.a),b=at(w.b),mine=(o:Obstacle)=>o.on.includes(a.on)||o.on.includes(b.on),hits=(segs:{a:[number,number];ra:number;b:[number,number];rb:number}[],z?:[number,number])=>inBand.filter(o=>!mine(o)&&(!z||overlap(o.z0,o.z1,z[0],z[1])>eps)&&segs.some(g=>hullsApart(o,g)<s.clearance-eps));
+   const straight={a:a.at,ra:ring(a),b:b.at,rb:ring(b)},first=hits([straight]),r=route[`${w.a}|${w.b}`];w.hits=first.map(o=>o.label);if(r)w.route=r;
+   if(!first.length||!r){for(const o of first)issues.push({level:'fehler',message:`${name}: der Steg ${a.label} – ${b.label} geht durch ${o.label}. Steg anklicken: außen herum, in die Tiefe oder weglassen`,ref:`steg:${w.a}|${w.b}`});continue;}
+   if(r==='tiefe'){// Below what is above the band's middle, above what is below it.
+    const mid=(band[0]+band[1])/2,top=Math.min(band[1],...first.filter(o=>(o.z0+o.z1)/2>=mid).map(o=>o.z0-s.clearance)),bottom=Math.max(band[0],...first.filter(o=>(o.z0+o.z1)/2<mid).map(o=>o.z1+s.clearance)),z:[number,number]=[bottom,top];
+    if(top-bottom<2){issues.push({level:'fehler',message:`${name}: in die Tiefe geht der Steg ${a.label} – ${b.label} nicht, es blieben nur ${mm(Math.max(0,top-bottom))}. Außen herum oder weglassen`,ref:`steg:${w.a}|${w.b}`});continue;}
+    w.z=z;w.hits=hits([straight],z).map(o=>o.label);for(const h of w.hits)issues.push({level:'fehler',message:`${name}: der Steg ${a.label} – ${b.label} trifft auch in der Tiefe ${h}`,ref:`steg:${w.a}|${w.b}`});
+    issues.push({level:'hinweis',message:`${name}: Steg ${a.label} – ${b.label} in der Tiefe nur ${mm(top-bottom)} dick statt ${mm(band[1]-band[0])} (${mm(z[0])} bis ${mm(z[1])})`,ref:`steg:${w.a}|${w.b}`});continue;}
+   // Round it: one point beside each part in the way, on the side that makes the shorter way, narrower than the rings.
+   const width=Math.max(2,thickness/2+1),len=(p:[number,number][])=>p.reduce((t,q,k)=>k?t+dist(p[k-1],q):t,0);let best:[number,number][]|undefined;
+   for(const extra of [0,4,8,14])for(const side of [1,-1]){const pts:[number,number][]=[a.at];
+    for(const o of [...first].sort((x,y)=>dist(a.at,x.a)-dist(a.at,y.a))){const ab:[number,number]=[b.at[0]-a.at[0],b.at[1]-a.at[1]],L=Math.hypot(...ab)||1,t=((o.a[0]-a.at[0])*ab[0]+(o.a[1]-a.at[1])*ab[1])/L/L,foot:[number,number]=[a.at[0]+ab[0]*t,a.at[1]+ab[1]*t];
+     let u:[number,number]=[foot[0]-o.a[0],foot[1]-o.a[1]];const ul=Math.hypot(...u);u=ul>1e-6?[u[0]/ul,u[1]/ul]:[-ab[1]/L,ab[0]/L];const R=(o.b?Math.max(o.ra,o.rb!):o.ra)+s.clearance+width+extra;pts.push([+(o.a[0]+side*u[0]*R).toFixed(3),+(o.a[1]+side*u[1]*R).toFixed(3)]);}
+    pts.push(b.at);// Bars of one width from centre to centre; the rings are in the plate anyway.
+    const segs=pts.slice(1).map((q,k)=>({a:pts[k],ra:width,b:q,rb:width}));
+    if(!hits(segs).length&&(!best||len(pts)<len(best)))best=pts;}
+   if(!best){issues.push({level:'fehler',message:`${name}: außen herum findet der Steg ${a.label} – ${b.label} keinen freien Weg. In die Tiefe oder weglassen`,ref:`steg:${w.a}|${w.b}`});continue;}
+   w.path=best.slice(1,-1);w.width=width;w.hits=[];}
   return {id,z0,z1,band,split,auto:!l,rim,thickness,bearings:list.map(b=>b.key),webs,holes,parts};});
 }
 
@@ -131,20 +152,24 @@ function planBolts(doc:GearDoc,layers:LayerPlan[],bearings:Bearing[],shafts:Shaf
  const z0=Math.min(...layers.map(l=>l.band[0])),z1=Math.max(...layers.map(l=>l.band[1])),inLayers=bearings.filter(b=>layers.some(l=>l.bearings.includes(b.key)));
  const clear=(p:[number,number])=>obstacles.every(o=>overlap(o.z0,o.z1,z0,z1)<=eps||(o.b?hullDistance(p,o.a,o.ra,o.b,o.rb!):dist(p,o.a)-o.ra)>=eye+s.clearance)
   &&inLayers.every(b=>dist(p,b.at)>=b.D/2+eye+1)&&shafts.every(x=>dist(p,x.at)>=Math.max(0,...x.pieces.map(q=>q.r))+s.hole+eye);
+ /** What the web from a bearing's ring to the eye at p hits in a layer's heights. */
+ const webHits=(p:[number,number],b:Bearing,l:LayerPlan)=>obstacles.filter(o=>overlap(o.z0,o.z1,l.band[0],l.band[1])>eps&&!o.on.includes(b.on)&&hullsApart(o,{a:b.at,ra:b.D/2+l.rim,b:p,rb:eye})<s.clearance-eps);
+ /** The bearing of a layer the eye joins: the nearest with a clear web, else the nearest. */
+ const attachTo=(p:[number,number],l:LayerPlan)=>{const near=l.bearings.map(k=>bearings.find(b=>b.key===k)!).sort((a,b)=>dist(a.at,p)-dist(b.at,p));return {b:near.find(b=>!webHits(p,b,l).length)??near[0],clear:near.some(b=>!webHits(p,b,l).length)};};
  let places:[number,number][];const auto=!doc.bolts;
  if(doc.bolts)places=doc.bolts;
  else{const rim=(b:Bearing)=>layers.find(l=>l.bearings.includes(b.key))?.rim??s.rim,cands:[number,number][]=[],extra=new Map<[number,number],number>();
   // Right outside a ring first; further out (5 mm steps) where a wheel takes the ring's surroundings, each mm out costs.
-  for(const b of inLayers)for(let out=0;out<=40;out+=5)for(let a=0;a<360;a+=10){const r=b.D/2+rim(b)+eye+out,p:[number,number]=[+(b.at[0]+r*Math.cos(a*Math.PI/180)).toFixed(3),+(b.at[1]+r*Math.sin(a*Math.PI/180)).toFixed(3)];if(clear(p)&&inLayers.every(o=>o===b||dist(p,o.at)>=dist(p,b.at)-1e-9||dist(p,o.at)>=o.D/2+rim(o)+eye)){cands.push(p);extra.set(p,out);}}
+  for(const b of inLayers)for(let out=0;out<=40;out+=5)for(let a=0;a<360;a+=10){const r=b.D/2+rim(b)+eye+out,p:[number,number]=[+(b.at[0]+r*Math.cos(a*Math.PI/180)).toFixed(3),+(b.at[1]+r*Math.sin(a*Math.PI/180)).toFixed(3)];if(clear(p)&&layers.every(l=>!l.bearings.length||attachTo(p,l).clear)&&inLayers.every(o=>o===b||dist(p,o.at)>=dist(p,b.at)-1e-9||dist(p,o.at)>=o.D/2+rim(o)+eye)){cands.push(p);extra.set(p,out);}}
   const cost=(p:[number,number])=>extra.get(p)??0;
   const want=s.bolts||(layers.some(l=>l.bearings.length>2)?4:3),c:[number,number]=[inLayers.reduce((a,b)=>a+b.at[0],0)/Math.max(1,inLayers.length),inLayers.reduce((a,b)=>a+b.at[1],0)/Math.max(1,inLayers.length)];places=[];
   const spread=(p:[number,number])=>Math.min(...places.map(q=>dist(p,q)))-cost(p);
   if(cands.length){places.push(cands.reduce((a,b)=>dist(b,c)-cost(b)>dist(a,c)-cost(a)?b:a));while(places.length<want){const next=cands.filter(p=>!places.includes(p)).reduce<[number,number]|undefined>((a,b)=>!a||spread(b)>spread(a)?b:a,undefined);if(!next||Math.min(...places.map(q=>dist(next,q)))<2*eye)break;places.push(next);}}
   if(places.length<Math.min(want,3))issues.push({level:'warnung',message:`Nur ${places.length} Platz für Bolzen gefunden: zu eng um die Lager. Rand größer oder Bolzen von Hand setzen`});}
- const bolts=places.map((at):Bolt=>{const attach:Record<string,string>={};for(const l of layers){const near=l.bearings.map(k=>bearings.find(b=>b.key===k)!).sort((a,b)=>dist(a.at,at)-dist(b.at,at))[0];if(near)attach[l.id]=near.key;}
+ const bolts=places.map((at):Bolt=>{const attach:Record<string,string>={};for(const l of layers){const a=attachTo(at,l);if(a.b)attach[l.id]=a.b.key;}
   if(!auto&&!clear(at))issues.push({level:'fehler',message:`Bolzen bei ${n(at[0])} / ${n(at[1])} mm trifft ein Rad, ein Lager oder eine Welle`});return {at,eye,hole,auto,attach};});
- // Its eye's web in each layer must not cross wheels either.
- for(const bo of bolts)for(const l of layers){const k=bo.attach[l.id];if(!k)continue;const b=bearings.find(x=>x.key===k)!;for(const o of obstacles){if(overlap(o.z0,o.z1,l.band[0],l.band[1])<=eps||o.on.includes(b.on))continue;const g=o.b?Math.min(hullDistance(bo.at,o.a,o.ra,o.b,o.rb!),hullDistance(b.at,o.a,o.ra,o.b,o.rb!)):Math.min(...[0,.25,.5,.75,1].map(t=>dist([b.at[0]+(bo.at[0]-b.at[0])*t,b.at[1]+(bo.at[1]-b.at[1])*t],o.a)-o.ra-(eye+(b.D/2+l.rim-eye)*(1-t))));if(g<s.clearance)issues.push({level:'warnung',message:`Der Steg zum Bolzen bei ${n(bo.at[0])} / ${n(bo.at[1])} mm in Schicht ${layers.indexOf(l)+1} streift ${o.label}`});}}
+ // Its eye's web in each layer must not cross wheels either (only bolts set by hand can still).
+ for(const bo of bolts)for(const l of layers){const k=bo.attach[l.id];if(!k)continue;for(const o of webHits(bo.at,bearings.find(x=>x.key===k)!,l))issues.push({level:'warnung',message:`Der Steg zum Bolzen bei ${n(bo.at[0])} / ${n(bo.at[1])} mm in Schicht ${layers.indexOf(l)+1} streift ${o.label}`});}
  const sorted=[...layers].sort((a,b)=>a.band[0]-b.band[0]),columns:Columns[]=[];
  for(let i=1;i<sorted.length;i++){const a=sorted[i-1],b=sorted[i],gap=b.band[0]-a.band[1];if(gap<-eps)issues.push({level:'fehler',message:`Schicht ${layers.indexOf(a)+1} und ${layers.indexOf(b)+1} überlappen um ${n(-gap)} mm`});else if(gap>.3)columns.push({from:`Schicht ${layers.indexOf(a)+1}`,to:`Schicht ${layers.indexOf(b)+1}`,z0:a.band[1],z1:b.band[0]});}
  const need=z1-z0+2*.5+.8*s.bolt,length=screws.find(l=>l>=need);

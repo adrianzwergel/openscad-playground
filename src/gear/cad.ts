@@ -18,21 +18,30 @@ import {slug} from './notes.ts';
 const disc=(c:P,r:number)=>drawCircle(r).translate(c[0],c[1]);
 /** Two discs and the quadrilateral between their outer tangents: their hull. */
 function hull(a:P,ra:number,b:P,rb:number):Drawing{const t=tangents(a,ra,b,rb);let d=disc(a,ra).fuse(disc(b,rb));if(t)d=d.fuse(draw(t[0]).lineTo(t[1]).lineTo(t[2]).lineTo(t[3]).close());return d;}
-/** The outline of a layer's plates, with everything that goes through cut out. */
-export function plateOutline(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|undefined{
- const s=doc.settings,bearing=(k:string)=>plan.bearings.find(b=>b.key===k)!,ring=(k:string)=>bearing(k).D/2+l.rim;if(!l.bearings.length)return undefined;
- let d:Drawing=disc(bearing(l.bearings[0]).at,ring(l.bearings[0]));
- for(const k of l.bearings.slice(1))d=d.fuse(disc(bearing(k).at,ring(k)));
- for(const w of l.webs)d=d.fuse(hull(bearing(w.a).at,ring(w.a),bearing(w.b).at,ring(w.b)));
- for(const bo of plan.bolts){const k=bo.attach[l.id];if(k)d=d.fuse(hull(bearing(k).at,ring(k),bo.at,bo.eye));}
- let holes:Drawing|undefined;const hole=(c:P,r:number)=>{const h=disc(c,r);holes=holes?holes.fuse(h):h;};
- for(const k of l.bearings){const b=bearing(k);hole(b.at,b.D/2-s.lipIn);}
+/** A web's shape: the hull of both rings, or bars of one width through the points round a part. */
+function webShape(plan:GearPlan,l:LayerPlan,w:LayerPlan['webs'][number]):Drawing{const bearing=(k:string)=>plan.bearings.find(x=>x.key===k)!,ring=(k:string)=>bearing(k).D/2+l.rim;
+ if(!w.path)return hull(bearing(w.a).at,ring(w.a),bearing(w.b).at,ring(w.b));const pts:P[]=[bearing(w.a).at,...w.path,bearing(w.b).at];let d=hull(pts[0],w.width!,pts[1],w.width!);for(let i=2;i<pts.length;i++)d=d.fuse(hull(pts[i-1],w.width!,pts[i],w.width!));return d;}
+/** What goes through a layer's plates: the lip's opening over each bearing, holes for shafts passing, bolt holes. */
+function throughHoles(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|undefined{const s=doc.settings;let holes:Drawing|undefined;const hole=(c:P,r:number)=>{const h=disc(c,r);holes=holes?holes.fuse(h):h;};
+ for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;hole(b.at,b.D/2-s.lipIn);}
  for(const h of l.holes)hole(plan.shafts.find(x=>x.id===h.on)!.at,h.r);
  for(const bo of plan.bolts)if(bo.attach[l.id])hole(bo.at,bo.hole);
- return holes?d.cut(holes):d;}
+ return holes;}
+/** The outline of a layer's plates, with everything that goes through cut out. Webs lowered or raised under/over a
+ * part are not in it: they are their own lower pieces (`steppedWebs`). */
+export function plateOutline(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|undefined{
+ const bearing=(k:string)=>plan.bearings.find(b=>b.key===k)!,ring=(k:string)=>bearing(k).D/2+l.rim;if(!l.bearings.length)return undefined;
+ let d:Drawing=disc(bearing(l.bearings[0]).at,ring(l.bearings[0]));
+ for(const k of l.bearings.slice(1))d=d.fuse(disc(bearing(k).at,ring(k)));
+ for(const w of l.webs)if(!w.z)d=d.fuse(webShape(plan,l,w));
+ for(const bo of plan.bolts){const k=bo.attach[l.id];if(k)d=d.fuse(hull(bearing(k).at,ring(k),bo.at,bo.eye));}
+ const holes=throughHoles(doc,plan,l);return holes?d.cut(holes):d;}
+/** Webs only as high as there is room under or over a part: their outline and heights. */
+export function steppedWebs(doc:GearDoc,plan:GearPlan,l:LayerPlan){const holes=throughHoles(doc,plan,l);return l.webs.filter(w=>w.z).map(w=>{const d=webShape(plan,l,w);return {shape:holes?d.cut(holes.clone()):d,z:w.z!};});}
 function plates(keep:Keep,doc:GearDoc,plan:GearPlan,l:LayerPlan,index:number):CadPart[]{
- const out=plateOutline(doc,plan,l);if(!out)return [];const s=doc.settings,[z0,z1]=l.band,bearings=l.bearings.map(k=>plan.bearings.find(b=>b.key===k)!);
+ const out=plateOutline(doc,plan,l);if(!out)return [];const s=doc.settings,[z0,z1]=l.band,bearings=l.bearings.map(k=>plan.bearings.find(b=>b.key===k)!),steps=steppedWebs(doc,plan,l);
  const half=(lo:number,hi:number,lower:boolean)=>{let solid=keep(out.clone().sketchOnPlane('XY',lo).extrude(hi-lo) as Shape3D);
+  for(const st of steps){const a=Math.max(lo,st.z[0]),e=Math.min(hi,st.z[1]);if(e-a>1e-6)solid=keep(solid.fuse(keep(st.shape.clone().sketchOnPlane('XY',a).extrude(e-a) as Shape3D)) as Shape3D);}
   for(const b of bearings){const a=lower?Math.max(lo,b.z0):l.split,e=lower?l.split:Math.min(hi,b.z1);if(e-a<=1e-6)continue;solid=keep(solid.cut(keep(makeCylinder(b.D/2+s.fit,e-a+(lower?.01:0)+(lower?0:.01),[b.at[0],b.at[1],lower?a:a-.01],[0,0,1]))) as Shape3D);}
   return solid;};
  return [{name:`Schicht ${index+1} unten`,file:`schicht-${index+1}-unten`,kind:'platte',shape:half(z0,l.split,true),color:'#7a93a6',made:true},
