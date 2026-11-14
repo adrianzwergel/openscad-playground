@@ -13,3 +13,15 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 .topview .belt{stroke:#e0c56c;stroke-width:2;fill:none}.topview .mesh{stroke:#72dac1;stroke-dasharray:2 3}
 .topview .axle{fill:#9aa7b1;stroke:#1b2329}.topview text{fill:#cdd8df;font-size:12px}.topview .empty{fill:#8fa1ad}
 .topview .away{opacity:.3}
+#library{background:var(--panel);border-right:1px solid var(--line)}#library .small{font-size:12px}
+#library a.button{display:block;margin-top:8px;font-size:13px}
+#top svg{display:block;touch-action:none}#top .shaft{cursor:grab}#top .shaft.selected .axle{stroke:#fff;stroke-width:3}
+#top .web{cursor:pointer}#top .web.selected{fill:#5b7f96;stroke:#fff;stroke-width:1.5}
+#side{background:#10161c;border:1px solid var(--line);border-radius:8px;padding:8px;overflow:auto}
+.sideview text{fill:#cdd8df;font-size:11px}.sideview .axle{stroke:#9aa7b1;stroke-width:3}
+.sideview .bearing{fill:#2f4a5c;stroke:#6fa4c6}.sideview .wheel{fill:#2f5248;stroke:#6fc6a6}.sideview .pulley{fill:#4d4526;stroke:#e0c56c}
+.sideview .zone{fill:#72dac114;stroke:none}.sideview .handle{fill:#24433f;stroke:#72dac1;cursor:grab}.sideview .band.auto .handle{stroke-dasharray:4 3}
+.sideview .band.selected .handle{fill:#2f6a5e;stroke:#fff}.sideview .band.selected .zone{fill:#72dac12a}.sideview .edge{fill:transparent;cursor:ew-resize}.sideview .edge:hover{fill:#ffffff44}
+.prop-row{display:flex;align-items:center;gap:6px;margin:4px 0}.prop-row span{flex:1;font-size:12px}
+#properties button{margin:3px 0}#properties h3{margin-top:12px}
+#top .wheel,#top .belt,#top .mesh,#top .pocket,#top .hole,#top .ring{pointer-events:none}

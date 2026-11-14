@@ -1,10 +1,11 @@
 <!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Getriebe-Generator</title><link rel="stylesheet" href="./studio.css"><link rel="stylesheet" href="./welle.css"><link rel="stylesheet" href="./getriebe.css">
 <body data-view="start" class="generator">
 <header>
- <a class="ghost button" href="./studio.html" title="Zurück ins Studio">← Studio</a><a class="ghost button" href="./welle.html" title="Wellen bearbeiten">Wellen-Generator</a>
+ <a class="ghost button" href="./studio.html" title="Zurück ins Studio">← Studio</a><a class="ghost button" href="./welle.html" target="_blank" title="Wellen bearbeiten">Wellen-Generator ↗</a>
  <b>Getriebe-Generator</b><b id="gear-name"></b><span id="save-state" class="muted" role="status"></span>
  <span class="spacer"></span>
- <button id="gear-close" class="ghost gear-only">Alle Getriebe</button><button id="gear-delete" class="ghost danger gear-only">Löschen</button>
+ <button id="undo" class="ghost gear-only" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">↶</button><button id="redo" class="ghost gear-only" title="Wiederholen (Strg+Shift+Z)" aria-label="Wiederholen">↷</button>
+ <button id="gear-close" class="ghost gear-only">Alle Getriebe</button><button id="gear-rename" class="ghost gear-only">Umbenennen</button><button id="gear-delete" class="ghost danger gear-only">Löschen</button>
 </header>
 <main id="generator">
  <aside id="gears" class="start-only">
@@ -16,12 +17,16 @@
   <p class="muted">Wellen aus dem Wellen-Generator senkrecht auf eine Ebene stellen; was kämmt oder mit einem Riemen läuft, legt die Abstände fest. Aus den Lagern entsteht ein Gestell aus Platten: Ringe um die Lager, Stege dazwischen, Schicht für Schicht.</p>
   <h2>Beispiele</h2><div id="examples" class="start-grid"></div>
  </section>
- <aside id="shafts-box" class="gear-only"><h2>Wellen</h2><ul id="linked"></ul><h2>Schichten</h2><ul id="layers"></ul></aside>
+ <aside id="library" class="gear-only"></aside>
  <section id="workspace" class="gear-only">
   <div id="layer-tabs"></div>
   <div id="top"></div>
+  <h2>Schichten von der Seite</h2>
+  <div id="side"></div>
+  <p class="muted hint">Wellen von links auf die Ebene ziehen oder anklicken. Nahe an einem passenden Rad rasten sie im Eingriff ein, im Winkelraster um das Partnerrad; sonst im mm-Raster. Alt schaltet das ab. Unten die Schichten als Bänder: verschieben, Kanten ziehen. Entf löscht, Strg+Z macht rückgängig.</p>
  </section>
  <aside id="report" class="gear-only">
+  <div id="properties"></div>
   <h2>Antrieb</h2><ul id="drives"></ul>
   <h2 id="issues-title">Meldungen</h2><ul id="issues"></ul>
  </aside>

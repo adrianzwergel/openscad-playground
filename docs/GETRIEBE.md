@@ -12,7 +12,8 @@ Ziel wie dort: **einfach**. Nichts wird gezeichnet, was sich ableiten lässt.
 | Schritt | Stand |
 |---|---|
 | 1 | fertig: `getriebe.html` (Karte auf der Studio-Startseite), Getriebe als eigene Dateien (OPFS-Ordner `getriebe`, Format `gear-1`), Wellen verknüpft mit dem Ordner `wellen`; `src/gear/model.ts`, `plan.ts` (`planGear`: Welt aus den Wellen, Eingriffe, Riemen mit Normlänge, Drehzahlen, Klemmen, Schichten aus den Lagerhöhen, Stege kämmend/kürzeste/von Hand, Freilöcher, Platten gegen Räder, Riemen und Hülsen, Rad am eigenen Lager), `draw.ts` (Draufsicht je Schicht), zwei Beispiele, die ihre Wellen in den Wellen-Generator schreiben. Prüfung: `scripts/gear/check-plan.mjs`, `scripts/gear/check-page-browser.mjs` |
-| 2–6 | offen |
+| 2 | fertig: `editor.ts`: Wellen aus der Liste ziehen oder klicken (ein Klick setzt die Welle gleich kämmend an ein passendes Rad), in der Draufsicht verschieben mit Einrasten im Eingriff im Winkelraster um das Partnerrad, sonst mm-Raster (`snap.ts`, Alt: frei); Winkel um den Partner, x/y/z, umgedreht, Eingang in den Eigenschaften; Riemen an Scheiben hinzufügen und entfernen; Stege anklicken und entfernen, in der Schicht hinzufügen oder wiederherstellen; Schichten von der Seite als Bänder (verschieben, Kanten ziehen; die erste Änderung macht aus den vorgeschlagenen Schichten feste), ＋ Schicht, „Schichten automatisch“; Rückgängig, Entf, Speichern. „Im Wellen-Generator öffnen“ geht über `welle.html#open=<id>` (ein Anker, weil der lokale Server die Query beim Umleiten verliert). Prüfung: `scripts/gear/check-snap.mjs`, `scripts/gear/check-page-browser.mjs` |
+| 3–6 | offen |
 
 Der Katalog des Wellen-Generators kennt jetzt Zähne und Modul der Räder und Scheiben (`teeth`, `module`, `pulley`).
 

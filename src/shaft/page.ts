@@ -90,5 +90,7 @@ addEventListener('keydown',e=>{if(!open)return;const typing=(e.target as HTMLEle
 addEventListener('resize',()=>{if(open)draw();});
 addEventListener('pagehide',()=>{void flush();});
 
-const last=await store.active();if(last&&(await store.list()).some(f=>f.id===last))await openShaft(last);else{draw();await list();}
+// #open=<id> (or ?open=): from the gearbox generator, straight to that shaft. The anchor survives servers that drop the
+// query when they redirect to clean URLs.
+const wanted=new URLSearchParams(location.hash.slice(1)).get('open')??new URLSearchParams(location.search).get('open'),last=wanted??await store.active();if(last&&(await store.list()).some(f=>f.id===last))await openShaft(last);else{draw();await list();}
 document.body.dataset.ready="true";
