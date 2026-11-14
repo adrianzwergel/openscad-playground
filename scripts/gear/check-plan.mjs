@@ -45,7 +45,7 @@ assert.ok(Math.abs(hullDistance([5,10],[0,0],3,[10,0],3)-7)<1e-9);assert.ok(hull
  p=planGear(gearbox({shafts:[{id:'a',shaft:'T',at:[0,0],z:0},{id:'b',shaft:'T',at:[20,0],z:0},{id:'c',shaft:'T',at:[10,h],z:0}]}),{T:t});assert.equal(p.meshes.length,3);assert.ok(errors(p).some(e=>/klemmt/.test(e)));}
 // 4. A belt: GT2 z20 and z20 60 mm apart, 160 mm long, stock 200.
 {const P=shaft('P',[bearing('l1',2),{id:'r',part:'gt2-z20',x:20},bearing('l2',50)]),p=planGear(gearbox({shafts:[{id:'a',shaft:'P',at:[0,0],z:0},{id:'b',shaft:'P',at:[60,0],z:0}],belts:[{id:'r1',a:{on:'a',item:'r'},b:{on:'b',item:'r'}}]}),{P});
- assert.ok(Math.abs(p.belts[0].length-(120+2*Math.PI*20/Math.PI))<1e-9);assert.equal(p.belts[0].stock,200);assert.equal(p.rates.b,1);assert.ok(p.issues.some(i=>/nächste Normlänge 200/.test(i.message)));
+ assert.ok(Math.abs(p.belts[0].length-(120+2*Math.PI*20/Math.PI))<1e-9);assert.equal(p.belts[0].stock,200);assert.equal(p.rates.b,1);assert.ok(p.issues.some(i=>/Normriemen 200 mm und nichts zum Spannen: Achsabstand auf 80 mm stellen/.test(i.message)));assert.ok(Math.abs(p.belts[0].fit.center-80)<1e-9);
  const bad=planGear(gearbox({shafts:[{id:'a',shaft:'P',at:[0,0],z:0},{id:'b',shaft:'P',at:[60,0],z:20}],belts:[{id:'r1',a:{on:'a',item:'r'},b:{on:'b',item:'r'}}]}),{P});assert.ok(errors(bad).some(e=>/nicht auf gleicher Höhe/.test(e)));}
 // 5. A wheel right against its own bearing: the plate's rim reaches over the bearing and rubs it.
 {const N=shaft('N',[bearing('l1',2),gear('g',9,40),bearing('l2',50)]),p=planGear(gearbox({shafts:[{id:'a',shaft:'N',at:[0,0],z:0}]}),{N});assert.ok(errors(p).some(e=>/z40 m1 auf N sitzt zu nah am Lager/.test(e)));}

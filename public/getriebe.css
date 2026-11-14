@@ -30,3 +30,4 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 #top g.web polygon,#top g.web .joint{fill:#3d5566}#top g.web.selected polygon,#top g.web.selected .joint{fill:#5b7f96;stroke:#fff;stroke-width:1}
 #top g.web .joint{pointer-events:auto}
 .topview .bolt{fill:#10161c;stroke:#c58a4a;stroke-width:1.5}
+.topview .motor .slot{stroke:#10161c;stroke-linecap:round}.topview .motor .hole{fill:#10161c;stroke:#56656f}#top .motor{pointer-events:none}
