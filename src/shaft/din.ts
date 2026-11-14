@@ -29,3 +29,13 @@ export const rings=[
  {d:10,d2:9.6,m:1.1},{d:12,d2:11.5,m:1.1},{d:15,d2:14.3,m:1.1},{d:17,d2:16.2,m:1.1},{d:20,d2:19,m:1.3},
 ] as const;
 export const ringFor=(d:number)=>rings.find(r=>Math.abs(r.d-d)<1e-6);
+
+/** Retaining washers (E-clips) DIN 6799: size = groove Ø d2, for shafts from `from` to `to`, groove width m. Pushed on
+ * from the side into the groove: nothing has to slide over the shaft's end. */
+export const eclips=[
+ {d2:1.2,from:1.4,to:2,m:.34},{d2:1.5,from:2,to:2.5,m:.44},{d2:1.9,from:2.5,to:3,m:.64},{d2:2.3,from:3,to:4,m:.64},{d2:3.2,from:4,to:5,m:.64},
+ {d2:4,from:5,to:7,m:.74},{d2:5,from:6,to:8,m:.74},{d2:6,from:7,to:9,m:.74},{d2:7,from:8,to:11,m:.94},{d2:8,from:9,to:12,m:1.05},
+ {d2:9,from:10,to:14,m:1.15},{d2:10,from:11,to:15,m:1.25},{d2:12,from:13,to:18,m:1.35},{d2:15,from:16,to:24,m:1.55},
+] as const;
+/** The E-clip for a shaft: of those whose range holds it, the largest (the shallowest groove). */
+export const eclipFor=(d:number)=>[...eclips].reverse().find(e=>d>=e.from-1e-6&&d<=e.to+1e-6);

@@ -76,6 +76,10 @@ $('examples').replaceChildren(...shaftExamples.map(x=>{const b=el('button',{clas
 $('shaft-rename').onclick=()=>{if(!open)return;const name=prompt('Neuer Name',open.name)?.trim();if(!name)return;open.name=name;save();draw();void list();};
 $('shaft-delete').onclick=()=>{if(!open||!confirm(`Welle „${open.name}“ löschen?`))return;const id=open.id;clearTimeout(saveTimer);saveTimer=undefined;open=undefined;void store.remove(id).then(()=>{draw();void list();});};
 $('shaft-close').onclick=()=>void flush().then(()=>{open=undefined;draw();void list();});
+// A shaft as a file: the same JSON as in the browser's storage, with its name.
+$('shaft-export').onclick=()=>{if(!open)return;const base=open.name.replace(/[^\wäöüÄÖÜß-]+/g,'_'),url=URL.createObjectURL(new Blob([JSON.stringify({format:FORMAT,name:open.name,doc:open.doc},null,1)],{type:'application/json'})),a=el('a',{href:url,download:`${base}.welle.json`});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status(`${base}.welle.json gespeichert.`);};
+const importFile=$('shaft-import-file') as HTMLInputElement;$('shaft-import').onclick=()=>importFile.click();
+importFile.onchange=async()=>{const f=importFile.files?.[0];importFile.value='';if(!f)return;try{if(f.size>1e6)throw Error('Datei zu groß');const raw=JSON.parse(await f.text());if(raw?.format!==FORMAT)throw Error('keine Welle');await create(String(raw.name??f.name).slice(0,80),parseShaft(raw.doc));status(`${raw.name} importiert.`);}catch(e){status(`Import abgelehnt: ${e instanceof Error?e.message:e}`);}};
 $('undo').onclick=()=>undo(true);$('redo').onclick=()=>undo(false);
 $('zoom-in').onclick=()=>editor.setZoom(editor.zoom*1.5);$('zoom-out').onclick=()=>editor.setZoom(editor.zoom/1.5);$('zoom-fit').onclick=()=>editor.setZoom(1);
 addEventListener('keydown',e=>{if(!open)return;const typing=(e.target as HTMLElement).closest('input,select,textarea');

@@ -51,7 +51,7 @@ const sec=(p,x)=>p.sections.find(c=>x>=c.x0&&x<=c.x1).profile;
 {const p=planShaft(shaft({length:40,items:[{id:'a',part:'lager-608',x:30,side:'rechts'}],sections:[{x0:35,x1:40,profile:rund(10)}]}));assert.ok(errors(p).some(e=>/geht von rechts nicht über Ø10/.test(e)),errors(p).join(' | '));}
 // Keyway and ring groove look up their tables; overlaps are refused.
 {const p=planShaft(shaft({length:40,items:[{id:'a',part:'lager-608',x:3,side:'links'}],sections:[{x0:10,x1:40,profile:rund(10)}],works:[{id:'n',kind:'nut',x0:20,x1:35},{id:'r',kind:'ring',x:1.5}]}));
- assert.deepEqual(p.machining.find(m=>m.key).key,{b:3,h:3,t1:1.8,length:14});assert.deepEqual(p.machining.find(m=>m.ring).ring,{d2:7.6,m:.9});assert.ok(!p.issues.some(i=>/nach links nicht gesichert/.test(i.message)),'Ring sichert das Lager');}
+ assert.deepEqual(p.machining.find(m=>m.key).key,{b:3,h:3,t1:1.8,length:14});assert.deepEqual(p.machining.find(m=>m.ring).ring,{d2:7.6,m:.9,norm:'471',label:'Sicherungsring DIN 471 8 × 0,8'});assert.ok(!p.issues.some(i=>/nach links nicht gesichert/.test(i.message)),'Ring sichert das Lager');}
 {const p=planShaft(shaft({length:40,items:[{id:'a',part:'lager-608',x:0},{id:'b',part:'lager-608',x:5}]}));assert.ok(errors(p).some(e=>/überlappen/.test(e)));}
 assert.throws(()=>parseShaft({...newShaft(),length:-1}),/Länge/);
 console.log('Wellen-Plan: Profile und DIN-Tabellen, Beispiel 626 | LEGO z24 | 626 mit Adapter und Bund, Distanzhülse, Motorwelle mit Madenschraube, Wand-, Seiten- und Abschnittsfehler, Passfeder und Sicherungsring.');

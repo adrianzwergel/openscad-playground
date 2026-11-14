@@ -44,7 +44,12 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // 9. After a reload all of it is there.
  const before=await p.evaluate(()=>[...document.querySelectorAll('[data-clip]')].map(x=>x.dataset.clip+x.style.left).join());await wait(700);await p.reload();await p.waitForSelector('.tl-lane.auf',{visible:true});await wait(200);
  assert.equal(await p.evaluate(()=>[...document.querySelectorAll('[data-clip]')].map(x=>x.dataset.clip+x.style.left).join()),before,'nach dem Neuladen');
+ // A shaft from a file: a NEMA shaft inside, a LEGO bush from the new group "Sicherung" holds the gear.
+ const json=path.join(dir,'welle.welle.json');await fs.writeFile(json,JSON.stringify({format:'shaft-1',name:'Aus Datei',doc:{length:47,making:'druck',items:[{id:'a',part:'lager-626',x:24.5},{id:'z',part:'lego-4019',x:31}],inserts:[{id:'m',part:'motor-nema17-27',end:'links',depth:24}],works:[],settings:{}}}));
+ await (await p.$('#shaft-import-file')).uploadFile(json);await p.waitForFunction(()=>document.querySelector('#shaft-name').textContent==='Aus Datei');
+ await p.waitForSelector('[data-add="auf:lego-buchse-halb"]');await drag(await center('[data-add="auf:lego-buchse-halb"]'),await px(43));
+ assert.match(await p.$eval('#bom',e=>e.textContent),/LEGO-Buchse ½/);assert.doesNotMatch(await p.$eval('#issues',e=>e.textContent),/Fehler|passt nicht/);assert.match(await p.$eval('#catalog',e=>e.textContent),/Sicherung.*E-Ring DIN 6799/s);
  // An example from the list of all shafts.
  await p.click('#shaft-close');await p.waitForSelector('[data-example="lego-mitte"]',{visible:true});await p.click('[data-example="lego-mitte"]');await p.waitForSelector('#timeline svg .sleeve.adapter');assert.match(await p.$eval('#issues',e=>e.textContent),/Wand nur 0,6 mm/);
- assert.deepEqual(errors,[]);console.log('Wellen-Zeitleiste: Ziehen aus dem Katalog, Klick fügt ein, Adapter erzeugt, kein Überlappen, Entf und Strg+Z, Raster, Steckung mit gezogener Tiefe, Madenschraube mit Kernloch, Wellenende gezogen, gespeichert, Beispiel.');
+ assert.deepEqual(errors,[]);console.log('Wellen-Zeitleiste: Ziehen aus dem Katalog, Klick fügt ein, Adapter erzeugt, kein Überlappen, Entf und Strg+Z, Raster, Steckung mit gezogener Tiefe, Madenschraube mit Kernloch, Wellenende gezogen, gespeichert, Import aus Datei mit LEGO-Buchse, Beispiel.');
 }finally{await browser.close();}

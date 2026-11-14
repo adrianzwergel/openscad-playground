@@ -9,7 +9,7 @@ import {inner,outer,passes,largestPassing,label,same,rund} from './profile.ts';
 import type {Profile} from './profile.ts';
 import {onPart,inPart} from './catalog.ts';
 import type {OnPart,InPart} from './catalog.ts';
-import {thread,setScrew,keyFor,keyLengths,ringFor} from './din.ts';
+import {thread,setScrew,keyFor,keyLengths,ringFor,eclipFor} from './din.ts';
 import type {ShaftDoc,Side,Work} from './model.ts';
 
 const eps=1e-6;
@@ -20,13 +20,14 @@ export type Placed={id:string;part:OnPart;label:string;x0:number;x1:number;bore:
 /** A printed or turned sleeve: an adapter under a part, or a spacer. `steps`: its outside along x. */
 export type Sleeve={id:string;kind:'adapter'|'huelse';label:string;for?:string;auto:boolean;x0:number;x1:number;side:Side;inner:Profile;steps:{x0:number;x1:number;outer:Profile}[]};
 export type Insert={id:string;part:InPart;label:string;end:Side;x0:number;x1:number;profile:Profile;wall:number};
-export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string};
+/** `work`: about a machining step. Those never decide which end parts go on from: machining follows the shaft. */
+export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string;work?:boolean};
 export type BomLine={what:string;count:number;note?:string};
 /** A machining step with what it came to: drill and screw for a set screw, the key, the groove. */
-export type Machining={work:Work;drill?:number;depth?:number;screw?:string;key?:{b:number;h:number;t1:number;length:number};ring?:{d2:number;m:number}};
+export type Machining={work:Work;drill?:number;depth?:number;screw?:string;key?:{b:number;h:number;t1:number;length:number};ring?:{d2:number;m:number;norm:'471'|'6799';label:string}};
 export type Plan={length:number;sections:Section[];placed:Placed[];sleeves:Sleeve[];inserts:Insert[];machining:Machining[];issues:Issue[];bom:BomLine[];split:number};
 
-type Ref={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;spacer:boolean;side?:Side};
+type Ref={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;spacer:boolean;clamp:boolean;side?:Side};
 const n=(x:number)=>String(+x.toFixed(2)).replace('.',',');
 const mm=(x:number)=>`${n(x)} mm`;
 const overlaps=(a0:number,a1:number,b0:number,b1:number)=>a0<b1-eps&&b0<a1-eps;
@@ -36,7 +37,7 @@ export function planShaft(doc:ShaftDoc):Plan{
  const refs:Ref[]=[];
  for(const it of doc.items){const part=onPart(it.part);if(!part){issues.push({level:'fehler',message:`Unbekanntes Teil ${it.part}`,ref:it.id});continue;}
   const width=part.own&&it.width?it.width:part.width,bore=part.own&&it.bore?it.bore:part.bore;
-  refs.push({id:it.id,part,label:part.spacer?'Distanzhülse':part.label.split(' (')[0],x0:it.x,x1:it.x+width,bore,spacer:!!part.spacer,...(it.side?{side:it.side}:{})});}
+  refs.push({id:it.id,part,label:part.spacer?'Distanzhülse':part.label.split(' (')[0],x0:it.x,x1:it.x+width,bore,spacer:!!part.spacer,clamp:!!part.clamp,...(it.side?{side:it.side}:{})});}
  refs.sort((a,b)=>a.x0-b.x0);
  for(const r of refs)if(r.x0<-eps||r.x1>L+eps)issues.push({level:'fehler',message:`${r.label} ragt über das Wellenende (${mm(r.x0)} bis ${mm(r.x1)}, Welle ${mm(L)})`,ref:r.id});
  for(let i=1;i<refs.length;i++)if(refs[i].x0<refs[i-1].x1-eps)issues.push({level:'fehler',message:`${refs[i-1].label} und ${refs[i].label} überlappen um ${mm(refs[i-1].x1-refs[i].x0)}`,ref:refs[i].id});
@@ -50,7 +51,7 @@ export function planShaft(doc:ShaftDoc):Plan{
  // Every split the fixed sides allow; the one with the fewest mistakes, adapters and spacers wins.
  let best:Plan|undefined,bestScore=Infinity;
  for(let k=0;k<=refs.length;k++){if(refs.some((r,i)=>r.side==='links'&&i>=k||r.side==='rechts'&&i<k))continue;
-  const p=finish(doc,build(doc,refs,k,inserts,issues));const score=1000*p.issues.filter(i=>i.level==='fehler').length+10*p.issues.filter(i=>i.level==='warnung').length+20*p.sleeves.filter(s=>s.kind==='adapter').length+2*p.sleeves.filter(s=>s.auto&&s.kind==='huelse').length+(k===Math.ceil(refs.length/2)?0:.1);
+  const p=finish(doc,build(doc,refs,k,inserts,issues)),mount=p.issues.filter(i=>!i.work);const score=1000*mount.filter(i=>i.level==='fehler').length+10*mount.filter(i=>i.level==='warnung').length+20*p.sleeves.filter(s=>s.kind==='adapter').length+2*p.sleeves.filter(s=>s.auto&&s.kind==='huelse').length+(k===Math.ceil(refs.length/2)?0:.1);
   if(score<bestScore){best=p;bestScore=score;}}
  if(!best){issues.push({level:'fehler',message:'Die festgelegten Seiten widersprechen sich: Teile von links müssen links von denen von rechts sitzen.'});return finish(doc,{length:L,sections:[{x0:0,x1:L,profile:rund(doc.collar??8),role:'bund'}],placed:[],sleeves:[],inserts,machining:[],issues,bom:[],split:0});}
  return best;
@@ -71,7 +72,7 @@ function build(doc:ShaftDoc,refs:Ref[],k:number,inserts:Insert[],given:Issue[]):
    if(!C.every(c=>passes(bore,c))){seat=free!;adapter={id:`adapter-${r.id}`,kind:'adapter',label:`Adapter ${label(seat)} → ${label(bore)}`,for:r.id,auto:true,x0:r.x0,x1:r.x1,side,inner:seat,steps:[{x0:r.x0,x1:r.x1,outer:bore}]};
     const wall=(inner(bore)-outer(seat))/2;if(wall<=eps)issues.push({level:'fehler',message:`${r.label}: ${label(seat)} passt nicht in die Bohrung ${label(bore)}, kein Adapter möglich. Ein Teil von der anderen Seite aufschieben?`,ref:r.id});else if(wall<s.minWall-eps)issues.push({level:'warnung',message:`${adapter.label} unter ${r.label}: Wand nur ${mm(wall)} (mindestens ${mm(s.minWall)})`,ref:adapter.id});}
    // Nothing between this part and the next one in stops it: a spacer, or the adapter gets a collar.
-   if(gap[1]>gap[0]+eps){const stopBore=adapter?seat:bore,stopped=free===undefined||!passes(free,stopBore);
+   if(gap[1]>gap[0]+eps){const stopBore=adapter?seat:bore,stopped=r.clamp||free===undefined||!passes(free,stopBore);
     secs.push({x0:gap[0],x1:gap[1],role:free?'frei':'bund',...(free?{profile:free}:{})});
     if(!stopped){const want=Math.max(outer(free!)+2*s.spacerWall,inner(bore)+2*s.shoulder),cap=Math.min(r.part.stop??Infinity,list[i-1]?.part.stop??Infinity),d=cap>inner(bore)+.5&&cap<want?cap:want,step={x0:gap[0],x1:gap[1],outer:rund(+d.toFixed(2))};
      if(adapter){adapter.x0=Math.min(adapter.x0,gap[0]);adapter.x1=Math.max(adapter.x1,gap[1]);adapter.steps.push(step);adapter.steps.sort((a,b)=>a.x0-b.x0);adapter.label+=' mit Bund';}
@@ -108,18 +109,19 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
  const movers=[...p.placed.map(t=>({id:t.id,label:t.label,x0:t.x0,x1:t.x1,side:t.side,bore:t.bore})),...p.sleeves.map(x=>({id:x.id,label:x.label,x0:x.x0,x1:x.x1,side:x.side,bore:x.inner}))];
  for(const m of movers){const way=m.side==='links'?within(0,m.x0):within(m.x1,L),stuck=way.find(c=>!passes(c.profile,m.bore));if(stuck)issues.push({level:'fehler',message:`${m.label} geht von ${m.side} nicht über ${label(stuck.profile)} bei ${mm(stuck.x0)} bis ${mm(stuck.x1)}`,ref:m.id});}
  // Stops: what is slid on ends at a shoulder or at the next thing.
- const units=[...p.placed.filter(t=>!t.adapter).map(t=>({id:t.id,label:t.label,x0:t.x0,x1:t.x1,side:t.side,bore:t.bore})),...p.sleeves.map(x=>({id:x.id,label:x.label,x0:x.x0,x1:x.x1,side:x.side,bore:x.inner}))];
+ const units=[...p.placed.filter(t=>!t.adapter&&!t.part.clamp).map(t=>({id:t.id,label:t.label,x0:t.x0,x1:t.x1,side:t.side,bore:t.bore})),...p.sleeves.map(x=>({id:x.id,label:x.label,x0:x.x0,x1:x.x1,side:x.side,bore:x.inner}))];
  const bodies=[...p.placed,...p.sleeves];
  for(const u of units){const face=u.side==='links'?u.x1:u.x0;if(bodies.some(b=>b.id!==u.id&&(u.side==='links'?Math.abs(b.x0-face)<eps:Math.abs(b.x1-face)<eps)))continue;const next=u.side==='links'?at(face+.01):at(face-.01);
   if(next&&passes(next.profile,u.bore)&&!(u.side==='links'?face>=L-eps:face<=eps))issues.push({level:'fehler',message:`${u.label} hat nach innen keinen Anschlag: Absatz oder Distanzhülse fehlt`,ref:u.id});}
  // Outermost things want holding outwards.
  const rings=doc.works.filter(w=>w.kind==='ring') as Extract<Work,{kind:'ring'}>[],ends=doc.works.filter(w=>w.kind==='gewinde') as Extract<Work,{kind:'gewinde'}>[];
  for(const side of ['links','rechts'] as Side[]){const mine=bodies.filter(b=>b.side===side);if(!mine.length)continue;const o=side==='links'?mine.reduce((a,b)=>b.x0<a.x0?b:a):mine.reduce((a,b)=>b.x1>a.x1?b:a),face=side==='links'?o.x0:o.x1;
-  if(!rings.some(r=>Math.abs(r.x-face)<3)&&!ends.some(e=>e.end===side&&Math.abs(face-(side==='links'?0:L))<3))issues.push({level:'hinweis',message:`${o.label} ist nach ${side} nicht gesichert: Sicherungsring, Stellring oder Gewinde mit Scheibe, oder das Gehäuse hält es`,ref:o.id});}
+  if(!('part' in o&&o.part.clamp)&&!rings.some(r=>Math.abs(r.x-face)<3)&&!ends.some(e=>e.end===side&&Math.abs(face-(side==='links'?0:L))<3))issues.push({level:'hinweis',message:`${o.label} ist nach ${side} nicht gesichert: ${p.sections.some(c=>c.profile.kind==='kreuz'&&(overlaps(c.x0,c.x1,o.x0,o.x1)||Math.abs((side==='links'?c.x1:c.x0)-face)<eps))?'LEGO-Buchse aus „Sicherung“':'Stellring aus „Sicherung“, Sicherungsring oder E-Ring'}, Gewinde mit Scheibe, oder das Gehäuse hält es`,ref:o.id});}
  // Shafts inside.
  for(const i of p.inserts){const wall=Math.min(...within(i.x0,i.x1).map(c=>(inner(c.profile)-outer(i.profile))/2));if(wall<=eps)issues.push({level:'fehler',message:`${i.label} (${label(i.profile)}) passt nicht in die Welle: dort ${[...new Set(within(i.x0,i.x1).map(c=>label(c.profile)))].join(', ')}`,ref:i.id});else if(wall<i.wall-eps)issues.push({level:wall<s.minWall?'fehler':'warnung',message:`Wand um ${i.label} nur ${mm(wall)} (gewünscht ${mm(i.wall)})`,ref:i.id});}
  // Machining.
  const covered=(a:number,b:number)=>bodies.find(t=>overlaps(t.x0,t.x1,a,b));
+ const before=issues.length;
  for(const w of doc.works){const m:Machining={work:w};p.machining.push(m);
   if(w.kind==='madenschraube'){const t=thread(w.m);if(!t){issues.push({level:'fehler',message:`M${n(w.m)} ist kein Regelgewinde der Tabelle`,ref:w.id});continue;}const c=at(w.x);if(!c||w.x<-eps||w.x>L+eps){issues.push({level:'fehler',message:`Madenschraube bei ${mm(w.x)} liegt außerhalb der Welle`,ref:w.id});continue;}
    const ins=p.inserts.find(i=>w.x>=i.x0-eps&&w.x<=i.x1+eps),R=inner(c.profile)/2,r=ins?(ins.profile.kind==='d'&&(w.angle??0)===0?ins.profile.d/2-ins.profile.flat:ins.profile.kind==='kreuz'?outer(ins.profile)/2:inner(ins.profile)/2):0,room=R-r;
@@ -137,16 +139,22 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
    if(d===undefined||!cs.every(c=>c.profile.kind==='rund'&&c.profile.d===d)){issues.push({level:'fehler',message:`Passfedernut ${mm(w.x0)} bis ${mm(w.x1)} muss auf einem runden Abschnitt eines Ø liegen`,ref:w.id});continue;}
    const key=keyFor(d);if(!key){issues.push({level:'fehler',message:`Für Ø${n(d)} hat DIN 6885 keine Passfeder (6 bis 38 mm)`,ref:w.id});continue;}
    const length=[...keyLengths].reverse().find(l=>l<=w.x1-w.x0+eps);m.key={b:key.b,h:key.h,t1:key.t1,length:length??w.x1-w.x0};if(!length)issues.push({level:'warnung',message:`Nut ${mm(w.x1-w.x0)} ist kürzer als die kürzeste Passfeder (6 mm)`,ref:w.id});}
-  else if(w.kind==='ring'){const c=at(w.x),ring=c&&c.profile.kind==='rund'?ringFor(c.profile.d):undefined;if(!ring){issues.push({level:'fehler',message:`Sicherungsring bei ${mm(w.x)}: DIN 471 braucht einen runden Abschnitt Ø3 bis Ø20, dort ${c?label(c.profile):'nichts'}`,ref:w.id});continue;}
-   m.ring={d2:ring.d2,m:ring.m};const over=bodies.find(t=>w.x>t.x0+eps&&w.x<t.x1-eps);if(over)issues.push({level:'fehler',message:`Sicherungsring bei ${mm(w.x)} liegt unter ${over.label}`,ref:w.id});}
+  else if(w.kind==='ring'){const c=at(w.x),norm=w.norm??'471',d=c&&c.profile.kind==='rund'?c.profile.d:undefined,r471=d!==undefined?ringFor(d):undefined,e=d!==undefined?eclipFor(d):undefined,name=norm==='471'?'Sicherungsring DIN 471':'E-Ring DIN 6799';
+   if(c?.profile.kind==='kreuz'){issues.push({level:'fehler',message:`${name} bei ${mm(w.x)}: auf dem LEGO-Kreuz gibt es keine Nut. Dort hält eine LEGO-Buchse (Katalog „Sicherung“).`,ref:w.id});continue;}
+   if(norm==='471'&&!r471||norm==='6799'&&!e){issues.push({level:'fehler',message:`${name} bei ${mm(w.x)}: ${d===undefined?`braucht einen runden Abschnitt, dort ${c?label(c.profile):'nichts'}`:`kein Ring für Ø${n(d)} (${norm==='471'?'DIN 471 hat Ø3 bis Ø20 in ganzen Größen':'DIN 6799 hat Ø1,4 bis Ø24'})`}${norm==='471'&&e?'. Ein E-Ring DIN 6799 passt.':''}`,ref:w.id});continue;}
+   m.ring=norm==='471'?{d2:r471!.d2,m:r471!.m,norm,label:`Sicherungsring DIN 471 ${n(d!)} × ${n(r471!.m-.1)}`}:{d2:e!.d2,m:e!.m,norm,label:`Sicherungsscheibe DIN 6799 ${n(e!.d2)}`};
+   const over=bodies.find(t=>w.x>t.x0+eps&&w.x<t.x1-eps);if(over)issues.push({level:'fehler',message:`${name} bei ${mm(w.x)} liegt unter ${over.label}`,ref:w.id});
+   // DIN 471 rings are spread over an end: nothing thicker may lie between the groove and that end.
+   if(norm==='471'&&!(['links','rechts'] as const).some(sd=>(sd==='links'?within(0,w.x):within(w.x,L)).every(x=>outer(x.profile)<=d!+eps)))issues.push({level:'warnung',message:`Sicherungsring bei ${mm(w.x)}: zu beiden Enden liegt ein dickerer Abschnitt, er lässt sich nicht aufschieben. Ein E-Ring DIN 6799 wird von der Seite gesteckt.`,ref:w.id});}
   else if(w.kind==='abflachung'){const cs=within(w.x0,w.x1);if(!cs.length||cs.some(c=>c.profile.kind!=='rund'||w.depth>c.profile.d/4))issues.push({level:'fehler',message:`Abflachung ${mm(w.x0)} bis ${mm(w.x1)}: nur auf runden Abschnitten, höchstens ein Viertel des Ø tief`,ref:w.id});}}
+ for(const i of issues.slice(before))i.work=true;
  if(doc.making==='cnc'&&p.sections.some(c=>c.profile.kind==='kreuz'))issues.push({level:'hinweis',message:'LEGO-Kreuz an der CNC: die Innenecken brauchen einen Fräser unter 1,8 mm, oder das Kreuz wird gedruckt.'});
  // Parts list.
  const bom=new Map<string,BomLine>(),add=(what:string,note?:string)=>{const b=bom.get(what);if(b)b.count++;else bom.set(what,{what,count:1,...(note?{note}:{})});};
  add(doc.making==='cnc'?'Welle (gedreht/gefräst)':'Welle (gedruckt)',`${mm(L)} lang, größter Ø ${n(Math.max(...p.sections.map(c=>outer(c.profile))))}`);
- for(const t of p.placed)add(t.part.label);
+ for(const t of p.placed){add(t.part.label);if(t.part.extra)add(t.part.extra);}
  for(const x of p.sleeves)add(`${x.kind==='adapter'?'Adapter':'Distanzhülse'} (gedruckt): ${x.label.replace(/^(Adapter|Distanzhülse) /,'')}`,mm(x.x1-x.x0)+' lang');
- for(const m of p.machining){if(m.screw)add(m.screw);if(m.drill!==undefined){const t=thread((m.work as {m:number}).m)!;add(`Gewindebohrer M${n(t.m)} (Kernloch Ø${n(t.drill)})`);}if(m.key)add(`Passfeder DIN 6885 A ${m.key.b} × ${m.key.h} × ${m.key.length}`);if(m.ring)add(`Sicherungsring DIN 471 ${n((at((m.work as {x:number}).x)!.profile as {d:number}).d)} × ${n(m.ring.m-.1)}`);}
+ for(const m of p.machining){if(m.screw)add(m.screw);if(m.drill!==undefined){const t=thread((m.work as {m:number}).m)!;add(`Gewindebohrer M${n(t.m)} (Kernloch Ø${n(t.drill)})`);}if(m.key)add(`Passfeder DIN 6885 A ${m.key.b} × ${m.key.h} × ${m.key.length}`);if(m.ring)add(m.ring.label);}
  // One tap per size is enough.
  p.bom=[...bom.values()].map(b=>b.what.startsWith('Gewindebohrer')?{...b,count:1}:b);
  return p;

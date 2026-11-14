@@ -19,13 +19,14 @@ type Drag={sel:Selection;mode:'move'|'l'|'r'|'length';start:number;orig:unknown;
 const PAD=14,GRID=.5,TOL_PX=8;
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 const n=(x:number)=>String(+x.toFixed(2)).replace('.',',');
-const workLabel:Record<Work['kind'],string>={madenschraube:'Madenschraube',gewinde:'Gewinde am Ende',nut:'Passfedernut',ring:'Sicherungsring-Nut',abflachung:'Abflachung'};
+const workLabel:Record<Work['kind'],string>={madenschraube:'Madenschraube',gewinde:'Gewinde am Ende',nut:'Passfedernut',ring:'Nut für Sicherungsring',abflachung:'Abflachung'};
 type WorkTemplate={key:string;label:string;text:string;make:(x:number,d:ShaftDoc)=>Work};
 const workTemplates:WorkTemplate[]=[
  ...[3,4,5].map(m=>({key:`madenschraube-${m}`,label:`Madenschraube M${m}`,text:'Kernloch nach DIN 13, Gewinde selbst schneiden',make:(x:number)=>({id:'',kind:'madenschraube',x,m}) as Work})),
  ...[3,4,5].map(m=>({key:`gewinde-${m}`,label:`Gewinde M${m} am Ende`,text:'Kernloch in der Stirnfläche',make:(x:number,d:ShaftDoc)=>({id:'',kind:'gewinde',end:x<d.length/2?'links':'rechts',m,depth:2*m+2}) as Work})),
  {key:'nut',label:'Passfedernut',text:'DIN 6885, Maße nach Wellen-Ø',make:x=>({id:'',kind:'nut',x0:x-6,x1:x+6})},
- {key:'ring',label:'Sicherungsring-Nut',text:'DIN 471, nach Wellen-Ø',make:x=>({id:'',kind:'ring',x})},
+ {key:'ring',label:'Sicherungsring DIN 471',text:'Nut nach Wellen-Ø; Ring wird über das Ende gespreizt',make:x=>({id:'',kind:'ring',x,norm:'471'})},
+ {key:'eclip',label:'E-Ring DIN 6799',text:'Nut nach Wellen-Ø; Ring wird von der Seite gesteckt',make:x=>({id:'',kind:'ring',x,norm:'6799'})},
  {key:'abflachung',label:'Abflachung',text:'Fläche für eine Madenschraube',make:x=>({id:'',kind:'abflachung',x0:x-5,x1:x+5,depth:.5})},
 ];
 
@@ -80,7 +81,7 @@ export class ShaftEditor{
   for(const i of p.inserts)out.push({key:`insert:${i.id}`,lane:'in',sel:{kind:'insert',id:i.id},x0:i.x0,x1:i.x1,text:`${i.end==='links'?'':'→ '}${i.label}${i.end==='links'?' ←':''}`,title:`${i.label} · ${label(i.profile)} · ${n(i.x1-i.x0)} mm tief von ${i.end}`,cls:`insert ${level([i.id])}`,resize:'inner'});
   for(const w of d.works){const base={key:`work:${w.id}`,lane:'bearb' as Lane,sel:{kind:'work',id:w.id} as Selection,cls:`work ${level([w.id])}`,title:workLabel[w.kind]};
    if(w.kind==='madenschraube')out.push({...base,x0:w.x-w.m/2,x1:w.x+w.m/2,text:`M${n(w.m)}`,point:true});
-   else if(w.kind==='ring')out.push({...base,x0:w.x-.5,x1:w.x+.5,text:'Ring',point:true});
+   else if(w.kind==='ring')out.push({...base,x0:w.x-.5,x1:w.x+.5,text:w.norm==='6799'?'E':'Ring',point:true});
    else if(w.kind==='gewinde')out.push({...base,x0:w.end==='links'?0:L-w.depth,x1:w.end==='links'?w.depth:L,text:`M${n(w.m)}`,resize:'inner'});
    else out.push({...base,x0:w.x0,x1:w.x1,text:w.kind==='nut'?'Passfeder':'Abflachung',resize:'both'});}
   const shown:typeof p.sections=[];for(const c of p.sections){const last=shown.at(-1);if(last&&label(last.profile)===label(c.profile)&&Math.abs(last.x1-c.x0)<1e-6)shown[shown.length-1]={...last,x1:c.x1,role:last.role==='bund'||c.role==='bund'?'bund':last.role};else shown.push({...c});}
@@ -166,8 +167,8 @@ export class ShaftEditor{
    if(w.kind==='gewinde')kids.push(choice('Ende',w.end,[['links','links'],['rechts','rechts']],v=>{w.end=v;}),choice('Gewinde',String(w.m),ms,v=>{w.m=Number(v);}),field('Tiefe [mm]',w.depth,v=>{if(v&&v>0)w.depth=v;}));
    if(w.kind==='nut'||w.kind==='abflachung')kids.push(field('von [mm]',w.x0,v=>{w.x0=v!;}),field('bis [mm]',w.x1,v=>{w.x1=v!;}));
    if(w.kind==='abflachung')kids.push(field('Tiefe [mm]',w.depth,v=>{if(v&&v>0)w.depth=v;},{step:.05}));
-   if(w.kind==='ring')kids.push(field('Position [mm]',w.x,v=>{w.x=v!;}));
-   const info=m?.screw?`${m.screw}; Kernloch Ø${n(m.drill!)}, ${n(m.depth!)} mm Gewinde bis zur Welle innen.`:m?.drill?`Kernloch Ø${n(m.drill)}, ${n(m.depth!)} mm tief.`:m?.key?`Passfeder ${m.key.b} × ${m.key.h} × ${m.key.length}, Nut ${n(m.key.t1)} mm tief.`:m?.ring?`Nut Ø${n(m.ring.d2)}, ${n(m.ring.m)} mm breit.`:'';
+   if(w.kind==='ring')kids.push(field('Position [mm]',w.x,v=>{w.x=v!;}),choice('Ring',w.norm??'471',[['471','Sicherungsring DIN 471 (über das Ende)'],['6799','E-Ring DIN 6799 (von der Seite)']],v=>{w.norm=v;}));
+   const info=m?.screw?`${m.screw}; Kernloch Ø${n(m.drill!)}, ${n(m.depth!)} mm Gewinde bis zur Welle innen.`:m?.drill?`Kernloch Ø${n(m.drill)}, ${n(m.depth!)} mm tief.`:m?.key?`Passfeder ${m.key.b} × ${m.key.h} × ${m.key.length}, Nut ${n(m.key.t1)} mm tief.`:m?.ring?`${m.ring.label}: Nut Ø${n(m.ring.d2)}, ${n(m.ring.m)} mm breit.`:'';
    root.replaceChildren(...head(workLabel[w.kind]),...kids,el('p',{className:'prop-info'},info),issues([w.id]),remove(workLabel[w.kind],()=>{d.works.splice(d.works.indexOf(w),1);}));return;}
   if(s?.kind==='section'){const o=d.sections?.[s.index];if(!o){this.sel=undefined;return this.renderProperties(root);}
    root.replaceChildren(...head('Abschnitt von Hand','Gilt statt des geplanten Abschnitts; geprüft wird trotzdem.'),field('von [mm]',o.x0,v=>{o.x0=v!;}),field('bis [mm]',o.x1,v=>{o.x1=v!;}),profile('Profil',o.profile,q=>{o.profile=q;}),remove('Abschnitt',()=>{d.sections!.splice(s.index,1);if(!d.sections!.length)delete d.sections;}));return;}

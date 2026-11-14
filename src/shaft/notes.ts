@@ -22,7 +22,7 @@ export function makingNotes(name:string,doc:ShaftDoc,plan:Plan){
   if(w.kind==='madenschraube'&&m.drill)lines.push(`  bei ${n(w.x)} mm, ${n(w.angle??0)}°: Kernloch Ø${n(m.drill)} (im Modell), Gewinde M${n(w.m)} schneiden, ${n(m.depth??0)} mm Gewinde; ${m.screw}`);
   if(w.kind==='gewinde'&&m.drill)lines.push(`  Stirnseite ${w.end}: Kernloch Ø${n(m.drill)} × ${n(w.depth)} (im Modell), Gewinde M${n(w.m)} schneiden`);
   if(w.kind==='nut'&&m.key)lines.push(`  ${n(w.x0)} bis ${n(w.x1)} mm: Passfedernut DIN 6885 A, b = ${n(m.key.b)}${cnc?' N9':''}, t1 = ${n(m.key.t1)}; Passfeder ${m.key.b} × ${m.key.h} × ${m.key.length}`);
-  if(w.kind==='ring'&&m.ring)lines.push(`  bei ${n(w.x)} mm: Nut für Sicherungsring DIN 471, Ø${n(m.ring.d2)} × ${n(m.ring.m)}${cnc?' (H13)':''}`);
+  if(w.kind==='ring'&&m.ring)lines.push(`  bei ${n(w.x)} mm: Nut für ${m.ring.label}, Ø${n(m.ring.d2)} × ${n(m.ring.m)}${cnc?' (H13)':''}`);
   if(w.kind==='abflachung')lines.push(`  ${n(w.x0)} bis ${n(w.x1)} mm: Abflachung ${n(w.depth)} mm tief`);}}
  if(plan.sleeves.length){lines.push('','Hülsen und Adapter');for(const s of plan.sleeves)lines.push(`  ${s.label}: ${n(s.x1-s.x0)} mm lang, innen ${label(s.inner)}, außen ${s.steps.map(x=>label(x.outer)).join(' / ')}, größter Ø ${n(Math.max(...s.steps.map(x=>outer(x.outer))))}`);}
  const open=plan.issues.filter(i=>i.level!=='hinweis');if(open.length){lines.push('','Offene Meldungen');for(const i of open)lines.push(`  ${i.level==='fehler'?'FEHLER':'Warnung'}: ${i.message}`);}
