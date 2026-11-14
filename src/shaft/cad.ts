@@ -12,7 +12,7 @@ import type {ShaftDoc} from './model.ts';
 import type {Profile} from './profile.ts';
 import {LEGO_ACROSS,LEGO_ARM,outer,label} from './profile.ts';
 
-export type CadKind='welle'|'adapter'|'huelse'|'kauf';
+export type CadKind='welle'|'adapter'|'huelse'|'kauf'|'platte'|'saeule';
 export type CadPart={name:string;file:string;kind:CadKind;shape:Shape3D;color:string;/** Made, not bought: gets files. */made:boolean};
 type Keep=<T extends {delete():void}>(v:T)=>T;
 
@@ -87,6 +87,7 @@ export function meshParts(parts:CadPart[]):MeshData[]{
 /** STEP and STL of every made part, and the assembly with the bought parts as one STEP. */
 export async function exportParts(parts:CadPart[]){
  const files:{name:string;data:ArrayBuffer}[]=[];
- for(const p of parts.filter(x=>x.made)){files.push({name:`${p.file}.step`,data:await p.shape.blobSTEP().arrayBuffer()},{name:`${p.file}.stl`,data:await p.shape.blobSTL({tolerance:.01,angularTolerance:5,binary:true}).arrayBuffer()});}
+ // Parts of one file (the columns of a gap) are written once.
+ const seen=new Set<string>();for(const p of parts.filter(x=>x.made)){if(seen.has(p.file))continue;seen.add(p.file);files.push({name:`${p.file}.step`,data:await p.shape.blobSTEP().arrayBuffer()},{name:`${p.file}.stl`,data:await p.shape.blobSTL({tolerance:.01,angularTolerance:5,binary:true}).arrayBuffer()});}
  files.push({name:'baugruppe.step',data:await exportSTEP(parts.map(p=>({shape:p.shape,name:p.name,color:p.color}))).arrayBuffer()});
  return files;}

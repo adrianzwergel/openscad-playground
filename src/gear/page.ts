@@ -9,6 +9,10 @@ import {planGear} from './plan.ts';
 import type {GearPlan,ShaftFile} from './plan.ts';
 import {gearExamples} from './examples.ts';
 import {GearEditor} from './editor.ts';
+import {CadClient} from '../shaft/cad-client.ts';
+import {ShaftPreview} from '../shaft/preview.ts';
+import {gearCsv,gearNotes} from './notes.ts';
+import JSZip from 'jszip';
 
 const FORMAT='gear-1',SHAFT='shaft-1';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
@@ -19,6 +23,21 @@ const store=await ProjectStore.open('getriebe',FORMAT),shaftStore=await ProjectS
 let open:{id:string;name:string;doc:GearDoc;readOnly:boolean}|undefined,files:Record<string,ShaftFile>={},names:{id:string;name:string}[]=[],plan:GearPlan|undefined;
 let saveTimer:ReturnType<typeof setTimeout>|undefined,past:string[]=[],future:string[]=[],before:string|undefined;
 const status=(m:string)=>{$('status').textContent=m;};
+// ---------- CAD: the same worker as the shaft generator, with the gearbox and its shafts ----------
+const cad=new CadClient();let preview:ShaftPreview|undefined,meshed='',meshTimer:ReturnType<typeof setTimeout>|undefined,filesFor='',made:Promise<{name:string;data:ArrayBuffer}[]>|undefined;
+const previewState=(text:string,state:string)=>{const e=$('preview-state');e.textContent=text;e.dataset.state=state;};
+/** The gearbox and the files of the shafts it uses, as one key and one message. */
+const payload=()=>{const used=Object.fromEntries(open!.doc.shafts.map(s=>s.shaft).filter(id=>files[id]).map(id=>[id,files[id]]));return {doc:open!.doc,files:used,key:JSON.stringify([open!.doc,used])};};
+function schedulePreview(){if(!open)return;const p=payload();if(p.key===meshed)return;meshed=p.key;clearTimeout(meshTimer);previewState('3D-Modell rechnet …','busy');
+ meshTimer=setTimeout(()=>{void cad.request('mesh',p.doc,{files:p.files}).then(r=>{if(meshed!==p.key)return;if(r.kind==='error'){previewState(`Kein 3D-Modell: ${r.message}`,'error');return;}if(r.kind!=='mesh')return;preview??=new ShaftPreview($('preview'));preview.show(r.meshes);previewState('Ziehen dreht, Rad zoomt, rechte Taste verschiebt. Gekaufte Teile sind durchsichtig.','ready');},e=>{if(meshed===p.key){meshed='';previewState(`Kein 3D-Modell: ${e.message}`,'error');}});},300);}
+function gearFiles(){const p=payload();if(p.key!==filesFor||!made){filesFor=p.key;made=cad.request('files',p.doc,{files:p.files}).then(r=>{if(r.kind==='error')throw Error(r.message);if(r.kind!=='files')throw Error('Unerwartete Antwort');return r.files;});made.catch(()=>{if(filesFor===p.key)made=undefined;});}return made;}
+const base=()=>open!.name.replace(/[^wäöüÄÖÜß-]+/g,'_');
+function save_(blob:Blob,name:string){const url=URL.createObjectURL(blob),a=el('a',{href:url,download:name});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status(`${name} gespeichert.`);}
+function download(name:string){status('Datei wird erzeugt …');void gearFiles().then(all=>{const f=all.find(x=>x.name===name);if(!f)throw Error(`${name} fehlt`);save_(new Blob([f.data]),`${base()}-${name}`);},e=>status(`Datei nicht erzeugt: ${e.message}`));}
+function downloadZip(){const o=open!,p=plan!;status('ZIP wird erzeugt …');void gearFiles().then(async all=>{const zip=new JSZip();for(const f of all)zip.file(f.name,f.data);zip.file('stueckliste.csv','﻿'+gearCsv(p));zip.file('zusammenbau.txt',gearNotes(o.name,o.doc,p));save_(await zip.generateAsync({type:'blob',compression:'DEFLATE'}),`${base()}.zip`);},e=>status(`ZIP nicht erzeugt: ${e.message}`));}
+function renderFiles(p:GearPlan){const row=(label:string,file:string,formats:string[])=>el('li',{className:'file-row'},el('span',{textContent:label}),...formats.map(x=>{const b=el('button',{className:'ghost',textContent:x.toUpperCase()});b.dataset.file=`${file}.${x}`;b.onclick=()=>download(`${file}.${x}`);return b;}));
+ const zip=el('button',{className:'primary',textContent:'Alles als ZIP (Platten, Säulen, Wellen, Stückliste)'});zip.dataset.file='zip';zip.onclick=downloadZip;
+ $('files').replaceChildren(...p.layers.flatMap((l,i)=>[row(`Schicht ${i+1} unten`,`schicht-${i+1}-unten`,['step','stl']),row(`Schicht ${i+1} oben`,`schicht-${i+1}-oben`,['step','stl'])]),...p.columns.map((c,i)=>row(`Säule ${c.from} – ${c.to} (${p.bolts.length}×)`,`saeule-${i+1}`,['step','stl'])),row('Baugruppe mit Wellen und Kaufteilen','baugruppe',['step']),el('li',{className:'file-row zip'},zip));}
 const editor=new GearEditor({
  doc:()=>open!.doc,plan:()=>planGear(open!.doc,files),files:()=>files,fileNames:()=>names,readOnly:()=>!!open?.readOnly,
  begin:()=>{before??=JSON.stringify(open!.doc);},
@@ -50,6 +69,8 @@ function draw(){
  $('drives').replaceChildren(...p.meshes.map(m=>{const a=p.wheels.find(w=>w.key===m.a)!,b=p.wheels.find(w=>w.key===m.b)!;return el('li',{},`${a.label} kämmt mit ${b.label} (${a.teeth} : ${b.teeth})`);}),...p.belts.map(bt=>el('li',{},`Riemen ${n(bt.length)} mm${bt.stock?`, Normlänge ${bt.stock} mm`:''}`)),
   ...open.doc.shafts.filter(s=>p.rates[s.id]!==undefined).map(s=>el('li',{className:'muted'},`${p.shafts.find(x=>x.id===s.id)?.label}: ${n(p.rates[s.id])} U je Umdrehung des Eingangs`)));
  const counts=['fehler','warnung'].map(l=>p.issues.filter(i=>i.level===l).length);$('issues-title').textContent=counts[0]?`Meldungen · ${counts[0]} Fehler`:counts[1]?`Meldungen · ${counts[1]} ${counts[1]===1?'Warnung':'Warnungen'}`:'Meldungen · alles passt';
+ renderFiles(p);schedulePreview();
+ $('bom').replaceChildren(...p.bom.map(b=>el('li',{},`${b.count} × ${b.what}`,b.note?el('small',{className:'muted',textContent:` · ${b.note}`}):'')));
  $('issues').replaceChildren(...p.issues.map(i=>{const li=el('li',{className:i.level,textContent:i.message});li.dataset.level=i.level;const r=i.ref;if(r){li.classList.add('link');li.onclick=()=>{if(r.startsWith('steg:')){const [a,b]=r.slice(5).split('|');editor.sel={kind:'web',a,b};}else if(open!.doc.shafts.some(s=>s.id===r))editor.sel={kind:'shaft',id:r};draw();};}return li;}));}
 
 $('new-gear').onclick=()=>void create('Neues Getriebe',newGear());

@@ -14,10 +14,11 @@ export type Layer={id:string;z0:number;z1:number;rim?:number;thickness?:number};
 export type WebKey=[string,string];
 /** `rim`: material round a bearing's outer ring; `web`: thickness of webs; `lip`: the rim holding the outer ring, how
  * thick and how far in; `clearance`: kept to wheels, belts and shafts passing through; `angle`/`grid`: snapping. */
-export type GearSettings={rim:number;web:number;lip:number;lipIn:number;clearance:number;hole:number;angle:number;grid:number;bolt:number};
-export type GearDoc={shafts:PlacedShaft[];belts:Belt[];layers?:Layer[];webs?:{add:WebKey[];remove:WebKey[]};/** The shaft driven (placed id). */input?:string;settings:GearSettings};
+/** `fit`: play per side of a bearing pocket; `bolt`: thread of the bolts (M3); `bolts`: how many, 0: as the plate needs. */
+export type GearSettings={rim:number;web:number;lip:number;lipIn:number;clearance:number;hole:number;angle:number;grid:number;bolt:number;fit:number;bolts:number};
+export type GearDoc={shafts:PlacedShaft[];belts:Belt[];layers?:Layer[];/** Bolt places set by hand (x, y); else the plan finds them. */bolts?:[number,number][];webs?:{add:WebKey[];remove:WebKey[]};/** The shaft driven (placed id). */input?:string;settings:GearSettings};
 
-export const defaultGearSettings:GearSettings={rim:3,web:4,lip:1.5,lipIn:1,clearance:1,hole:.5,angle:15,grid:1,bolt:3};
+export const defaultGearSettings:GearSettings={rim:3,web:4,lip:1.5,lipIn:1,clearance:1,hole:.5,angle:15,grid:1,bolt:3,fit:.1,bolts:0};
 export const newGear=():GearDoc=>({shafts:[],belts:[],settings:{...defaultGearSettings}});
 export const itemKey=(r:ItemRef)=>`${r.on}/${r.item}`;
 export const webKey=(a:string,b:string):WebKey=>a<b?[a,b]:[b,a];
@@ -34,4 +35,5 @@ export function parseGear(raw:unknown):GearDoc{
  const webs=d.webs?{add:keys(d.webs.add),remove:keys(d.webs.remove)}:undefined;
  const settings={...defaultGearSettings};for(const k of Object.keys(defaultGearSettings) as (keyof GearSettings)[]){const v=d.settings?.[k];if(v!==undefined){if(!num(v,0,1000))throw Error(`Getriebe: Einstellung ${k} ungültig`);settings[k]=v;}}
  if(d.input!==undefined&&!shafts.some(s=>s.id===d.input))throw Error('Getriebe: Eingang unbekannt');
- return {shafts,belts,...(layers?{layers}:{}),...(webs?{webs}:{}),...(d.input?{input:d.input}:{}),settings};}
+ const bolts=d.bolts?.map(b=>{if(!Array.isArray(b)||!num(b[0])||!num(b[1]))throw Error('Getriebe: Bolzen ungültig');return [b[0],b[1]] as [number,number];});if(bolts&&bolts.length>12)throw Error('Getriebe: zu viele Bolzen');
+ return {shafts,belts,...(layers?{layers}:{}),...(bolts?{bolts}:{}),...(webs?{webs}:{}),...(d.input?{input:d.input}:{}),settings};}

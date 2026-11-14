@@ -26,7 +26,12 @@ export type BeltPlan={id:string;a:string;b:string;center:number;length:number;st
 export type WebPlan={a:string;b:string;auto:boolean;forced:boolean};
 export type LayerPlan={id:string;z0:number;z1:number;band:[number,number];split:number;auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];holes:{on:string;r:number}[];parts:number};
 export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string};
-export type GearPlan={shafts:ShaftInWorld[];wheels:Wheel[];bearings:Bearing[];obstacles:Obstacle[];meshes:Mesh[];belts:BeltPlan[];rates:Record<string,number>;layers:LayerPlan[];issues:Issue[]};
+/** A bolt through all plates: where, the eye round it, which bearing of each layer its eye is joined to. */
+export type Bolt={at:[number,number];eye:number;hole:number;auto:boolean;attach:Record<string,string>};
+/** Printed columns between two layers, one per bolt. */
+export type Columns={from:string;to:string;z0:number;z1:number};
+export type BomLine={what:string;count:number;note?:string};
+export type GearPlan={shafts:ShaftInWorld[];wheels:Wheel[];bearings:Bearing[];obstacles:Obstacle[];meshes:Mesh[];belts:BeltPlan[];rates:Record<string,number>;layers:LayerPlan[];bolts:Bolt[];columns:Columns[];screw?:{length:number;what:string};bom:BomLine[];issues:Issue[]};
 
 const n=(x:number)=>String(+x.toFixed(2)).replace('.',',');
 const mm=(x:number)=>`${n(x)} mm`;
@@ -73,7 +78,14 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
  // Shafts must be held.
  for(const x of shafts){const k=bearings.filter(b=>b.on===x.id).length;if(!k)issues.push({level:'warnung',message:`${x.label}: kein Lager, nichts hält die Welle`,ref:x.id});else if(k===1)issues.push({level:'hinweis',message:`${x.label}: nur ein Lager, die Welle kann kippen`,ref:x.id});}
  const layers=planLayers(doc,shafts,bearings,meshes,wheels,obstacles,issues);
- return {shafts,wheels,bearings,obstacles,meshes,belts,rates,layers,issues};
+ const {bolts,columns,screw}=planBolts(doc,layers,bearings,shafts,obstacles,issues);
+ const bom:BomLine[]=[];const add=(what:string,count=1,note?:string)=>{const b=bom.find(x=>x.what===what);if(b)b.count+=count;else bom.push({what,count,...(note?{note}:{})});};
+ layers.forEach((l,i)=>{add(`Platte Schicht ${i+1} unten (gedruckt)`,1,`${n(l.split-l.band[0])} mm dick`);add(`Platte Schicht ${i+1} oben (gedruckt)`,1,`${n(l.band[1]-l.split)} mm dick`);});
+ for(const c of columns)add(`Distanzsäule ${n(c.z1-c.z0)} mm (gedruckt)`,bolts.length,`zwischen ${c.from} und ${c.to}`);
+ if(screw&&bolts.length){add(screw.what,bolts.length);add(`Mutter M${n(s.bolt)} DIN 934`,bolts.length);add(`Scheibe M${n(s.bolt)} DIN 125`,2*bolts.length);}
+ for(const bp of belts)add(`Zahnriemen GT2 6 mm, ${bp.stock?`${bp.stock} mm geschlossen`:`${n(bp.length)} mm`}`);
+ for(const x of shafts)add(`${x.label} (Wellen-Generator, Teile dort in der Stückliste)`);
+ return {shafts,wheels,bearings,obstacles,meshes,belts,rates,layers,bolts,columns,...(screw?{screw}:{}),bom,issues};
 }
 
 /** Layers: proposed from the bearings' heights (bearings whose spans touch share one), or the ones set by hand. Then
@@ -108,3 +120,32 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
    for(const w of webs){const a=at(w.a),b=at(w.b);if(o.on.includes(a.on)||o.on.includes(b.on))continue;const gap=hullsApart(o,{a:a.at,ra:ring(a),b:b.at,rb:ring(b)});if(gap<s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Steg ${a.label} – ${b.label} geht durch ${o.label}`,ref:`steg:${w.a}|${w.b}`});}}
   return {id,z0,z1,band,split,auto:!l,rim,thickness,bearings:list.map(b=>b.key),webs,holes,parts};});
 }
+
+const screws=[10,12,16,20,25,30,35,40,45,50,55,60,65,70,80,90,100];
+/** Bolts through all plates, held apart by printed columns. Places: round every bearing just outside its ring, kept
+ * clear of wheels, belts, sleeves, rings and holes over the whole height of the stack; of those the ones spread widest
+ * (three, four with more than two bearings in a layer, or as set). Each layer joins a bolt's eye to its nearest bearing
+ * with a web. The screw: through the whole stack with a washer at each end and a nut. */
+function planBolts(doc:GearDoc,layers:LayerPlan[],bearings:Bearing[],shafts:ShaftInWorld[],obstacles:Obstacle[],issues:Issue[]):{bolts:Bolt[];columns:Columns[];screw?:{length:number;what:string}}{
+ const s=doc.settings,eye=s.bolt/2+2.5,hole=s.bolt/2+.2;if(!layers.length)return {bolts:[],columns:[]};
+ const z0=Math.min(...layers.map(l=>l.band[0])),z1=Math.max(...layers.map(l=>l.band[1])),inLayers=bearings.filter(b=>layers.some(l=>l.bearings.includes(b.key)));
+ const clear=(p:[number,number])=>obstacles.every(o=>overlap(o.z0,o.z1,z0,z1)<=eps||(o.b?hullDistance(p,o.a,o.ra,o.b,o.rb!):dist(p,o.a)-o.ra)>=eye+s.clearance)
+  &&inLayers.every(b=>dist(p,b.at)>=b.D/2+eye+1)&&shafts.every(x=>dist(p,x.at)>=Math.max(0,...x.pieces.map(q=>q.r))+s.hole+eye);
+ let places:[number,number][];const auto=!doc.bolts;
+ if(doc.bolts)places=doc.bolts;
+ else{const rim=(b:Bearing)=>layers.find(l=>l.bearings.includes(b.key))?.rim??s.rim,cands:[number,number][]=[],extra=new Map<[number,number],number>();
+  // Right outside a ring first; further out (5 mm steps) where a wheel takes the ring's surroundings, each mm out costs.
+  for(const b of inLayers)for(let out=0;out<=40;out+=5)for(let a=0;a<360;a+=10){const r=b.D/2+rim(b)+eye+out,p:[number,number]=[+(b.at[0]+r*Math.cos(a*Math.PI/180)).toFixed(3),+(b.at[1]+r*Math.sin(a*Math.PI/180)).toFixed(3)];if(clear(p)&&inLayers.every(o=>o===b||dist(p,o.at)>=dist(p,b.at)-1e-9||dist(p,o.at)>=o.D/2+rim(o)+eye)){cands.push(p);extra.set(p,out);}}
+  const cost=(p:[number,number])=>extra.get(p)??0;
+  const want=s.bolts||(layers.some(l=>l.bearings.length>2)?4:3),c:[number,number]=[inLayers.reduce((a,b)=>a+b.at[0],0)/Math.max(1,inLayers.length),inLayers.reduce((a,b)=>a+b.at[1],0)/Math.max(1,inLayers.length)];places=[];
+  const spread=(p:[number,number])=>Math.min(...places.map(q=>dist(p,q)))-cost(p);
+  if(cands.length){places.push(cands.reduce((a,b)=>dist(b,c)-cost(b)>dist(a,c)-cost(a)?b:a));while(places.length<want){const next=cands.filter(p=>!places.includes(p)).reduce<[number,number]|undefined>((a,b)=>!a||spread(b)>spread(a)?b:a,undefined);if(!next||Math.min(...places.map(q=>dist(next,q)))<2*eye)break;places.push(next);}}
+  if(places.length<Math.min(want,3))issues.push({level:'warnung',message:`Nur ${places.length} Platz für Bolzen gefunden: zu eng um die Lager. Rand größer oder Bolzen von Hand setzen`});}
+ const bolts=places.map((at):Bolt=>{const attach:Record<string,string>={};for(const l of layers){const near=l.bearings.map(k=>bearings.find(b=>b.key===k)!).sort((a,b)=>dist(a.at,at)-dist(b.at,at))[0];if(near)attach[l.id]=near.key;}
+  if(!auto&&!clear(at))issues.push({level:'fehler',message:`Bolzen bei ${n(at[0])} / ${n(at[1])} mm trifft ein Rad, ein Lager oder eine Welle`});return {at,eye,hole,auto,attach};});
+ // Its eye's web in each layer must not cross wheels either.
+ for(const bo of bolts)for(const l of layers){const k=bo.attach[l.id];if(!k)continue;const b=bearings.find(x=>x.key===k)!;for(const o of obstacles){if(overlap(o.z0,o.z1,l.band[0],l.band[1])<=eps||o.on.includes(b.on))continue;const g=o.b?Math.min(hullDistance(bo.at,o.a,o.ra,o.b,o.rb!),hullDistance(b.at,o.a,o.ra,o.b,o.rb!)):Math.min(...[0,.25,.5,.75,1].map(t=>dist([b.at[0]+(bo.at[0]-b.at[0])*t,b.at[1]+(bo.at[1]-b.at[1])*t],o.a)-o.ra-(eye+(b.D/2+l.rim-eye)*(1-t))));if(g<s.clearance)issues.push({level:'warnung',message:`Der Steg zum Bolzen bei ${n(bo.at[0])} / ${n(bo.at[1])} mm in Schicht ${layers.indexOf(l)+1} streift ${o.label}`});}}
+ const sorted=[...layers].sort((a,b)=>a.band[0]-b.band[0]),columns:Columns[]=[];
+ for(let i=1;i<sorted.length;i++){const a=sorted[i-1],b=sorted[i],gap=b.band[0]-a.band[1];if(gap<-eps)issues.push({level:'fehler',message:`Schicht ${layers.indexOf(a)+1} und ${layers.indexOf(b)+1} überlappen um ${n(-gap)} mm`});else if(gap>.3)columns.push({from:`Schicht ${layers.indexOf(a)+1}`,to:`Schicht ${layers.indexOf(b)+1}`,z0:a.band[1],z1:b.band[0]});}
+ const need=z1-z0+2*.5+.8*s.bolt,length=screws.find(l=>l>=need);
+ return {bolts,columns,screw:length?{length,what:`Zylinderschraube DIN 912 M${n(s.bolt)} × ${length}`}:{length:Math.ceil(need+.8*s.bolt),what:`Gewindestange M${n(s.bolt)}, ${Math.ceil(need+.8*s.bolt)} mm, mit zwei Muttern`}};}
