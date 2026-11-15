@@ -11,7 +11,8 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.goto('http://localhost:4001/studio');await p.waitForSelector('a.start-card[href="./welle.html"]',{visible:true});await p.click('a.start-card[href="./welle.html"]');
  await p.waitForSelector('body[data-ready=true] #new-shaft',{visible:true});await p.click('#new-shaft');await p.waitForSelector('.tl-lane.auf',{visible:true});
  // mm ↔ px on the timeline: lane width = length·scale + 2·14.
- const geo=async()=>p.evaluate(()=>{const lane=document.querySelector('.tl-lane.auf'),r=lane.getBoundingClientRect(),L=Number(document.querySelector('.tl-length').title.match(/Länge ([\d,]+)/)[1].replace(',','.'));return {left:r.left,top:r.top,h:r.height,L,s:(parseFloat(lane.style.width)-28)/L};});
+ const geo=async()=>p.evaluate(()=>{const lane=document.querySelector('.tl-lane.auf'),r=lane.getBoundingClientRect(),L=Number(document.querySelector('.tl-length').title.match(/Länge ([\d,]+)/)[1].replace(',','.'));// Scale and where 0 lies, from the ruler: the timeline may start left of 0 (a motor).
+ const ticks=[...document.querySelectorAll('.tl-lane.lineal .tick')].map(t=>({v:Number(t.textContent),x:parseFloat(t.style.left)})),t0=ticks.find(t=>t.v===0),t1=ticks.find(t=>t.v>0),sc=(t1.x-t0.x)/t1.v;return {left:r.left+t0.x-14,top:r.top,h:r.height,L,s:sc};});
  const px=async(x,lane='auf')=>{const g=await geo(),r=await p.$eval(`.tl-lane.${lane}`,e=>{const b=e.getBoundingClientRect();return {top:b.top,h:b.height};});return {x:g.left+14+x*g.s,y:r.top+r.h/2};};
  const drag=async(from,to,steps=8)=>{await p.mouse.move(from.x,from.y);await p.mouse.down();await p.mouse.move(from.x+6,from.y,{steps:2});await p.mouse.move(to.x,to.y,{steps});await p.mouse.up();await wait(150);};
  const items=()=>p.$$eval('[data-clip^="item:"]',e=>e.map(x=>({key:x.dataset.clip,text:x.textContent,left:parseFloat(x.style.left),width:parseFloat(x.style.width)})));
@@ -32,14 +33,14 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  const first=(await items()).sort((a,b)=>a.left-b.left)[0],start={x:g.left+first.left+first.width/2,y:(await px(0)).y};await drag(start,{x:start.x+3.3*g.s,y:start.y});
  const moved=(await items()).find(x=>x.key===first.key),mmAt=(moved.left-14)/g.s;assert.ok(Math.abs(mmAt*2-Math.round(mmAt*2))<1e-6&&mmAt>5,`im Raster verschoben: ${mmAt}`);
  // 6. A motor shaft goes into the free left end; its depth is dragged at the inner edge.
- await p.click('[data-add="in:motor-nema17-40"]');await p.waitForSelector('[data-clip^="insert:"]');const ins=await p.$eval('[data-clip^="insert:"]',e=>({left:parseFloat(e.style.left),width:parseFloat(e.style.width)}));assert.ok(Math.abs(ins.left-14)<.5,'links');
+ await p.click('[data-add="in:motor-nema17-40"]');await p.waitForSelector('[data-clip^="insert:"]');const ins=await p.$eval('[data-clip^="insert:"]',e=>({left:parseFloat(e.style.left),width:parseFloat(e.style.width)}));assert.ok(Math.abs(ins.left-(14+((await geo()).left-(await p.$eval('.tl-lane.auf',e=>e.getBoundingClientRect().left)))))<.5,'links');
  const edge=await p.$eval('[data-clip^="insert:"] .edge.r',e=>{const b=e.getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2};});await drag(edge,{x:edge.x-5*g.s,y:edge.y});
  const depth=await p.$eval('[data-clip^="insert:"]',e=>parseFloat(e.style.width));assert.ok(Math.abs((ins.width-depth)/g.s-5)<.6,`Tiefe gezogen: ${(ins.width-depth)/g.s}`);
  // 7. A set screw: typed exact on its page.
  await p.click('[data-add="work:madenschraube-3"]');await p.waitForSelector('[data-clip^="work:"]');const pos=await p.$('#properties .prop input');await pos.evaluate(e=>{e.value='';e.focus();});await pos.type('6');await p.keyboard.press('Tab');await wait(150);
  assert.match(await p.$eval('#properties .prop-info',e=>e.textContent),/Madenschraube DIN 913 M3 × \d+; Kernloch Ø2,5/);assert.match(await p.$eval('#bom',e=>e.textContent),/Gewindebohrer M3/);
  // 8. The shaft's end dragged longer.
- const end=await center('.tl-length');await drag(end,{x:end.x+10*g.s,y:end.y});{const L=(await geo()).L;assert.ok(Math.abs(L-70)<=1,`um 10 mm länger: ${L}`);}
+ g=await geo();const end=await center('.tl-length');await drag(end,{x:end.x+10*g.s,y:end.y});{const L=(await geo()).L;assert.ok(Math.abs(L-70)<=1,`um 10 mm länger: ${L}`);}
  if(shots)await p.screenshot({path:path.join(shots,'welle-zeitleiste.png')});
  // 9. After a reload all of it is there.
  const before=await p.evaluate(()=>[...document.querySelectorAll('[data-clip]')].map(x=>x.dataset.clip+x.style.left).join());await wait(700);await p.reload();await p.waitForSelector('.tl-lane.auf',{visible:true});await wait(200);
@@ -51,5 +52,9 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  assert.match(await p.$eval('#bom',e=>e.textContent),/LEGO-Buchse ½/);assert.doesNotMatch(await p.$eval('#issues',e=>e.textContent),/Fehler|passt nicht/);assert.match(await p.$eval('#catalog',e=>e.textContent),/Sicherung.*E-Ring DIN 6799/s);
  // An example from the list of all shafts.
  await p.click('#shaft-close');await p.waitForSelector('[data-example="lego-mitte"]',{visible:true});await p.click('[data-example="lego-mitte"]');await p.waitForSelector('#timeline svg .sleeve.adapter');assert.match(await p.$eval('#issues',e=>e.textContent),/Wand nur 0,6 mm/);
- assert.deepEqual(errors,[]);console.log('Wellen-Zeitleiste: Ziehen aus dem Katalog, Klick fügt ein, Adapter erzeugt, kein Überlappen, Entf und Strg+Z, Raster, Steckung mit gezogener Tiefe, Madenschraube mit Kernloch, Wellenende gezogen, gespeichert, Import aus Datei mit LEGO-Buchse, Beispiel.');
+ // The motor example: the motor in its lane left of the shaft; dragged towards the shaft its shaft goes deeper, at most its length.
+ await p.click('#shaft-close');await p.waitForSelector('[data-example="motor"]',{visible:true});await p.click('[data-example="motor"]');await p.waitForSelector('[data-clip^="motor:"]');
+ const mc=await p.$eval('[data-clip^="motor:"]',e=>{const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,left:r.left};}),ic=await p.$eval('[data-clip^="insert:"]',e=>e.getBoundingClientRect().left);assert.ok(mc.left<ic,'Motor links der Welle');
+ await drag(mc,{x:mc.x+400,y:mc.y});const motorDepth=Number(await p.evaluate(()=>[...document.querySelectorAll('#properties .prop')].find(l=>/Tiefe/.test(l.textContent)).querySelector('input').value));assert.equal(motorDepth,20,'bis zur Länge der Motorwelle');
+ assert.deepEqual(errors,[]);console.log('Wellen-Zeitleiste: Ziehen aus dem Katalog, Klick fügt ein, Adapter erzeugt, kein Überlappen, Entf und Strg+Z, Raster, Steckung mit gezogener Tiefe, Madenschraube mit Kernloch, Wellenende gezogen, gespeichert, Import aus Datei mit LEGO-Buchse, Beispiel, Motor in seiner Spur verschoben.');
 }finally{await browser.close();}

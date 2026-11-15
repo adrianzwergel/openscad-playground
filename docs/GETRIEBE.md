@@ -24,6 +24,8 @@ Ziel wie dort: **einfach**. Nichts wird gezeichnet, was sich ableiten lässt.
 
 **2D-Umriss robust:** Liegt ein Kreis in einem anderen oder berührt ihn innen (etwa ein Bolzenauge im Ring eines Lagers), ist die Hülle der größere Kreis; OpenCascade kann solche Berührungen nicht vereinigen. Die Naht jedes Kreises liegt nicht auf den Achsen (Raster-Treffer).
 
+**Motorplatte:** Den Motor setzt man im Wellen-Editor an die Welle (Spur „Motor“); seine Lage legt den Flansch fest. Liegt der Flansch an der Außenseite einer Schicht, wird diese Platte genutzt; sonst bekommt der Motor eine eigene Motorplatte (Schicht ohne Lager, `LayerPlan.motor`) am Flansch, `motorPlate` dick (Vorgabe 5 mm), auf der dem Körper abgewandten Seite, mit Flanschfeld, Zentrierung und Schraublöchern (Langlöcher beim Riemen), über Bolzen und Säulen am Rest. Liegt der Flansch höchstens 6 mm neben einer Schicht, schlägt ein Hinweis vor, ihn dorthin zu setzen (Knopf an der Welle). Überschneidet die Motorplatte eine Schicht, ist das ein Fehler. Der Motorkörper kommt mit den Teilen der Welle. Prüfung: `scripts/gear/check-motor.mjs`.
+
 **Bolzen von Hand:** In der Draufsicht greifbar (gestrichelter Ring ums Loch). Der erste Zug macht aus den vorgeschlagenen Plätzen feste (`bolts`, gleiche Reihenfolge), gezogen wird im mm-Raster (Alt: frei). Ein Bolzen auf einem Rad, Lager oder einer Welle wird rot und gemeldet; die Meldung wählt ihn aus. Eigenschaften: x/y, ＋ Bolzen, Bolzen entfernen, Bolzen automatisch. Nach dem Schließen des Wellen-Fensters gehört die Tastatur wieder dem Getriebe.
 
 **Offen:** die Einstellung „Dicke der Stege“ wirkt noch nicht (Stege sind so dick wie ihre Platte); Probedrucke für Taschenspiel und Bord; Schnecke und Kegelräder.

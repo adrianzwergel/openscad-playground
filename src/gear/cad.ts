@@ -73,6 +73,6 @@ function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,Shaf
 export function buildGearParts(doc:GearDoc,plan:GearPlan,files:Record<string,ShaftFile|undefined>,keep:Keep):CadPart[]{
  const parts:CadPart[]=[];plan.layers.forEach((l,i)=>parts.push(...plates(keep,doc,plan,l,i)));
  plan.columns.forEach((c,i)=>{for(const bo of plan.bolts){const tube=drawCircle(bo.eye-.5).cut(drawCircle(bo.hole)).translate(bo.at[0],bo.at[1]);parts.push({name:`Distanzsäule ${c.from} – ${c.to}`,file:`saeule-${i+1}`,kind:'saeule',shape:keep(tube.sketchOnPlane('XY',c.z0).extrude(c.z1-c.z0) as Shape3D),color:'#c58a4a',made:true});}});
- for(const m of plan.motors){const w=m.part.size[0]/2,z0=m.down?m.face-m.depth:m.face,z1=m.down?m.face:m.face+m.depth;parts.push({name:m.label,file:m.key.replace(':','-'),kind:'kauf',shape:keep(makeBox([m.at[0]-w,m.at[1]-w,z0],[m.at[0]+w,m.at[1]+w,z1]) as Shape3D),color:'#3a4048',made:false});}
+ // The motors' bodies come with their shafts' parts.
  parts.push(...shaftParts(keep,plan,doc,files));
  return parts;}

@@ -6,9 +6,11 @@ import type {Plan} from './plan.ts';
 
 const esc=(s:string)=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]!));
 export const tallest=(p:Plan)=>Math.max(10,...p.sections.map(c=>outer(c.profile)),...p.placed.map(t=>t.part.outer),...p.sleeves.flatMap(s=>s.steps.map(x=>outer(x.outer))));
-export function silhouette(p:Plan,{scale=8,pad=16,vscale=scale,ticks=true}:{scale?:number;pad?:number;vscale?:number;ticks?:boolean}={}){
- const tall=tallest(p),w=p.length*scale+2*pad,h=tall*vscale+2*8+(ticks?18:0),mid=8+tall*vscale/2,X=(x:number)=>pad+x*scale,Y=(r:number)=>mid-r*vscale;
+/** `x0`, `x1`: the range shown (a motor reaches beyond the shaft's ends). */
+export function silhouette(p:Plan,{scale=8,pad=16,vscale=scale,ticks=true,x0=0,x1=p.length}:{scale?:number;pad?:number;vscale?:number;ticks?:boolean;x0?:number;x1?:number}={}){
+ pad=pad-x0*scale;const tall=tallest(p),w=(x1-x0)*scale+2*(pad+x0*scale),h=tall*vscale+2*8+(ticks?18:0),mid=8+tall*vscale/2,X=(x:number)=>pad+x*scale,Y=(r:number)=>mid-r*vscale;
  const box=(x0:number,x1:number,r:number,cls:string,title:string,ri=0)=>`<g class="${cls}"><title>${esc(title)}</title>${ri>0?`<rect x="${X(x0)}" y="${Y(r)}" width="${(x1-x0)*scale}" height="${(r-ri)*vscale}"/><rect x="${X(x0)}" y="${mid+ri*vscale}" width="${(x1-x0)*scale}" height="${(r-ri)*vscale}"/>`:`<rect x="${X(x0)}" y="${Y(r)}" width="${(x1-x0)*scale}" height="${2*r*vscale}"/>`}</g>`;
+ const motors=(p.motors??[]).map(m=>{const r=Math.min(m.part.size[0]/2,tall/2);return `<g class="motor"><title>${esc(m.label)}, Flansch bei ${m.face.toFixed(1)} mm</title><rect x="${X(m.x0)}" y="${Y(r)}" width="${(m.x1-m.x0)*scale}" height="${2*r*vscale}"/><line class="flange" x1="${X(m.face)}" x2="${X(m.face)}" y1="${Y(r)}" y2="${Y(-r)}"/></g>`;});
  const parts=p.placed.map(t=>box(t.x0,t.x1,t.part.outer/2,'part',`${t.label} · ${label(t.bore)} · von ${t.side}`,outer(t.bore)/2));
  const sleeves=p.sleeves.flatMap(s=>s.steps.map(x=>box(x.x0,x.x1,outer(x.outer)/2,`sleeve ${s.kind}`,`${s.label} · ${s.auto?'erzeugt':'von Hand'}`,outer(s.inner)/2)));
  const shaft=p.sections.map(c=>box(c.x0,c.x1,outer(c.profile)/2,`section ${c.role} ${c.profile.kind}`,`${label(c.profile)} · ${c.x0.toFixed(1)} bis ${c.x1.toFixed(1)} mm`));
@@ -22,5 +24,5 @@ export function silhouette(p:Plan,{scale=8,pad=16,vscale=scale,ticks=true}:{scal
   if(w.kind==='abflachung'){const c=p.sections.find(s=>w.x0>=s.x0-1e-6&&w.x0<=s.x1),r=c?outer(c.profile)/2:0;return [`<rect class="work key" x="${X(w.x0)}" y="${Y(r)}" width="${(w.x1-w.x0)*scale}" height="${w.depth*vscale}"><title>Abflachung ${w.depth} mm</title></rect>`];}
   return [];});
  const tickList=ticks?Array.from({length:Math.floor(p.length/10)+1},(_,i)=>i*10).map(x=>`<line class="tick" x1="${X(x)}" x2="${X(x)}" y1="${h-16}" y2="${h-10}"/><text class="tick" x="${X(x)}" y="${h-1}">${x}</text>`):[];
- return `<svg xmlns="http://www.w3.org/2000/svg" class="silhouette" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${parts.join('')}${shaft.join('')}${flats.join('')}${holes.join('')}${sleeves.join('')}${marks.join('')}<line class="axis" x1="${pad/2}" x2="${w-pad/2}" y1="${mid}" y2="${mid}"/>${tickList.join('')}</svg>`;
+ return `<svg xmlns="http://www.w3.org/2000/svg" class="silhouette" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${motors.join('')}${parts.join('')}${shaft.join('')}${flats.join('')}${holes.join('')}${sleeves.join('')}${marks.join('')}<line class="axis" x1="${pad/2}" x2="${w-pad/2}" y1="${mid}" y2="${mid}"/>${tickList.join('')}</svg>`;
 }

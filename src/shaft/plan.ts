@@ -8,6 +8,8 @@
 import {inner,outer,passes,largestPassing,label,same,rund} from './profile.ts';
 import type {Profile} from './profile.ts';
 import {onPart,inPart} from './catalog.ts';
+import {partById} from '../mechanics/parts/catalog.ts';
+import type {Part} from '../mechanics/parts/catalog.ts';
 import type {OnPart,InPart} from './catalog.ts';
 import {thread,setScrew,keyFor,keyLengths,ringFor,eclipFor} from './din.ts';
 import type {ShaftDoc,Side,Work} from './model.ts';
@@ -25,7 +27,10 @@ export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string
 export type BomLine={what:string;count:number;note?:string};
 /** A machining step with what it came to: drill and screw for a set screw, the key, the groove. */
 export type Machining={work:Work;drill?:number;depth?:number;screw?:string;key?:{b:number;h:number;t1:number;length:number};ring?:{d2:number;m:number;norm:'471'|'6799';label:string}};
-export type Plan={length:number;sections:Section[];placed:Placed[];sleeves:Sleeve[];inserts:Insert[];machining:Machining[];issues:Issue[];bom:BomLine[];split:number};
+/** A motor whose shaft goes into this one: its flange face (x) lies its shaft's length from where it goes in, its body
+ * (x0..x1) beyond. */
+export type ShaftMotor={id:string;part:Part;label:string;end:Side;face:number;x0:number;x1:number};
+export type Plan={motors?:ShaftMotor[];length:number;sections:Section[];placed:Placed[];sleeves:Sleeve[];inserts:Insert[];machining:Machining[];issues:Issue[];bom:BomLine[];split:number};
 
 type Ref={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;spacer:boolean;clamp:boolean;side?:Side};
 const n=(x:number)=>String(+x.toFixed(2)).replace('.',',');
@@ -101,6 +106,8 @@ function build(doc:ShaftDoc,refs:Ref[],k:number,inserts:Insert[],given:Issue[]):
 
 /** The checks, independent of how the plan came about (also for sections set by hand), machining and the parts list. */
 function finish(doc:ShaftDoc,p:Plan):Plan{
+ // Motors: the flange face lies the motor shaft's length from where it goes in; the body beyond it.
+ p.motors=p.inserts.flatMap(i=>{const part=i.part.id.startsWith('motor-')?partById(i.part.id.slice(6)):undefined;if(!part?.shaft)return [];const face=i.end==='links'?i.x1-part.shaft.length:i.x0+part.shaft.length,body=part.size[2];return [{id:i.id,part,label:part.label.replace(/ Schrittmotor/,''),end:i.end,face,x0:i.end==='links'?face-body:face,x1:i.end==='links'?face:face+body}];});
  const L=doc.length,s=doc.settings,issues=p.issues,at=(x:number)=>p.sections.find(c=>x>=c.x0-eps&&x<=c.x1+eps),within=(a:number,b:number)=>p.sections.filter(c=>overlaps(c.x0,c.x1,a,b));
  const sleeveOf=(id?:string)=>p.sleeves.find(x=>x.id===id);
  // Seats.
@@ -157,6 +164,7 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
  const bom=new Map<string,BomLine>(),add=(what:string,note?:string)=>{const b=bom.get(what);if(b)b.count++;else bom.set(what,{what,count:1,...(note?{note}:{})});};
  add(doc.making==='cnc'?'Welle (gedreht/gefräst)':'Welle (gedruckt)',`${mm(L)} lang, größter Ø ${n(Math.max(...p.sections.map(c=>outer(c.profile))))}`);
  for(const t of p.placed){add(t.part.label);if(t.part.extra)add(t.part.extra);}
+ for(const m of p.motors!)add(m.part.label,'Kaufteil, seine Welle steckt in dieser');
  for(const x of p.sleeves)add(`${x.kind==='adapter'?'Adapter':'Distanzhülse'} (gedruckt): ${x.label.replace(/^(Adapter|Distanzhülse) /,'')}`,mm(x.x1-x.x0)+' lang');
  for(const m of p.machining){if(m.screw)add(m.screw);if(m.drill!==undefined){const t=thread((m.work as {m:number}).m)!;add(`Gewindebohrer M${n(t.m)} (Kernloch Ø${n(t.drill)})`);}if(m.key)add(`Passfeder DIN 6885 A ${m.key.b} × ${m.key.h} × ${m.key.length}`);if(m.ring)add(m.ring.label);}
  // One tap per size is enough.

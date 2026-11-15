@@ -19,9 +19,15 @@ const base=ex.make(ids);
  const b=p.belts[0];assert.equal(b.stock,200);assert.ok(b.tension.range[0]<200&&b.tension.range[1]>200);assert.ok(p.issues.some(i=>/Normriemen 200 mm passt, gespannt über die Langlöcher/.test(i.message)));
  assert.ok(!p.issues.some(i=>/Motorwelle z16: kein Lager/.test(i.message)),'der Motor hält seine Welle');assert.ok(p.bom.some(x=>/NEMA 17/.test(x.what)));
  {const r1=16/Math.PI,r2=40/Math.PI,c=centerFor(200,r1,r2);near(2*c+Math.PI*(r1+r2)+(r1-r2)**2/c,200,1e-9,'Achsabstand für 200 mm');}}
-// Raised by 2: no plate; the offset puts it back.
-{const shafts=base.shafts.map(s=>s.id==='a'?{...s,z:7.5}:s),p=planGear(doc({shafts}),files),m=p.motors[0];assert.equal(m.layer,undefined);near(m.offset,-2,1e-9,'Versatz');assert.ok(p.issues.some(i=>/2 mm tiefer setzt ihn an die Unterseite von Schicht 1/.test(i.message)));
- const back=planGear(doc({shafts:shafts.map(s=>s.id==='a'?{...s,z:s.z+m.offset}:s)}),files);assert.equal(back.motors[0].layer,'s1');}
+// Lowered by 6: the flange lies on no plate, the motor gets its own under it (a motor plate at the flange, away from the
+// body); being only 6 mm from layer 1, a hint offers to save it, and moving the shaft back puts it on layer 1 again.
+{const shafts=base.shafts.map(s=>s.id==='a'?{...s,z:-.5}:s),p=planGear(doc({shafts}),files),m=p.motors[0],own=p.layers.find(l=>l.motor===m.key);
+ assert.ok(own,'eigene Motorplatte');assert.equal(m.layer,own.id);near(m.face,-5.5,1e-9,'Flansch');assert.deepEqual(own.band,[-5.5,-.5],'5 mm über dem Flansch, vom Körper weg');assert.deepEqual(own.bearings,['motor:a']);
+ near(m.offset,6,1e-9,'Versatz zu Schicht 1');assert.ok(p.issues.some(i=>/eigene Motorplatte; 6 mm höher läge sein Flansch an der Unterseite von Schicht 1/.test(i.message)));assert.ok(!p.issues.some(i=>i.level==='fehler'),p.issues.map(i=>i.message).join(' | '));
+ assert.ok(p.columns.some(c=>c.z0===-.5&&c.z1===.5),'Säulen von der Motorplatte zur Schicht 1');
+ const back=planGear(doc({shafts:shafts.map(s=>s.id==='a'?{...s,z:s.z+m.offset}:s)}),files);assert.equal(back.motors[0].layer,'s1');assert.ok(!back.layers.some(l=>l.motor));}
+// Raised by 2: its plate would lie inside layer 1.
+{const p=planGear(doc({shafts:base.shafts.map(s=>s.id==='a'?{...s,z:7.5}:s)}),files);assert.ok(p.issues.some(i=>/seine Motorplatte \(2,5 mm bis 7,5 mm\) überschneidet Schicht 1/.test(i.message)),p.issues.map(i=>i.message).join(' | '));}
 // Too far for the slots: the stock 280 belt needs another distance; set there it fits.
 {let shafts=base.shafts.map(s=>s.id==='b'?{...s,at:[85,0]}:s),p=planGear(doc({shafts}),files);const b=p.belts[0];assert.equal(b.stock,280);assert.ok(p.issues.some(i=>/Normriemen 280 mm braucht .* die Langlöcher reichen von 82 mm bis 88 mm/.test(i.message)),p.issues.map(i=>i.message).join(' | '));
  shafts=shafts.map(s=>s.id==='b'?{...s,at:[b.fit.center,0]}:s);p=planGear(doc({shafts}),files);assert.ok(p.issues.some(i=>/Normriemen 280 mm passt/.test(i.message)));}
@@ -30,4 +36,5 @@ const base=ex.make(ids);
  const lower=settings=>{const d=doc({settings:{...base.settings,...settings}}),p=planGear(d,files),[keep,gc]=localGC(),parts=buildGearParts(d,p,files,keep),v=measureVolume(parts.find(x=>x.file==='schicht-1').shape),body=parts.find(x=>/NEMA 17/.test(x.name)).shape.boundingBox.bounds;gc();return {v,body};};
  const round=lower({slot:0}),slotted=lower({slot:6});const t=8.5,area=2*(11+.5)*6+4*2*1.7*6;near(round.v-slotted.v,area*t,area*t*.03,'Langlöcher nehmen mehr weg');
  near(slotted.body[1][2],.5,1e-6,'Motor bis zum Flansch');near(slotted.body[0][2],.5-40,1e-6,'Körper darunter');}
-console.log('Motor und Riemen: Flansch an der Schicht als Knoten der Platte, Langlöcher in Riemenrichtung, Normriemen im Spannweg, Versatz an die Platte, Achsabstand für den Normriemen, Langlöcher im Volumen, Motorkörper unter dem Flansch.');
+{const d=doc({shafts:base.shafts.map(s=>s.id==='a'?{...s,z:-.5}:s)}),p=planGear(d,files),[keep,gc]=localGC(),parts=buildGearParts(d,p,files,keep),plate=parts.find(x=>x.kind==='platte'&&x.shape.boundingBox.bounds[1][2]<0);assert.ok(plate,'Motorplatte als Datei');near(plate.shape.boundingBox.bounds[0][2],-5.5,1e-6,'auf dem Flansch');assert.ok(measureVolume(plate.shape)>1000);gc();}
+console.log('Motor und Riemen: eigene Motorplatte am Flansch (oder an einer Schicht), Flansch an der Schicht als Knoten der Platte, Langlöcher in Riemenrichtung, Normriemen im Spannweg, Versatz an die Platte, Achsabstand für den Normriemen, Langlöcher im Volumen, Motorkörper unter dem Flansch.');

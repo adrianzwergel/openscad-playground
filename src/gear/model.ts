@@ -17,10 +17,10 @@ export type WebKey=[string,string];
 /** `fit`: play per side of a bearing pocket; `bolt`: thread of the bolts (M3); `bolts`: how many, 0: as the plate needs;
  * `slot`: how far a motor with a belt can be moved to tension it (its slots); `clamp`: every layer a plate pair that clamps
  * its bearings (else one plate per layer, stops only on the outside of the outermost layers). */
-export type GearSettings={rim:number;web:number;lip:number;lipIn:number;clearance:number;hole:number;angle:number;grid:number;bolt:number;fit:number;bolts:number;slot:number;clamp:boolean};
+export type GearSettings={rim:number;web:number;lip:number;lipIn:number;clearance:number;hole:number;angle:number;grid:number;bolt:number;fit:number;bolts:number;slot:number;clamp:boolean;/** Thickness of a motor's own plate. */motorPlate:number};
 export type GearDoc={shafts:PlacedShaft[];belts:Belt[];layers?:Layer[];/** Bolt places set by hand (x, y); else the plan finds them. */bolts?:[number,number][];webs?:{add:WebKey[];remove:WebKey[];/** How a web gets past a part in its way, by `a|b`: round it, or lower/higher than it. */route?:Record<string,'aussen'|'tiefe'>};/** The shaft driven (placed id). */input?:string;settings:GearSettings};
 
-export const defaultGearSettings:GearSettings={rim:3,web:4,lip:1.5,lipIn:1,clearance:1,hole:.5,angle:15,grid:1,bolt:3,fit:.1,bolts:0,slot:6,clamp:false};
+export const defaultGearSettings:GearSettings={rim:3,web:4,lip:1.5,lipIn:1,clearance:1,hole:.5,angle:15,grid:1,bolt:3,fit:.1,bolts:0,slot:6,clamp:false,motorPlate:5};
 export const newGear=():GearDoc=>({shafts:[],belts:[],settings:{...defaultGearSettings}});
 export const itemKey=(r:ItemRef)=>`${r.on}/${r.item}`;
 export const webKey=(a:string,b:string):WebKey=>a<b?[a,b]:[b,a];

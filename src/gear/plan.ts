@@ -37,7 +37,8 @@ export type BeltPlan={id:string;a:string;b:string;center:number;length:number;st
 export type WebPlan={a:string;b:string;auto:boolean;forced:boolean;route?:'aussen'|'tiefe';path?:[number,number][];width?:number;z?:[number,number];hits:string[]};
 /** `pair`: two plates clamping the bearings, split at `split`; else one plate. `lips`: a stop over the outer ring at the
  * bottom / at the top (one plate: only on the outer side of the lowest and the highest layer). */
-export type LayerPlan={id:string;z0:number;z1:number;band:[number,number];split:number;pair:boolean;lips:[boolean,boolean];auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];/** Holes for shafts passing through; `ring`: where the hole cuts into the plate, the plate gets material round it
+/** `motor`: a motor's own plate (the key of its motor), at its flange, on the side away from its body. */
+export type LayerPlan={motor?:string;id:string;z0:number;z1:number;band:[number,number];split:number;pair:boolean;lips:[boolean,boolean];auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];/** Holes for shafts passing through; `ring`: where the hole cuts into the plate, the plate gets material round it
  * out to this radius first, so it never falls apart or keeps only a sliver there. `open`: a slot of the hole's width from
  * it out of the plate (`dir`, `length` from the centre), where something on that shaft could not pass the hole when the
  * plate goes on. */holes:Hole[];parts:number};
@@ -100,9 +101,8 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
  // A motor driving a belt: its slots point along the belt.
  for(const m of motors){const bt=belts.find(b=>wheel(b.a)!.on===m.on||wheel(b.b)!.on===m.on);if(!bt)continue;const other=wheel(wheel(bt.a)!.on===m.on?bt.b:bt.a)!,d=dist(m.at,other.at)||1;m.slot=[(other.at[0]-m.at[0])/d,(other.at[1]-m.at[1])/d];m.travel=s.slot;}
  const layers=planLayers(doc,shafts,bearings,meshes,wheels,obstacles,issues,motors);
- for(const m of motors){if(m.layer)continue;const faces=layers.map((l,i)=>({i,z:m.down?l.band[0]:l.band[1]})).sort((a,b)=>Math.abs(a.z-m.face)-Math.abs(b.z-m.face))[0];
-  if(faces){m.offset=+(faces.z-m.face).toFixed(3);issues.push({level:'warnung',message:`${m.label}: der Flansch liegt bei z ${mm(m.face)} an keiner Platte; die Welle ${mm(Math.abs(m.offset))} ${m.offset>0?'höher':'tiefer'} setzt ihn an ${m.down?'die Unterseite':'die Oberseite'} von Schicht ${faces.i+1} (Knopf an der Welle)`,ref:m.on});}
-  else issues.push({level:'warnung',message:`${m.label}: keine Schicht, an die er geschraubt werden kann`,ref:m.on});}
+ for(const m of motors){const own=layers.find(l=>l.motor===m.key);if(!own)continue;const faces=layers.map((l,i)=>({i,l,z:m.down?l.band[0]:l.band[1]})).filter(f=>!f.l.motor).sort((a,b)=>Math.abs(a.z-m.face)-Math.abs(b.z-m.face))[0];
+  if(faces&&Math.abs(faces.z-m.face)<=6){m.offset=+(faces.z-m.face).toFixed(3);issues.push({level:'hinweis',message:`${m.label} hat eine eigene Motorplatte; ${mm(Math.abs(m.offset))} ${m.offset>0?'höher':'tiefer'} läge sein Flansch an ${m.down?'der Unterseite':'der Oberseite'} von Schicht ${faces.i+1} und spart die Platte (Knopf an der Welle)`,ref:m.on});}}
  // Belts against stock lengths: with a motor's slots the centre distance has a range; without, it must fit as it is.
  const lengthAt=(a:Wheel,b:Wheel,c:number)=>2*c+Math.PI*(a.pitch+b.pitch)+(a.pitch-b.pitch)**2/Math.max(c,eps);
  for(const bp of belts){const a=wheel(bp.a)!,b=wheel(bp.b)!,m=motors.find(x=>x.layer&&x.slot&&(x.on===a.on||x.on===b.on)),t=m?m.travel/2:0,lo=lengthAt(a,b,bp.center-t),hi=lengthAt(a,b,bp.center+t);
@@ -117,7 +117,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
   for(const o of obstacles)if(overlap(o.z0,o.z1,l.band[0],l.band[1])>eps&&!o.on.includes(h.on)&&(o.b?hullDistance(x.at,o.a,o.ra,o.b,o.rb!):dist(x.at,o.a)-o.ra)<h.ring+s.clearance-eps)issues.push({level:'fehler',message:`Schicht ${i+1}: der Ring um das Freiloch für ${x.label} trifft ${o.label}`,ref:x.id});}});
  // Assembly: the lowest plate takes the shafts from above, every other plate goes on over them from above. A hole whose
  // shaft carries something on that side larger than the hole is opened to the plate's nearest edge.
- const lowestLayer=layers.reduce<LayerPlan|undefined>((a,l)=>!a||l.band[0]<a.band[0]?l:a,undefined);
+ const lowestLayer=layers.filter(l=>!l.motor).reduce<LayerPlan|undefined>((a,l)=>!a||l.band[0]<a.band[0]?l:a,undefined);
  layers.forEach((l,i)=>{const shapes=layerShapes(l,bearings,bolts);
   for(const h of l.holes){const x=shafts.find(v=>v.id===h.on)!,below=l===lowestLayer,side=(z0:number,z1:number)=>below?z1<=l.band[0]+eps:z0>=l.band[1]-eps;
    const parts=[...obstacles.filter(o=>!o.b&&o.on.includes(x.id)).map(o=>({label:o.label,r:o.ra,z0:o.z0,z1:o.z1})),...bearings.filter(b=>b.on===x.id&&!b.motor).map(b=>({label:b.label,r:b.D/2,z0:b.z0,z1:b.z1}))].filter(q=>side(q.z0,q.z1)&&q.r>h.r-1e-6);
@@ -155,8 +155,8 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
  const lowest=groups.reduce((k,g,i)=>g.z0<groups[k].z0?i:k,0),highest=groups.reduce((k,g,i)=>g.z1>groups[k].z1?i:k,0);
  // A single layer has no second outer plate to hold the shafts the other way: it clamps, as a plate pair.
  const clampAll=s.clamp||groups.length===1;
- return groups.map((g,i):LayerPlan=>{const l=given?.[i],id=l?.id??`s${i+1}`,rim=l?.rim??s.rim,thickness=l?.thickness??s.web,list:Bearing[]=[...g.list],z0=Math.min(g.z0,...list.map(b=>b.z0)),z1=Math.max(g.z1,...list.map(b=>b.z1));
-  const pair=clampAll,lips:[boolean,boolean]=pair?[true,true]:[i===lowest,i===highest&&groups.length>1],band:[number,number]=[z0-(lips[0]?s.lip:0),z1+(lips[1]?s.lip:0)],split=(z0+z1)/2,name=`Schicht ${i+1}`,ring=(b:Bearing)=>b.D/2+rim;
+ const make=(g:{z0:number;z1:number;list:Bearing[];motor?:Motor},i:number):LayerPlan=>{const l=g.motor?undefined:given?.[i],id=g.motor?`m${i+1}`:l?.id??`s${i+1}`,rim=l?.rim??s.rim,thickness=l?.thickness??s.web,list:Bearing[]=[...g.list],z0=Math.min(g.z0,...list.map(b=>b.z0)),z1=Math.max(g.z1,...list.map(b=>b.z1));
+  const pair=!g.motor&&clampAll,lips:[boolean,boolean]=g.motor?[false,false]:pair?[true,true]:[i===lowest,i===highest&&groups.length>1],band:[number,number]=g.motor?[z0,z1]:[z0-(lips[0]?s.lip:0),z1+(lips[1]?s.lip:0)],split=(z0+z1)/2,name=`Schicht ${i+1}`,ring=(b:Bearing)=>b.D/2+rim;
   if(pair)for(const b of list)if(Math.abs(mid(b)-split)>.5)issues.push({level:'hinweis',message:`${b.label}: Mitte ${mm(mid(b)-split)} neben der Trennfuge von ${name}, die Taschen werden ungleich tief`,ref:b.on});
   for(const [a,b] of list.flatMap((a,k)=>list.slice(k+1).map(b=>[a,b] as const)))if(a.on===b.on)issues.push({level:'warnung',message:`${a.label} und ${b.label} liegen auf derselben Welle in ${name}`,ref:a.on});
   // Motors screwed to this layer: the flange on the plate's outer face, the body outside.
@@ -201,7 +201,13 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   const shapes=[...list.map(b=>({a:b.at,ra:ring(b),b:b.at,rb:ring(b)})),...webs.filter(w=>!w.z).flatMap(w=>{const a=at(w.a),b=at(w.b);if(!w.path)return [{a:a.at,ra:ring(a),b:b.at,rb:ring(b)}];const pts=[a.at,...w.path,b.at];return pts.slice(1).map((q,k)=>({a:pts[k],ra:w.width!,b:q,rb:w.width!}));})];
   for(const h of holes){const x=shafts.find(v=>v.id===h.on)!;if(!shapes.some(g=>hullDistance(x.at,g.a,g.ra,g.b,g.rb)<h.r))continue;h.ring=h.r+rim;
    for(const o of inBand)if(!o.on.includes(h.on)&&(o.b?hullDistance(x.at,o.a,o.ra,o.b,o.rb!):dist(x.at,o.a)-o.ra)<h.ring+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um das Freiloch für ${x.label} trifft ${o.label}`,ref:x.id});}
-  return {id,z0,z1,band,split,pair,lips,auto:!l,rim,thickness,bearings:list.map(b=>b.key),webs,holes,parts};});
+  return {...(g.motor?{motor:g.motor.key}:{}),id,z0,z1,band,split,pair,lips,auto:!l,rim,thickness,bearings:list.map(b=>b.key),webs,holes,parts};};
+ const out=groups.map(make);
+ // A motor whose flange lies on no plate gets its own: as thick as set, on the side away from its body.
+ for(const m of motors){if(m.layer)continue;const t=s.motorPlate,band:[number,number]=m.down?[m.face,m.face+t]:[m.face-t,m.face];
+  for(const [k,o] of out.entries())if(overlap(o.band[0],o.band[1],band[0],band[1])>eps)issues.push({level:'fehler',message:`${m.label}: seine Motorplatte (${mm(band[0])} bis ${mm(band[1])}) überschneidet Schicht ${k+1}`,ref:m.on});
+  out.push(make({z0:band[0],z1:band[1],list:[],motor:m},out.length));}
+ return out;
 }
 
 const screws=[10,12,16,20,25,30,35,40,45,50,55,60,65,70,80,90,100];

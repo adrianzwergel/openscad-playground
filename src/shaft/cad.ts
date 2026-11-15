@@ -77,6 +77,7 @@ export function buildParts(doc:ShaftDoc,plan:Plan,keep?:Keep):{parts:CadPart[];f
  parts.push({name:'Welle',file:'welle',kind:'welle',shape:safe('Welle',()=>shaftSolid(keep!,doc,plan)),color:'#9aa7b1',made:true});
  plan.sleeves.forEach((s,i)=>parts.push({name:s.label,file:`${s.kind}-${i+1}`,kind:s.kind,shape:safe(s.label,()=>sleeveSolid(keep!,doc,s)),color:s.kind==='adapter'?'#e0a060':'#b98fd6',made:true}));
  for(const t of plan.placed)parts.push({name:t.label,file:t.id,kind:'kauf',shape:ring(keep,t.x0,t.x1,t.part.outer,outer(t.bore)),color:t.part.group==='Lager'?'#6fa4c6':'#6fc6a6',made:false});
+ for(const m of plan.motors??[]){const w=m.part.size[0]/2;parts.push({name:m.label,file:`motor-${m.id}`,kind:'kauf',shape:keep(makeBox([m.x0,-w,-w],[m.x1,w,w])),color:'#3a4048',made:false});}
  for(const i of plan.inserts){const len=i.part.length??(i.x1-i.x0)+12,x0=i.end==='links'?i.x1-len:i.x0,x1=i.end==='links'?i.x1:i.x0+len;parts.push({name:`${i.label} (${label(i.profile)})`,file:i.id,kind:'kauf',shape:along(keep,i.profile,x0,x1),color:'#e0c56c',made:false});}
  return {parts,free};}
 

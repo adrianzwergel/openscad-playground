@@ -12,9 +12,9 @@ import {threads} from './din.ts';
 
 export type Selection={kind:'item';id:string}|{kind:'insert';id:string}|{kind:'work';id:string}|{kind:'section';index:number}|undefined;
 export type Host={doc():ShaftDoc;plan():Plan;/** Before a change: what undo goes back to. */begin():void;/** After a change: record, save, draw. */commit(message?:string):void;/** While dragging: draw only. */live():void;readOnly():boolean};
-type Lane='auf'|'erzeugt'|'in'|'bearb'|'abschn';
+type Lane='motor'|'auf'|'erzeugt'|'in'|'bearb'|'abschn';
 type Clip={key:string;lane:Lane;sel?:Selection;x0:number;x1:number;text:string;title:string;cls:string;resize?:'both'|'inner';point?:boolean};
-type Drag={sel:Selection;mode:'move'|'l'|'r'|'length';start:number;orig:unknown;targets:number[];moved:boolean};
+type Drag={sel:Selection;mode:'move'|'l'|'r'|'length'|'motor';start:number;orig:unknown;targets:number[];moved:boolean};
 
 const PAD=14,GRID=.5,TOL_PX=8;
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
@@ -31,7 +31,7 @@ const workTemplates:WorkTemplate[]=[
 ];
 
 export class ShaftEditor{
- sel:Selection;zoom=1;scale=8;
+ sel:Selection;zoom=1;scale=8;private x0=0;private x1=0;
  private lanes=new Map<Lane|'welle',HTMLElement>();private drag?:Drag;private scroller?:HTMLElement;
  constructor(private host:Host,private status:(m:string)=>void){
   addEventListener('pointermove',e=>this.onMove(e));addEventListener('pointerup',e=>this.onUp(e));
@@ -78,6 +78,7 @@ export class ShaftEditor{
   for(const it of d.items){const part=onPart(it.part),pl=p.placed.find(t=>t.id===it.id),sl=p.sleeves.find(s=>s.id===it.id),side=pl?.side??sl?.side,w=this.widthOf(it);
    out.push({key:`item:${it.id}`,lane:'auf',sel:{kind:'item',id:it.id},x0:it.x,x1:it.x+w,text:part?.short??it.part,title:`${part?.label??it.part}${side?` · von ${side} aufgeschoben`:''}${it.side?' (fest)':''}`,cls:`${part?.spacer?'spacer':part?.group==='Lager'?'bearing':'gear'}${side?' from-'+side:''} ${level([it.id])}`,...(part?.own?{resize:'both' as const}:{})});}
   for(const s of p.sleeves.filter(x=>x.auto))out.push({key:`sleeve:${s.id}`,lane:'erzeugt',...(s.for?{sel:{kind:'item',id:s.for} as Selection}:{}),x0:s.x0,x1:s.x1,text:s.kind==='adapter'?'Adapter':'Hülse',title:s.label,cls:`${s.kind} ${level([s.id])}`});
+  for(const m of p.motors??[])out.push({key:`motor:${m.id}`,lane:'motor',sel:{kind:'insert',id:m.id},x0:m.x0,x1:m.x1,text:m.label,title:`${m.label}: Flansch bei ${n(m.face)} mm. Ziehen schiebt den Motor entlang der Achse (wie tief seine Welle steckt)`,cls:'motor'});
   for(const i of p.inserts)out.push({key:`insert:${i.id}`,lane:'in',sel:{kind:'insert',id:i.id},x0:i.x0,x1:i.x1,text:`${i.end==='links'?'':'→ '}${i.label}${i.end==='links'?' ←':''}`,title:`${i.label} · ${label(i.profile)} · ${n(i.x1-i.x0)} mm tief von ${i.end}`,cls:`insert ${level([i.id])}`,resize:'inner'});
   for(const w of d.works){const base={key:`work:${w.id}`,lane:'bearb' as Lane,sel:{kind:'work',id:w.id} as Selection,cls:`work ${level([w.id])}`,title:workLabel[w.kind]};
    if(w.kind==='madenschraube')out.push({...base,x0:w.x-w.m/2,x1:w.x+w.m/2,text:`M${n(w.m)}`,point:true});
@@ -91,17 +92,19 @@ export class ShaftEditor{
  renderTimeline(root:HTMLElement){
   const d=this.doc,p=this.host.plan();
   if(!this.scroller||!root.contains(this.scroller)){this.scroller=el('div',{className:'tl-scroll',id:'timeline-scroll'});root.replaceChildren(this.scroller);this.scroller.addEventListener('wheel',e=>{if(!e.ctrlKey)return;e.preventDefault();this.setZoom(this.zoom*(e.deltaY<0?1.2:1/1.2));},{passive:false});}
-  const left=this.scroller.scrollLeft,avail=Math.max(320,(this.scroller.clientWidth||900)-92);if(!this.drag?.moved)this.scale=this.zoom*(avail-2*PAD)/d.length;const s=this.scale,W=d.length*s+2*PAD,X=(x:number)=>PAD+x*s;
+  const left=this.scroller.scrollLeft,avail=Math.max(320,(this.scroller.clientWidth||900)-92);// Shown from the leftmost to the rightmost thing: a motor reaches beyond the shaft's ends.
+  if(!this.drag?.moved){this.x0=Math.min(0,...(p.motors??[]).map(m=>m.x0));this.x1=Math.max(d.length,...(p.motors??[]).map(m=>m.x1));this.scale=this.zoom*(avail-2*PAD)/(this.x1-this.x0);}
+  const s=this.scale,x0=this.x0,W=(this.x1-x0)*s+2*PAD,X=(x:number)=>PAD+(x-x0)*s;
   const sel=this.selKey(),rows:HTMLElement[]=[];this.lanes.clear();
   const row=(lane:Lane|'welle'|'lineal',title:string,...kids:HTMLElement[])=>{const l=el('div',{className:`tl-lane ${lane}`},...kids);l.style.width=`${W}px`;l.dataset.lane=lane;if(lane!=='lineal')this.lanes.set(lane,l);rows.push(el('div',{className:`tl-row ${lane}`},el('div',{className:'tl-label',textContent:title}),l));return l;};
-  const step=tickStep(s),ruler=row('lineal','mm');for(let x=0;x<=d.length+1e-9;x+=step){const t=el('span',{className:'tick',textContent:String(+x.toFixed(1))});t.style.left=`${X(x)}px`;ruler.append(t);}
-  const welle=row('welle','Welle');welle.innerHTML=silhouette(p,{scale:s,pad:PAD,vscale:Math.min(s,110/tallest(p)),ticks:false});const end=el('div',{className:'tl-length',title:`Länge ${n(d.length)} mm: ziehen`});end.style.left=`${X(d.length)-4}px`;end.onpointerdown=e=>this.startDrag(e,undefined,'length');welle.append(end);
-  const titles:Record<Lane,string>={auf:'Auf',erzeugt:'Erzeugt',in:'In',bearb:'Bearbeitung',abschn:'Abschnitte'};
+  const step=tickStep(s),ruler=row('lineal','mm');for(let x=Math.ceil(x0/step)*step;x<=this.x1+1e-9;x+=step){const t=el('span',{className:'tick',textContent:String(+x.toFixed(1))});t.style.left=`${X(x)}px`;ruler.append(t);}
+  const welle=row('welle','Welle');welle.innerHTML=silhouette(p,{scale:s,pad:PAD,vscale:Math.min(s,110/tallest(p)),ticks:false,x0,x1:this.x1});const end=el('div',{className:'tl-length',title:`Länge ${n(d.length)} mm: ziehen`});end.style.left=`${X(d.length)-4}px`;end.onpointerdown=e=>this.startDrag(e,undefined,'length');welle.append(end);
+  const titles:Record<Lane,string>={motor:'Motor',auf:'Auf',erzeugt:'Erzeugt',in:'In',bearb:'Bearbeitung',abschn:'Abschnitte'};
   const lanes=Object.fromEntries((Object.keys(titles) as Lane[]).map(k=>[k,row(k,titles[k])])) as unknown as Record<Lane,HTMLElement>;
   for(const c of this.clips()){const b=el('div',{className:`clip ${c.cls}${c.sel&&this.selKey(c.sel)===sel?' selected':''}${c.point?' point':''}${c.sel?'':' fixed'}`,title:c.title},el('span',{textContent:c.text}));b.dataset.clip=c.key;
    const w=Math.max(c.point?12:6,(c.x1-c.x0)*s);b.style.left=`${c.point?X((c.x0+c.x1)/2)-w/2:X(c.x0)}px`;b.style.width=`${w}px`;
    if(c.sel&&c.lane==='erzeugt'){const target=c.sel;b.onpointerdown=e=>{e.stopPropagation();this.sel=target;this.host.live();};}
-   else if(c.sel){b.onpointerdown=e=>this.startDrag(e,c.sel,(e.target as HTMLElement).dataset.edge as 'l'|'r'|undefined??'move');
+   else if(c.sel){b.onpointerdown=e=>this.startDrag(e,c.sel,c.lane==='motor'?'motor':(e.target as HTMLElement).dataset.edge as 'l'|'r'|undefined??'move');
     if(c.resize){const edges:('l'|'r')[]=c.resize==='both'?['l','r']:[c.x0<=1e-9?'r':'l'];for(const e of edges){const h=el('i',{className:`edge ${e}`});h.dataset.edge=e;b.append(h);}}}
    lanes[c.lane].append(b);}
   this.scroller.replaceChildren(...rows);this.scroller.scrollLeft=left;
@@ -109,7 +112,7 @@ export class ShaftEditor{
  setZoom(z:number){this.zoom=Math.min(40,Math.max(1,z));this.host.live();}
  private selKey(s:Selection=this.sel){return !s?'':s.kind==='section'?`section:${s.index}`:`${s.kind}:${s.id}`;}
  /** mm under the pointer. */
- private xAt(clientX:number){const lane=this.lanes.get('auf');if(!lane)return 0;return (clientX-lane.getBoundingClientRect().left-PAD)/this.scale;}
+ private xAt(clientX:number){const lane=this.lanes.get('auf');if(!lane)return 0;return (clientX-lane.getBoundingClientRect().left-PAD)/this.scale+this.x0;}
  private targets(skip:Selection){const d=this.doc,p=this.host.plan(),k=this.selKey(skip),t=[0,d.length];
   for(const c of this.clips())if(!c.sel||this.selKey(c.sel)!==k)t.push(c.x0,c.x1);for(const s of p.sections)t.push(s.x0,s.x1);
   // Edges of the dragged thing stay where it was.
@@ -124,6 +127,8 @@ export class ShaftEditor{
   const tol=e.altKey?0:TOL_PX/this.scale,grid=e.altKey?0:GRID,pt=(v:number)=>snapPoint(v,g.targets,tol,grid),d=this.doc,L=d.length;
   if(g.mode==='length'){const others=[...d.items.map(i=>i.x+this.widthOf(i)),...d.works.flatMap(w=>'x1' in w?[w.x1]:'x' in w?[w.x]:[])];d.length=Math.max(1,...others,pt((g.orig as number)+dx));this.host.live();return;}
   const s=g.sel!;
+  // A motor moved along the axis: its shaft goes deeper in or less (between 1 mm and its length).
+  if(g.mode==='motor'&&s.kind==='insert'){const it=this.insert(s.id)!,o=g.orig as InItem,max=inPart(it.part)?.length??o.depth;it.depth=+Math.max(1,Math.min(max,toGrid(o.depth+(o.end==='links'?dx:-dx),grid))).toFixed(3);this.host.live();return;}
   if(s.kind==='item'){const it=this.item(s.id)!,o=g.orig as OnItem,w=this.widthOf(o);
    if(g.mode==='move')it.x=+Math.max(0,Math.min(L-w,snapMove(o.x+dx,w,g.targets,tol,grid))).toFixed(3);
    else if(g.mode==='r')it.width=+Math.max(.5,pt(o.x+w+dx)-o.x).toFixed(3);

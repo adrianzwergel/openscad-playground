@@ -69,3 +69,5 @@ footer{grid-row:3;padding:4px 12px;font-size:12px;color:var(--soft);border-top:1
 .file-row.zip{margin-top:6px}.file-row.zip button{width:100%;font-size:13px;padding:7px}
 /* Embedded in the gearbox generator: no way out of the shaft, the gearbox has its own. */
 body.embedded header a.button,body.embedded #shaft-close,body.embedded #shaft-delete{display:none}
+.clip.motor{background:#3a4048;border-color:#9aa7b1;color:#e4ebef}.tl-row.motor .tl-lane{height:30px}
+.silhouette .motor rect{fill:#3a404899;stroke:#9aa7b1;stroke-dasharray:5 3}.silhouette .motor .flange{stroke:#f0d36e;stroke-width:2}

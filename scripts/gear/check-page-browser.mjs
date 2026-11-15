@@ -47,8 +47,9 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // The motor: on layer 1 with slots; the belt set to the stock length's centre distance; the shaft raised, moved back by its button.
  assert.match(await p.$eval('#properties',e=>e.textContent),/Flansch an der Unterseite von Schicht 1, Langlöcher ±3 mm in Riemenrichtung/);assert.ok(await p.$('#top [data-motor]'),'Motor in der Draufsicht');
  await p.click('[data-belt-fit]');await wait(150);assert.match(await p.$eval('#issues',e=>e.textContent),/Normriemen 200 mm passt/);
- const z=await p.evaluateHandle(()=>[...document.querySelectorAll('#properties .prop')].find(l=>/Höhe z/.test(l.textContent)).querySelector('input'));await z.evaluate(e=>{e.value='';e.focus();});await z.type('8');await p.keyboard.press('Tab');await wait(150);
- assert.match(await p.$eval('#issues',e=>e.textContent),/liegt bei z 3 mm an keiner Platte/);await p.click('[data-motor-fit]');await wait(150);assert.doesNotMatch(await p.$eval('#issues',e=>e.textContent),/an keiner Platte/);
+ const z=await p.evaluateHandle(()=>[...document.querySelectorAll('#properties .prop')].find(l=>/Höhe z/.test(l.textContent)).querySelector('input'));await z.evaluate(e=>{e.value='';e.focus();});await z.type('2.5');await p.keyboard.press('Tab');await wait(150);
+ assert.match(await p.$eval('#issues',e=>e.textContent),/hat eine eigene Motorplatte; 3 mm höher läge sein Flansch an der Unterseite von Schicht 1/);assert.ok(await p.$('#side [data-band]'),'Motorplatte als Band');
+ await p.click('[data-motor-fit]');await wait(150);assert.doesNotMatch(await p.$eval('#issues',e=>e.textContent),/eigene Motorplatte/);
  // A web in a wheel's way: round it, in the depth, straight again.
  await p.click('#gear-close');await p.waitForSelector('[data-example="umweg"]',{visible:true});await p.click('[data-example="umweg"]');await p.waitForSelector('#top .web.hit');
  assert.match(await p.$eval('#issues',e=>e.textContent),/geht durch z30 m1 auf Rad unten z30/);

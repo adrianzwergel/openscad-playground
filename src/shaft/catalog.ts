@@ -13,7 +13,7 @@ export type OnPart={id:string;label:string;/** For narrow clips. */short:string;
 export type InPart={id:string;label:string;group:string;profile:Profile;length?:number;source:string;checked:boolean;note?:string};
 
 export const onGroups=['Lager','LEGO-Zahnräder','Stirnräder','Riemenscheiben','Sicherung','Hülsen'];
-export const inGroups=['Motorwellen','LEGO','Wellen'];
+export const inGroups=['Motoren','LEGO','Wellen'];
 
 const bearings:OnPart[]=bearingCatalog.filter(b=>b.kind==='ball').map(b=>({id:`lager-${b.id}`,label:b.label,short:b.id,group:'Lager',bore:rund(b.d),width:b.B,outer:b.D,stop:b.d+.4*(b.D-b.d),source:'Lagerkatalog des Studios',checked:true}));
 // One gear per LDraw part a LEGO axle drives; reinforced and sliding versions have the same seat.
@@ -28,7 +28,7 @@ const collars:OnPart[]=([[3,7,5,3],[4,8,5,3],[5,10,6,3],[6,12,6,4],[8,16,8,4],[1
 export const onParts:OnPart[]=[...bearings,...lego,...[[12,1],[20,1],[30,1],[40,1],[15,2],[20,2]].map(([z,m])=>spur(z,m)),...[16,20,40].map(pulley),...bushes,...collars,spacerPart];
 
 // NEMA motors have a D shaft; the depth of the flat is the usual one, the catalog only knows the Ø.
-const motors:InPart[]=parts.filter(p=>p.shaft).map(p=>({id:`motor-${p.id}`,label:`${p.label}: Welle ${String(p.shaft!.d).replace('.',',')} mm`,group:'Motorwellen',profile:{kind:'d',d:p.shaft!.d,flat:.5} as Profile,length:p.shaft!.length,source:p.source,checked:false,note:'Abflachung 0,5 mm wie üblich, bitte am Motor nachmessen.'}));
+const motors:InPart[]=parts.filter(p=>p.shaft).map(p=>({id:`motor-${p.id}`,label:`${p.label.replace(/ Schrittmotor/,'')}: Welle ${String(p.shaft!.d).replace('.',',')} mm`,group:'Motoren',profile:{kind:'d',d:p.shaft!.d,flat:.5} as Profile,length:p.shaft!.length,source:p.source,checked:false,note:'Abflachung 0,5 mm wie üblich, bitte am Motor nachmessen.'}));
 export const inParts:InPart[]=[...motors,
  {id:'lego-achse',label:'LEGO-Achse',group:'LEGO',profile:{kind:'kreuz'},source:'LEGO',checked:true},
  ...[3,4,5,6,8,10].map(d=>({id:`rund-${d}`,label:`Rundwelle Ø${d}`,group:'Wellen',profile:rund(d),source:'Norm',checked:true})),
