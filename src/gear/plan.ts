@@ -37,7 +37,8 @@ export type BeltPlan={id:string;a:string;b:string;center:number;length:number;st
 export type WebPlan={a:string;b:string;auto:boolean;forced:boolean;route?:'aussen'|'tiefe';path?:[number,number][];width?:number;z?:[number,number];hits:string[]};
 /** `pair`: two plates clamping the bearings, split at `split`; else one plate. `lips`: a stop over the outer ring at the
  * bottom / at the top (one plate: only on the outer side of the lowest and the highest layer). */
-export type LayerPlan={id:string;z0:number;z1:number;band:[number,number];split:number;pair:boolean;lips:[boolean,boolean];auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];holes:{on:string;r:number}[];parts:number};
+export type LayerPlan={id:string;z0:number;z1:number;band:[number,number];split:number;pair:boolean;lips:[boolean,boolean];auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];/** Holes for shafts passing through; `ring`: where the hole cuts into the plate, the plate gets material round it
+ * out to this radius first, so it never falls apart or keeps only a sliver there. */holes:{on:string;r:number;ring?:number}[];parts:number};
 export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string};
 /** A bolt through all plates: where, the eye round it, which bearing of each layer its eye is joined to. */
 export type Bolt={at:[number,number];eye:number;hole:number;auto:boolean;attach:Record<string,string>;/** Set by hand onto a wheel, bearing or shaft. */hit?:boolean};
@@ -148,7 +149,7 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   const comp=new Map(list.map(b=>[b.key,b.key])),f2=(k:string):string=>{const p=comp.get(k)!;if(p===k)return k;const r=f2(p);comp.set(k,r);return r;};for(const w of webs){const x=f2(w.a),y=f2(w.b);if(x!==y)comp.set(x,y);}
   const parts=new Set(list.map(b=>f2(b.key))).size;if(parts>1)issues.push({level:'warnung',message:`${name} zerfällt in ${parts} Teile: Stege fehlen`});
   // Shafts passing through without a bearing here: a hole.
-  const holes=shafts.filter(x=>!list.some(b=>b.on===x.id)&&overlap(x.z0,x.z1,band[0],band[1])>0).map(x=>({on:x.id,r:Math.max(...x.pieces.filter(p=>overlap(p.z0,p.z1,band[0],band[1])>0).map(p=>p.r),0)+s.hole}));
+  const holes:{on:string;r:number;ring?:number}[]=shafts.filter(x=>!list.some(b=>b.on===x.id)&&overlap(x.z0,x.z1,band[0],band[1])>0).map(x=>({on:x.id,r:Math.max(...x.pieces.filter(p=>overlap(p.z0,p.z1,band[0],band[1])>0).map(p=>p.r),0)+s.hole}));
   // What the plate hits: rings and webs against wheels, pulleys, sleeves and belts in the band's heights.
   const at=(k:string)=>list.find(b=>b.key===k)!;
   for(const o of obstacles){if(overlap(o.z0,o.z1,band[0],band[1])<=eps)continue;
@@ -173,6 +174,11 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
     if(!hits(segs).length&&(!best||len(pts)<len(best)))best=pts;}
    if(!best){issues.push({level:'fehler',message:`${name}: außen herum findet der Steg ${a.label} – ${b.label} keinen freien Weg. In die Tiefe oder weglassen`,ref:`steg:${w.a}|${w.b}`});continue;}
    w.path=best.slice(1,-1);w.width=width;w.hits=[];}
+  // A hole that cuts into the plate gets a ring of the layer's rim round it before it is cut out: the plate stays one
+  // piece round a shaft that passes through a web or along its edge.
+  const shapes=[...list.map(b=>({a:b.at,ra:ring(b),b:b.at,rb:ring(b)})),...webs.filter(w=>!w.z).flatMap(w=>{const a=at(w.a),b=at(w.b);if(!w.path)return [{a:a.at,ra:ring(a),b:b.at,rb:ring(b)}];const pts=[a.at,...w.path,b.at];return pts.slice(1).map((q,k)=>({a:pts[k],ra:w.width!,b:q,rb:w.width!}));})];
+  for(const h of holes){const x=shafts.find(v=>v.id===h.on)!;if(!shapes.some(g=>hullDistance(x.at,g.a,g.ra,g.b,g.rb)<h.r))continue;h.ring=h.r+rim;
+   for(const o of inBand)if(!o.on.includes(h.on)&&(o.b?hullDistance(x.at,o.a,o.ra,o.b,o.rb!):dist(x.at,o.a)-o.ra)<h.ring+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um das Freiloch für ${x.label} trifft ${o.label}`,ref:x.id});}
   return {id,z0,z1,band,split,pair,lips,auto:!l,rim,thickness,bearings:list.map(b=>b.key),webs,holes,parts};});
 }
 

@@ -37,6 +37,8 @@ export function plateOutline(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|unde
  for(const k of l.bearings.slice(1))d=d.fuse(disc(bearing(k).at,ring(k)));
  for(const w of l.webs)if(!w.z)d=d.fuse(webShape(plan,l,w));
  for(const bo of plan.bolts){const k=bo.attach[l.id];if(k)d=d.fuse(hull(bearing(k).at,ring(k),bo.at,bo.eye));}
+ // Material round a hole that cuts into the plate, before the hole goes out.
+ for(const h of l.holes)if(h.ring)d=d.fuse(disc(plan.shafts.find(x=>x.id===h.on)!.at,h.ring));
  const holes=throughHoles(doc,plan,l);return holes?d.cut(holes):d;}
 /** Webs only as high as there is room under or over a part: their outline and heights. */
 export function steppedWebs(doc:GearDoc,plan:GearPlan,l:LayerPlan){const holes=throughHoles(doc,plan,l);return l.webs.filter(w=>w.z).map(w=>{const d=webShape(plan,l,w);return {shape:holes?d.cut(holes.clone()):d,z:w.z!};});}
