@@ -124,6 +124,9 @@ export function buildParts(doc:ShaftDoc,plan:Plan,keep?:Keep):{parts:CadPart[];f
   // The original: its z (shaft up from the flange) along the shaft, towards it.
   const asset:Asset={url:`${MOTORS}${m.part.id}.stl`,matrix:matMul(matMove([m.face,0,0]),matTurn(left?90:-90,[0,0,0],[0,1,0]))};
   parts.push({name:m.label,file:`motor-${m.id}`,kind:'kauf',shape,color:'#56606b',made:false,asset});}
+ // Retaining rings: a flat ring in their groove, from the groove's Ø to the ring's body.
+ for(const m of plan.machining){const w=m.work;if(w.kind!=='ring'||!m.ring)continue;const t=Math.max(.3,m.ring.m-.1),a=m.ring.d2/2,b=m.ring.body/2;
+  parts.push({name:m.ring.label,file:`ring-${w.id}`,kind:'kauf',shape:keep(draw([w.x-t/2,a]).lineTo([w.x+t/2,a]).lineTo([w.x+t/2,b]).lineTo([w.x-t/2,b]).close().sketchOnPlane('XY').revolve([1,0,0]) as Shape3D),color:'#b8bfc6',made:false});}
  for(const i of plan.inserts){const len=i.part.length??(i.x1-i.x0)+12,x0=i.end==='links'?i.x1-len:i.x0,x1=i.end==='links'?i.x1:i.x0+len;parts.push({name:`${i.label} (${label(i.profile)})`,file:i.id,kind:'kauf',shape:along(keep,i.profile,x0,x1),color:'#e0c56c',made:false});}
  return {parts,free};}
 

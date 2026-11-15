@@ -39,3 +39,8 @@ export const eclips=[
 ] as const;
 /** The E-clip for a shaft: of those whose range holds it, the largest (the shallowest groove). */
 export const eclipFor=(d:number)=>[...eclips].reverse().find(e=>d>=e.from-1e-6&&d<=e.to+1e-6);
+/** The room a ring takes round the shaft: DIN 471 its clearance Ø d4 (lugs and pliers when it is put on), DIN 6799 its
+ * outer Ø d3. By shaft Ø, by E-clip size. */
+const ringSpace:Record<number,number>={3:7,4:8.6,5:10.3,6:11.7,7:13.5,8:14.7,9:16,10:17,12:19,15:22.6,17:25,20:28.4};
+const eclipOuter:Record<number,number>={1.2:3,1.5:4,1.9:4.5,2.3:6,3.2:7,4:9,5:11,6:12,7:14,8:16,9:18.5,10:20,12:23,15:29};
+export const ringRoom=(norm:'471'|'6799',size:number)=>norm==='471'?ringSpace[size]??size*1.45+3:eclipOuter[size]??size*2;

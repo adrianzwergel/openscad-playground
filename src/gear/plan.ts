@@ -38,7 +38,7 @@ export type Drive={inputs:{id:string;label:string}[];shafts:Record<string,number
 /** What a plate must keep clear of: a disc from z0 to z1, or the hull of two discs (a belt, an arm). `body`: the swing arm
  * it moves with ('' the frame). `spin`: it turns about `a` through these angles (an arm; 0 to 360: endlessly). `soft`: only
  * in the way of what moves against it (a motor's body). */
-export type Obstacle={key:string;label:string;z0:number;z1:number;a:[number,number];ra:number;b?:[number,number];rb?:number;on:string[];body:string;belt?:boolean;spin?:{from:number;to:number};soft?:boolean};
+export type Obstacle={key:string;label:string;z0:number;z1:number;a:[number,number];ra:number;b?:[number,number];rb?:number;on:string[];body:string;belt?:boolean;spin?:{from:number;to:number};soft?:boolean;/** A retaining ring in its groove: `ra` the room it takes (lugs, pliers); the plates leave an opening for it. */clip?:'471'|'6799'};
 /** An arm on a shaft: where it points as drawn (degrees in the plane), from the axis `length` to the middle of its end;
  * `spin`: how far it turns (else endlessly), `rate`: degrees per degree of the shaft the range is set at. */
 export type Arm=Placed&{angle:number;length:number;r0:number;r1:number;hole:number;spin?:[number,number];rate?:number;/** In a pose: the angle its range counts from. */zero?:number};
@@ -61,7 +61,7 @@ export type WebPlan={a:string;b:string;auto:boolean;forced:boolean;route?:'ausse
 export type LayerPlan={motor?:string;/** The swing arm it belongs to, '' the frame. */body:string;id:string;z0:number;z1:number;band:[number,number];split:number;pair:boolean;lips:[boolean,boolean];auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];/** Holes for shafts passing through; `ring`: where the hole cuts into the plate, the plate gets material round it
  * out to this radius first, so it never falls apart or keeps only a sliver there. `open`: a slot of the hole's width from
  * it out of the plate (`dir`, `length` from the centre), where something on that shaft could not pass the hole when the
- * plate goes on. */holes:Hole[];parts:number};
+ * plate goes on. */holes:Hole[];parts:number;/** A lip opened wider than usual for a retaining ring beside the bearing: bearing → radius. */openings?:Record<string,number>};
 export type Hole={on:string;r:number;ring?:number;open?:{dir:[number,number];length:number};/** The shaft moves through the plate along this arc: the hole is a slot along it. */arc?:Sweep;/** In a pose: where the arc starts, moved with the plate. */base?:[number,number]};
 export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string};
 /** A bolt through all plates: where, the eye round it, which bearing of each layer its eye is joined to. */
@@ -116,6 +116,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
     arms.push({...base,angle:deg,length:t.arm.length,r0:t.arm.hub/2,r1:t.arm.width/2,hole:t.arm.hole});obstacles.push({key:base.key,label:base.label,z0,z1,a:p.at,ra:t.arm.hub/2,b:end,rb:t.arm.width/2,on:[p.id],body,spin:{from:0,to:360}});continue;}
    obstacles.push({key:base.key,label:base.label,z0,z1,a:p.at,ra:t.part.outer/2,on:[p.id],body});}
   for(const sl of plan.sleeves){const [z0,z1]=span(sl.x0,sl.x1);obstacles.push({key:`${p.id}/${sl.id}`,label:`${sl.label} auf ${f.name}`,z0,z1,a:p.at,ra:Math.max(...sl.steps.map(x=>outer(x.outer)))/2,on:[p.id],body});}
+  for(const m of plan.machining){const w=m.work;if(w.kind!=='ring'||!m.ring)continue;const [z0,z1]=span(w.x-m.ring.m/2,w.x+m.ring.m/2);obstacles.push({key:`${p.id}/ring-${w.id}`,label:`${m.ring.norm==='471'?'Sicherungsring':'E-Ring'} auf ${f.name}`,z0,z1,a:p.at,ra:m.ring.room/2,on:[p.id],body,clip:m.ring.norm});}
   // A motor's shaft in it: the flange face lies the motor shaft's length from where it went in, the body beyond.
   for(const i of plan.inserts){const part=i.part.id.startsWith('motor-')?partById(i.part.id.slice(6)):undefined;if(!part?.shaft)continue;
    const faceX=i.end==='links'?i.x1-part.shaft.length:i.x0+part.shaft.length,face=p.flip?p.z+L-faceX:p.z+faceX,down=(i.end==='links')!==!!p.flip,reach=Math.max(...part.holes.map(h=>Math.hypot(...h.at)+h.d/2),(part.pilot??0)/2);
@@ -244,7 +245,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
  const lowestIn=(body:string)=>layers.filter(l=>!l.motor&&l.body===body).reduce<LayerPlan|undefined>((a,l)=>!a||l.band[0]<a.band[0]?l:a,undefined);
  layers.forEach((l,i)=>{const shapes=layerShapes(l,bearings,bolts);
   for(const h of l.holes){if(h.arc)continue;const x=shafts.find(v=>v.id===h.on)!,below=l===lowestIn(l.body),side=(z0:number,z1:number)=>below?z1<=l.band[0]+eps:z0>=l.band[1]-eps;
-   const parts=[...obstacles.filter(o=>!o.belt&&!o.soft&&o.on.includes(x.id)).map(o=>({label:o.label,r:o.ra,z0:o.z0,z1:o.z1})),...bearings.filter(b=>b.on===x.id&&!b.motor).map(b=>({label:b.label,r:b.D/2,z0:b.z0,z1:b.z1}))].filter(q=>side(q.z0,q.z1)&&q.r>h.r-1e-6);
+   const parts=[...obstacles.filter(o=>!o.belt&&!o.soft&&!o.clip&&o.on.includes(x.id)).map(o=>({label:o.label,r:o.ra,z0:o.z0,z1:o.z1})),...bearings.filter(b=>b.on===x.id&&!b.motor).map(b=>({label:b.label,r:b.D/2,z0:b.z0,z1:b.z1}))].filter(q=>side(q.z0,q.z1)&&q.r>h.r-1e-6);
    if(!parts.length||!(h.ring||shapes.some(g=>hullDistance(x.at,g.a,g.ra,g.b,g.rb)<h.r)))continue;
    const all=[...shapes,...l.holes.filter(o=>o.ring).map(o=>{const c=shafts.find(v=>v.id===o.on)!.at;return {a:c,ra:o.ring!,b:c,rb:o.ring!};})],rings=l.bearings.map(k=>bearings.find(b=>b.key===k)!);
    // Shortest way out, and of those the one that cuts least of the plate beyond the hole's own ring (along its two edges).
@@ -351,11 +352,19 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   const comp=new Map(list.map(b=>[b.key,b.key])),f2=(k:string):string=>{const p=comp.get(k)!;if(p===k)return k;const r=f2(p);comp.set(k,r);return r;};for(const w of webs){const x=f2(w.a),y=f2(w.b);if(x!==y)comp.set(x,y);}
   const parts=new Set(list.map(b=>f2(b.key))).size;if(parts>1)issues.push({level:'warnung',message:`${name} zerfällt in ${parts} Teile: Stege fehlen`});
   // Shafts passing through without a bearing here: a hole.
-  const holes:Hole[]=shafts.filter(x=>!list.some(b=>b.on===x.id)&&overlap(x.z0,x.z1,band[0],band[1])>0).map(x=>{const arc=B.arc(x.id,body);if(arc==='x')issues.push({level:'fehler',message:`${name}: ${x.label} gehört zu einer anderen Schwinge und geht durch diese Platte; zwei Schwingen in derselben Höhe gehen nicht`,ref:x.id});return {on:x.id,r:Math.max(...x.pieces.filter(p=>overlap(p.z0,p.z1,band[0],band[1])>0).map(p=>p.r),0)+s.hole,...(arc&&arc!=='x'?{arc}:{})};});
+  const holes:Hole[]=shafts.filter(x=>!list.some(b=>b.on===x.id)&&overlap(x.z0,x.z1,band[0],band[1])>0).map(x=>{const arc=B.arc(x.id,body);if(arc==='x')issues.push({level:'fehler',message:`${name}: ${x.label} gehört zu einer anderen Schwinge und geht durch diese Platte; zwei Schwingen in derselben Höhe gehen nicht`,ref:x.id});return {on:x.id,r:Math.max(...x.pieces.filter(p=>overlap(p.z0,p.z1,band[0],band[1])>0).map(p=>p.r),...seen.filter(o=>o.clip&&o.on[0]===x.id&&overlap(o.z0,o.z1,band[0],band[1])>eps).map(o=>o.ra),0)+s.hole,...(arc&&arc!=='x'?{arc}:{})};});
   // What the plate hits: rings and webs against wheels, pulleys, sleeves and belts in the band's heights.
-  const at=(k:string)=>list.find(b=>b.key===k)!;
+  const at=(k:string)=>list.find(b=>b.key===k)!,openings:Record<string,number>={};
   for(const o of seen){if(overlap(o.z0,o.z1,band[0],band[1])<=eps)continue;
-   for(const b of list){if(o.on.includes(b.on)&&!o.belt){if(o.spin){issues.push({level:'fehler',message:`${name}: ${o.label} dreht in der Höhe der Platte um ${b.label}; über oder unter die Schicht setzen`,ref:b.on});continue;}if(o.ra+s.clearance>(b.hub?b.d/2:b.motor?(b.motor.part.pilot??0)/2:(o.z0+o.z1)/2<(b.z0+b.z1)/2?(lips[0]?b.D/2-s.lipIn:b.D/2):(lips[1]?b.D/2-s.lipIn:b.D/2))+eps&&!(b.motor&&(b.motor.down?o.z0>=band[1]-eps:o.z1<=band[0]+eps)))issues.push({level:'fehler',message:`${name}: ${o.label} sitzt zu nah am Lager ${b.label}, die Platte reicht ${mm(s.lip)} über das Lager (Bord); Abstand oder Distanzhülse nötig`,ref:b.on});continue;}const c=B.od(o,body,b.at);if(c<ring(b)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um ${b.label} trifft ${B.name(o,body)}`,ref:b.on});}}
+   for(const b of list){if(o.clip&&o.on.includes(b.on)){const below=(o.z0+o.z1)/2<(b.z0+b.z1)/2,lip=below?lips[0]:lips[1],need=o.ra+s.clearance;
+     if(b.hub){issues.push({level:'fehler',message:`${name}: ${o.label} liegt in der Nabe der Platte um ${b.label}; den Ring aus der Höhe der Platte setzen`,ref:b.on});continue;}
+     if(b.motor||!lip||need<=b.D/2-s.lipIn+eps)continue;openings[b.key]=Math.max(openings[b.key]??0,need);
+     // The lip must still lie on the outer ring (about a quarter of the ring's height wide), not on the turning inner ring.
+     if(need>b.D/2-(b.D-b.d)/8-eps)issues.push({level:'warnung',message:`${name}: ${o.label} braucht Ø${n(2*need)} im Bord über ${b.label}; so weit offen hält der Bord den Außenring nicht mehr. Distanzscheibe zwischen Lager und Ring, oder den Bord der Schicht weglassen`,ref:b.on});
+     else if(o.clip==='6799')issues.push({level:'hinweis',message:`${name}: ${o.label} liegt im Bord über ${b.label}; von der Seite ist er dort nicht zu stecken, er muss vor der Platte auf die Welle`,ref:b.on});
+     continue;}
+    if(o.clip&&!o.on.includes(b.on)){const c=B.od(o,body,b.at);if(c<ring(b)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um ${b.label} trifft ${B.name(o,body)}`,ref:b.on});continue;}
+    if(o.on.includes(b.on)&&!o.belt){if(o.spin){issues.push({level:'fehler',message:`${name}: ${o.label} dreht in der Höhe der Platte um ${b.label}; über oder unter die Schicht setzen`,ref:b.on});continue;}if(o.ra+s.clearance>(b.hub?b.d/2:b.motor?(b.motor.part.pilot??0)/2:(o.z0+o.z1)/2<(b.z0+b.z1)/2?(lips[0]?b.D/2-s.lipIn:b.D/2):(lips[1]?b.D/2-s.lipIn:b.D/2))+eps&&!(b.motor&&(b.motor.down?o.z0>=band[1]-eps:o.z1<=band[0]+eps)))issues.push({level:'fehler',message:`${name}: ${o.label} sitzt zu nah am Lager ${b.label}, die Platte reicht ${mm(s.lip)} über das Lager (Bord); Abstand oder Distanzhülse nötig`,ref:b.on});continue;}const c=B.od(o,body,b.at);if(c<ring(b)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um ${b.label} trifft ${B.name(o,body)}`,ref:b.on});}}
   // Webs against what is in the band's heights: straight, or as the user chose round or under/over it.
   const inBand=seen.filter(o=>overlap(o.z0,o.z1,band[0],band[1])>eps),route=doc.webs?.route??{};
   for(const w of webs){const a=at(w.a),b=at(w.b),mine=(o:Obstacle)=>o.on.includes(a.on)||o.on.includes(b.on),hits=(segs:{a:[number,number];ra:number;b:[number,number];rb:number}[],z?:[number,number])=>inBand.filter(o=>!mine(o)&&(!z||overlap(o.z0,o.z1,z[0],z[1])>eps)&&segs.some(g=>B.oa(o,body,g)<s.clearance-eps));
@@ -384,7 +393,7 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
    if(h.arc)for(const b of list)if(primDistance(b.at,hp(h.r))<(b.motor?b.motor.pad:b.D/2)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: ${x.label} schwenkt durch ${b.label}`,ref:x.id});
    if(!shapes.some(g=>primsApart(hp(h.r),g)<0))continue;h.ring=h.r+rim;
    for(const o of inBand)if(!o.on.includes(h.on)&&B.oa(o,body,hp(h.ring))<s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um das Freiloch für ${x.label} trifft ${B.name(o,body)}`,ref:x.id});}
-  return {...(g.motor?{motor:g.motor.key}:{}),body,id,z0,z1,band,split,pair,lips,auto:!l,rim,thickness,bearings:list.map(b=>b.key),webs,holes,parts};};
+  return {...(g.motor?{motor:g.motor.key}:{}),body,id,z0,z1,band,split,pair,lips,auto:!l,rim,thickness,bearings:list.map(b=>b.key),webs,holes,parts,...(Object.keys(openings).length?{openings}:{})};};
  const out=specs.map(make);
  // A motor whose flange lies on no plate gets its own: as thick as set, on the side away from its body.
  for(const m of motors){if(m.layer)continue;const t=s.motorPlate,band:[number,number]=m.down?[m.face,m.face+t]:[m.face-t,m.face];

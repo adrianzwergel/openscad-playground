@@ -11,7 +11,7 @@ import {onPart,inPart,defaultArm} from './catalog.ts';
 import {partById} from '../mechanics/parts/catalog.ts';
 import type {Part} from '../mechanics/parts/catalog.ts';
 import type {OnPart,InPart} from './catalog.ts';
-import {thread,setScrew,keyFor,keyLengths,ringFor,eclipFor} from './din.ts';
+import {thread,setScrew,keyFor,keyLengths,ringFor,eclipFor,ringRoom} from './din.ts';
 import type {ShaftDoc,Side,Work,ArmSpec} from './model.ts';
 
 const eps=1e-6;
@@ -29,7 +29,7 @@ export type Insert={id:string;part:InPart;label:string;end:Side;x0:number;x1:num
 export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string;work?:boolean};
 export type BomLine={what:string;count:number;note?:string};
 /** A machining step with what it came to: drill and screw for a set screw, the key, the groove. */
-export type Machining={work:Work;drill?:number;depth?:number;screw?:string;key?:{b:number;h:number;t1:number;length:number};ring?:{d2:number;m:number;norm:'471'|'6799';label:string}};
+export type Machining={work:Work;drill?:number;depth?:number;screw?:string;key?:{b:number;h:number;t1:number;length:number};ring?:{d2:number;m:number;norm:'471'|'6799';label:string;/** Ø of the room it takes round the shaft (DIN 471 with its lugs and the pliers). */room:number;/** Ø over its body. */body:number}};
 /** A motor whose shaft goes into this one: its flange face (x) lies its shaft's length from where it goes in, its body
  * (x0..x1) beyond. */
 export type ShaftMotor={id:string;part:Part;label:string;end:Side;face:number;x0:number;x1:number};
@@ -172,7 +172,7 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
    // arms: DIN 471 for Ø4 (groove Ø3.8, the ring for Ø5 would have a groove of 4.8 and grip nothing), E-clip 3.2 (for 4–5).
    const d=c?.profile.kind==='rund'||c?.profile.kind==='d'?c.profile.d:cross?(norm==='471'?4:outer(c!.profile)):undefined,r471=d!==undefined?ringFor(d):undefined,e=d!==undefined?eclipFor(d):undefined;
    if(norm==='471'&&!r471||norm==='6799'&&!e){issues.push({level:'fehler',message:`${name} bei ${mm(w.x)}: ${d===undefined?`braucht einen runden, abgeflachten oder LEGO-Kreuz-Abschnitt, dort ${c?label(c.profile):'nichts'}`:`kein Ring für Ø${n(d)} (${norm==='471'?'DIN 471 hat Ø3 bis Ø20 in ganzen Größen':'DIN 6799 hat Ø1,4 bis Ø24'})`}${norm==='471'&&eclipFor(d??0)?'. Ein E-Ring DIN 6799 passt.':''}`,ref:w.id});continue;}
-   m.ring=norm==='471'?{d2:r471!.d2,m:r471!.m,norm,label:`Sicherungsring DIN 471 ${n(d!)} × ${n(r471!.m-.1)}`}:{d2:e!.d2,m:e!.m,norm,label:`Sicherungsscheibe DIN 6799 ${n(e!.d2)}`};
+   m.ring=norm==='471'?{d2:r471!.d2,m:r471!.m,norm,label:`Sicherungsring DIN 471 ${n(d!)} × ${n(r471!.m-.1)}`,room:ringRoom('471',d!),body:(d!+ringRoom('471',d!))/2}:{d2:e!.d2,m:e!.m,norm,label:`Sicherungsscheibe DIN 6799 ${n(e!.d2)}`,room:ringRoom('6799',e!.d2),body:ringRoom('6799',e!.d2)};
    if(cross&&norm==='471')issues.push({level:'hinweis',message:`${m.ring.label} auf dem LEGO-Kreuz: Nut Ø${n(m.ring.d2)} in die Arme gestochen; der Ring wird beim Aufsetzen über 4,8 mm gespreizt. Geht das schwer: E-Ring DIN 6799 3,2 wird von der Seite gesteckt.`,ref:w.id});
    const over=bodies.find(t=>w.x>t.x0+eps&&w.x<t.x1-eps);if(over)issues.push({level:'fehler',message:`${name} bei ${mm(w.x)} liegt unter ${over.label}`,ref:w.id});
    // DIN 471 rings are spread over an end: nothing thicker than what it is spread over may lie between groove and that end.

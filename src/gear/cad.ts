@@ -49,7 +49,7 @@ function throughHoles(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|undefined{c
  for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;
   // A hub: the shaft's profile through the plate, turned as the shaft stands (along the shaft x becomes z: a quarter turn).
   if(b.hub){const d=profileDrawing(b.hub.profile,s.fit).rotate(b.hub.profile.kind==='rund'?37.3:90+b.hub.turn).translate(b.at[0],b.at[1]);holes=holes?holes.fuse(d):d;continue;}
-  if(b.motor){const m=b.motor;slot(b.at,(m.part.pilot??0)/2+s.hole,m);for(const h of m.part.holes)slot([b.at[0]+h.at[0],b.at[1]+h.at[1]],h.d/2+.2,m);continue;}hole(b.at,b.D/2-s.lipIn);}
+  if(b.motor){const m=b.motor;slot(b.at,(m.part.pilot??0)/2+s.hole,m);for(const h of m.part.holes)slot([b.at[0]+h.at[0],b.at[1]+h.at[1]],h.d/2+.2,m);continue;}hole(b.at,l.openings?.[k]??b.D/2-s.lipIn);}
  for(const h of l.holes){const c=plan.shafts.find(x=>x.id===h.on)!.at;if(h.arc){const b=band(c,h.r,h.arc);holes=holes?holes.fuse(b):b;continue;}hole(c,h.r);if(h.open){const [dx,dy]=h.open.dir,nx=-dy*h.r,ny=dx*h.r,e:P=[c[0]+dx*h.open.length,c[1]+dy*h.open.length],slot=draw([c[0]+nx,c[1]+ny]).lineTo([e[0]+nx,e[1]+ny]).lineTo([e[0]-nx,e[1]-ny]).lineTo([c[0]-nx,c[1]-ny]).close();holes=holes?holes.fuse(slot):slot;}}
  for(const bo of plan.bolts)if(bo.attach[l.id])hole(bo.at,bo.hole);
  return holes;}

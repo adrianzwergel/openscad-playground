@@ -90,3 +90,4 @@ body[data-view=gear] #generator>#workspace{display:grid;grid-template-rows:minma
 #pose .pose{font-size:11px;gap:4px;color:var(--soft)}#pose input[type=range]{width:90px;height:12px;margin:0}#pose output{min-width:2.6em;font-size:11px}
 #pose button{padding:0 4px;font-size:11px;background:none;border:0;color:var(--soft);text-decoration:underline}
 .sideview text.name{font-size:10px}.sideview text.zmark{font-size:9px}.sideview .band text{font-size:10px}.sideview text.what{font-size:8.5px}
+.sideview .item.clip rect{fill:#c9d1d8;stroke:#eef3f6}
