@@ -55,6 +55,8 @@ assert.deepEqual(parseGear(JSON.parse(JSON.stringify(doc({})))).groups,base.grou
 {const p=planGear(doc({groups:groups({},{fixed:false})}),files);assert.deepEqual(p.drive.inputs.map(i=>i.id),['m1','m2','schwinge:g2']);assert.deepEqual(p.drive.joints.g2,[0,0,1]);assert.ok(!p.bearings.some(b=>b.key==='nabe:s5'));}
 // A lever on a shaft nothing drives.
 {const p=planGear(doc({shafts:base.shafts.filter(s=>s.id!=='m1'),input:'m2'}),files);assert.ok(p.issues.some(i=>i.level==='warnung'&&/Hebel 1 sitzt fest auf Gelenk 1, aber nichts treibt diese Welle/.test(i.message)),say(p));}
+// Two motors too close: their bodies (42.3 mm square) overlap.
+{const p=planGear(doc({shafts:base.shafts.map(s=>s.id==='m1'?{...s,at:[0,-30]}:s)}),files);assert.ok(p.issues.some(i=>i.level==='fehler'&&/Motor 1 z20 und .*Motor 2 z20 überschneiden sich|Motor 2 z20 und .*Motor 1 z20 überschneiden sich/.test(i.message)),say(p));}
 // A round seat: the hub clamps with a set screw.
 {const round={...files,j1:{name:'Gelenk 1',doc:parseShaft({...files.j1.doc,sections:undefined})}},p=planGear(doc({}),round);assert.ok(p.issues.some(i=>i.level==='hinweis'&&/Hebel 1 sitzt auf rundem Ø8 von Gelenk 1; eine Madenschraube M3 in der Nabe klemmt sie/.test(i.message)),say(p));assert.equal(p.bearings.find(b=>b.key==='nabe:s3').hub.profile.kind,'rund');}
 // The pivot too short for the lever's plate.

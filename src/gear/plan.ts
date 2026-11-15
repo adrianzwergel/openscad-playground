@@ -211,6 +211,9 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
   around:(o,body)=>{const v=view(o,body);if(v.length===1)return bound(v[0]);const c=v[0].sweep!.c;return {c,r:Math.max(...v.map(g=>Math.max(dist(g.a,c)+g.ra,dist(g.b,c)+g.rb)))};},
   name:(o,body)=>o.label+(relative(o.body,body).length?' beim Schwenken':o.spin?' beim Drehen':''),
   arc:(id,body)=>{const at=doc.shafts.find(v=>v.id===id)!.at,rel=relative(bodyOf(id),body).filter(w=>dist(at,w.c)>1e-6);return rel.length>1?'x':rel[0];}};
+ // Motors beside each other: their square bodies must not overlap where they share a height.
+ motors.forEach((a,i)=>{for(const b of motors.slice(i+1)){const za:[number,number]=a.down?[a.face-a.depth,a.face]:[a.face,a.face+a.depth],zb:[number,number]=b.down?[b.face-b.depth,b.face]:[b.face,b.face+b.depth],w=(a.part.size[0]+b.part.size[0])/2,dx=Math.abs(a.at[0]-b.at[0]),dy=Math.abs(a.at[1]-b.at[1]);
+  if(overlap(za[0],za[1],zb[0],zb[1])>eps&&dx<w-eps&&dy<w-eps)issues.push({level:'fehler',message:`${a.label} und ${b.label} überschneiden sich: die Motoren sind ${mm(w)} breit und stehen nur ${mm(Math.max(dx,dy))} auseinander`,ref:b.on});}});
  // Shafts must be held.
  for(const x of shafts){if(motors.some(m=>m.on===x.id))continue;const k=bearings.filter(b=>b.on===x.id).length;if(!k)issues.push({level:'warnung',message:`${x.label}: kein Lager, nichts hält die Welle`,ref:x.id});else if(k===1)issues.push({level:'hinweis',message:`${x.label}: nur ein Lager, die Welle kann kippen`,ref:x.id});}
  // A motor driving a belt: its slots point along the belt (not on a swing arm that tensions the belt by swinging).
