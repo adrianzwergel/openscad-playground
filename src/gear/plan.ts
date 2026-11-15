@@ -45,7 +45,7 @@ export type Arm=Placed&{angle:number;length:number;r0:number;r1:number;hole:numb
 /** A swing arm as planned: its pivot's place. */
 export type GroupPlan={id:string;name:string;pivot:string;at:[number,number];from:number;to:number;shafts:string[];/** Fast on its pivot shaft. */fixed:boolean;/** The body its pivot shaft belongs to: what it hangs on. */parent:string};
 /** How the plan looks at things from a body: what is in the way there, how far it is from a point or a shape. */
-type Bodies={groups:GroupPlan[];bodyOf(shaft:string):string;seen(body:string):Obstacle[];od(o:Obstacle,body:string,p:[number,number]):number;oa(o:Obstacle,body:string,g:Prim):number;around(o:Obstacle,body:string):{c:[number,number];r:number};name(o:Obstacle,body:string):string;
+type Bodies={groups:GroupPlan[];bodyOf(shaft:string):string;seen(body:string):Obstacle[];/** `within`: only this near matters; what is surely further counts as endlessly far (fast). */od(o:Obstacle,body:string,p:[number,number],within?:number):number;oa(o:Obstacle,body:string,g:Prim,within?:number):number;around(o:Obstacle,body:string):{c:[number,number];r:number};name(o:Obstacle,body:string):string;
  /** The way a shaft takes through a plate of this body: none (it stands still there), an arc, or 'x' (two swing arms). */arc(shaft:string,body:string):Sweep|undefined|'x';relative(from:string,to:string):Sweep[];chain(body:string):GroupPlan[];/** A shaft's profile at a height, and how it is turned as it stands. */section(shaft:string,z:number):Profile|undefined;turnOf(shaft:string):number};
 export type ShaftInWorld={id:string;label:string;at:[number,number];z0:number;z1:number;plan:ShaftPlan;/** Its round pieces in the world: z0..z1 and radius. */pieces:{z0:number;z1:number;r:number}[]};
 export type Mesh={a:string;b:string;ratio:number};
@@ -76,6 +76,13 @@ const mm=(x:number)=>`${n(x)} mm`;
 const dist=(a:[number,number],b:[number,number])=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 const overlap=(a0:number,a1:number,b0:number,b1:number)=>Math.min(a1,b1)-Math.max(a0,b0);
 /** Distance from a point to the hull of two discs (negative inside): the hull is the union of the discs between them. */
+/** What a piece surely stays in: a circle, or, swept about a centre, the ring between its nearest and furthest point from
+ * it. `gap`: how far a circle is from that at least (a lower bound of the true distance). */
+type Reach={c:[number,number];lo:number;hi:number;/** The circle round all of it. */all:{c:[number,number];r:number}};
+/** A circle that holds all of a piece (`bound` of sweep.ts is only for getting past discs). */
+const circleOf=(g:Prim):{c:[number,number];r:number}=>g.sweep&&g.sweep.to-g.sweep.from>1e-9?bound(g):{c:[(g.a[0]+g.b[0])/2,(g.a[1]+g.b[1])/2],r:Math.hypot(g.b[0]-g.a[0],g.b[1]-g.a[1])/2+Math.max(g.ra,g.rb)};
+const reachOf=(g:Prim):Reach=>{const all=circleOf(g);if(!g.sweep)return {c:all.c,lo:0,hi:all.r,all};const c=g.sweep.c;return {all,c,lo:Math.max(0,capsuleDistance(c,g.a,0,g.b,0)-Math.max(g.ra,g.rb)),hi:Math.max(Math.hypot(g.a[0]-c[0],g.a[1]-c[1])+g.ra,Math.hypot(g.b[0]-c[0],g.b[1]-c[1])+g.rb)};};
+const gap=(q:Reach,c:[number,number],r:number)=>{const d=Math.hypot(c[0]-q.c[0],c[1]-q.c[1]);return Math.max(d-q.hi,q.lo-d,Math.hypot(c[0]-q.all.c[0],c[1]-q.all.c[1])-q.all.r)-r;};
 export function hullDistance(p:[number,number],a:[number,number],ra:number,b:[number,number],rb:number){return capsuleDistance(p,a,ra,b,rb);}
 /** How far an obstacle reaches from its centre `a` (an arm: to its end). */
 const reach=(o:Obstacle)=>o.spin&&o.b?Math.max(o.ra,dist(o.a,o.b)+(o.rb??0)):o.ra;
@@ -199,7 +206,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
  for(const a of arms){const k=turnRate[a.on],o=obstacles.find(x=>x.key===a.key)!;if(k===undefined||!doc.turn){issues.push({level:'hinweis',message:`${a.label} dreht endlos (voller Kreis). Schwenkt er nur: Drehbereich an einer Welle setzen`,ref:a.on});continue;}
   const lo=Math.min(k*doc.turn.from,k*doc.turn.to),hi=Math.max(k*doc.turn.from,k*doc.turn.to);a.rate=k;if(hi-lo<360-1e-9){a.spin=[lo,hi];o.spin={from:lo,to:hi};}}
  // Every body looks at the others' things as what they sweep against it.
- const views=new Map<string,Prim[]>();
+ const views=new Map<string,Prim[]>(),bounded=new Map<Prim[],Reach[]>(),bounds=(v:Prim[])=>{let b=bounded.get(v);if(!b){b=v.map(reachOf);bounded.set(v,b);}return b;};
  const view=(o:Obstacle,body:string):Prim[]=>{const key=`${o.key}@${body}`,had=views.get(key);if(had)return had;const base:Capsule={a:o.a,ra:o.ra,b:o.b??o.a,rb:o.rb??o.ra},rel=relative(o.body,body);let out:Prim[];
   if(!o.spin)out=sweepPrims(base,rel);
   else if(!rel.length)out=[{...base,sweep:{c:o.a,from:o.spin.from,to:o.spin.to}}];
@@ -208,7 +215,8 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
   else out=sweepPrims({a:o.a,ra:reach(o),b:o.a,rb:reach(o)},rel);
   views.set(key,out);return out;};
  const B:Bodies={groups,bodyOf,relative,chain,turnOf:id=>doc.shafts.find(v=>v.id===id)?.turn??0,
-  section:(id,z)=>{const p=doc.shafts.find(v=>v.id===id),x=shafts.find(v=>v.id===id);if(!p||!x)return undefined;const at=p.flip?x.z1-z:z-p.z;return x.plan.sections.find(c=>at>=c.x0-eps&&at<=c.x1+eps)?.profile;},seen:body=>obstacles.filter(o=>!(o.soft&&o.body===body)),od:(o,body,p)=>Math.min(...view(o,body).map(g=>primDistance(p,g))),oa:(o,body,g)=>Math.min(...view(o,body).map(v=>primsApart(v,g))),
+  section:(id,z)=>{const p=doc.shafts.find(v=>v.id===id),x=shafts.find(v=>v.id===id);if(!p||!x)return undefined;const at=p.flip?x.z1-z:z-p.z;return x.plan.sections.find(c=>at>=c.x0-eps&&at<=c.x1+eps)?.profile;},seen:body=>obstacles.filter(o=>!(o.soft&&o.body===body)),od:(o,body,p,within)=>{let best=Infinity;const v=view(o,body),bs=bounds(v);for(let i=0;i<v.length;i++){if(within!==undefined&&gap(bs[i],p,0)>within)continue;best=Math.min(best,primDistance(p,v[i]));}return best;},
+  oa:(o,body,g,within)=>{let best=Infinity;const v=view(o,body),bs=bounds(v),gb=within!==undefined?circleOf(g):undefined;for(let i=0;i<v.length;i++){if(gb&&(gap(bs[i],gb.c,gb.r)>within!||primDistance(gb.c,v[i])-gb.r>within!))continue;best=Math.min(best,primsApart(v[i],g));}return best;},
   around:(o,body)=>{const v=view(o,body);if(v.length===1)return bound(v[0]);const c=v[0].sweep!.c;return {c,r:Math.max(...v.map(g=>Math.max(dist(g.a,c)+g.ra,dist(g.b,c)+g.rb)))};},
   name:(o,body)=>o.label+(relative(o.body,body).length?' beim Schwenken':o.spin?' beim Drehen':''),
   arc:(id,body)=>{const at=doc.shafts.find(v=>v.id===id)!.at,rel=relative(bodyOf(id),body).filter(w=>dist(at,w.c)>1e-6);return rel.length>1?'x':rel[0];}};
@@ -417,17 +425,20 @@ function planBolts(doc:GearDoc,layers:LayerPlan[],all:LayerPlan[],bearings:Beari
  const seen=B.seen(body),name=body?` (${B.groups.find(g=>g.id===body)!.name})`:'';
  /** A shaft's distance from a point: where it stands, or the arc it takes against this body. */
  const shaftDist=(x:ShaftInWorld,p:[number,number])=>{const arc=B.arc(x.id,body);return arc&&arc!=='x'?(overlap(x.z0,x.z1,z0,z1)>eps?primDistance(p,{a:x.at,ra:0,b:x.at,rb:0,sweep:arc}):Infinity):dist(p,x.at);};
- const clear=(p:[number,number])=>seen.every(o=>overlap(o.z0,o.z1,z0,z1)<=eps||B.od(o,body,p)>=eye+s.clearance)
-  &&inLayers.every(b=>dist(p,b.at)>=b.D/2+eye+1)&&shafts.every(x=>shaftDist(x,p)>=Math.max(0,...x.pieces.map(q=>q.r))+s.hole+eye)&&foreign.every(f=>overlap(f.z[0],f.z[1],z0,z1)<=eps||primDistance(p,f.prim)>=eye+s.clearance);
+ // Each thing's reach as a circle first: most are far from a web, and their exact distance (swept, stepped) is slow.
+ const far=foreign.map(f=>reachOf(f.prim));
+ const clear=(p:[number,number])=>seen.every(o=>{if(overlap(o.z0,o.z1,z0,z1)<=eps)return true;return B.od(o,body,p,eye+s.clearance)>=eye+s.clearance;})
+  &&inLayers.every(b=>dist(p,b.at)>=b.D/2+eye+1)&&shafts.every(x=>shaftDist(x,p)>=Math.max(0,...x.pieces.map(q=>q.r))+s.hole+eye)&&foreign.every((f,i)=>overlap(f.z[0],f.z[1],z0,z1)<=eps||gap(far[i],p,0)>=eye+s.clearance||primDistance(p,f.prim)>=eye+s.clearance);
  /** What the web from a bearing's ring to the eye at p hits in a layer's heights. */
- const webHits=(p:[number,number],b:Bearing,l:LayerPlan)=>[...seen.filter(o=>overlap(o.z0,o.z1,l.band[0],l.band[1])>eps&&!o.on.includes(b.on)&&B.oa(o,body,{a:b.at,ra:b.D/2+l.rim,b:p,rb:eye})<s.clearance-eps),...foreign.filter(f=>overlap(f.z[0],f.z[1],l.band[0],l.band[1])>eps&&primsApart(f.prim,{a:b.at,ra:b.D/2+l.rim,b:p,rb:eye})<s.clearance-eps)];
+ const webHits=(p:[number,number],b:Bearing,l:LayerPlan)=>{const ra=b.D/2+l.rim,near=(q:{c:[number,number];r:number})=>hullDistance(q.c,b.at,ra,p,eye)-q.r<s.clearance,web=circleOf({a:b.at,ra,b:p,rb:eye});
+  return [...seen.filter(o=>overlap(o.z0,o.z1,l.band[0],l.band[1])>eps&&!o.on.includes(b.on)&&B.oa(o,body,{a:b.at,ra,b:p,rb:eye},s.clearance)<s.clearance-eps),...foreign.filter((f,i)=>overlap(f.z[0],f.z[1],l.band[0],l.band[1])>eps&&near(far[i].all)&&gap(far[i],web.c,web.r)<s.clearance&&primDistance(web.c,f.prim)-web.r<s.clearance&&primsApart(f.prim,{a:b.at,ra,b:p,rb:eye})<s.clearance-eps)];};
  /** The bearing of a layer the eye joins: the nearest with a clear web, else the nearest. */
- const attachTo=(p:[number,number],l:LayerPlan)=>{const near=l.bearings.map(k=>bearings.find(b=>b.key===k)!).sort((a,b)=>dist(a.at,p)-dist(b.at,p));return {b:near.find(b=>!webHits(p,b,l).length)??near[0],clear:near.some(b=>!webHits(p,b,l).length)};};
+ const attachTo=(p:[number,number],l:LayerPlan)=>{const near=l.bearings.map(k=>bearings.find(b=>b.key===k)!).sort((a,b)=>dist(a.at,p)-dist(b.at,p));const free=near.find(b=>!webHits(p,b,l).length);return {b:free??near[0],clear:!!free};};
  let places:[number,number][];const auto=!given;
  if(given)places=given;
  else{const rim=(b:Bearing)=>layers.find(l=>l.bearings.includes(b.key))?.rim??s.rim,cands:[number,number][]=[],extra=new Map<[number,number],number>();
   // Right outside a ring first; further out (5 mm steps) where a wheel takes the ring's surroundings, each mm out costs.
-  for(const b of inLayers)for(let out=0;out<=40;out+=5)for(let a=0;a<360;a+=10){const r=b.D/2+rim(b)+eye+out,p:[number,number]=[+(b.at[0]+r*Math.cos(a*Math.PI/180)).toFixed(3),+(b.at[1]+r*Math.sin(a*Math.PI/180)).toFixed(3)];if(clear(p)&&layers.every(l=>!l.bearings.length||attachTo(p,l).clear)&&inLayers.every(o=>o===b||dist(p,o.at)>=dist(p,b.at)-1e-9||dist(p,o.at)>=o.D/2+rim(o)+eye)){cands.push(p);extra.set(p,out);}}
+  for(const b of inLayers)for(let out=0;out<=40;out+=5)for(let a=0;a<360;a+=10){const r=b.D/2+rim(b)+eye+out,p:[number,number]=[+(b.at[0]+r*Math.cos(a*Math.PI/180)).toFixed(3),+(b.at[1]+r*Math.sin(a*Math.PI/180)).toFixed(3)];if(inLayers.every(o=>o===b||dist(p,o.at)>=dist(p,b.at)-1e-9||dist(p,o.at)>=o.D/2+rim(o)+eye)&&clear(p)&&layers.every(l=>!l.bearings.length||attachTo(p,l).clear)){cands.push(p);extra.set(p,out);}}
   const cost=(p:[number,number])=>extra.get(p)??0;
   const want=s.bolts||(layers.some(l=>l.bearings.length>2)?4:3),c:[number,number]=[inLayers.reduce((a,b)=>a+b.at[0],0)/Math.max(1,inLayers.length),inLayers.reduce((a,b)=>a+b.at[1],0)/Math.max(1,inLayers.length)];places=[];
   const spread=(p:[number,number])=>Math.min(...places.map(q=>dist(p,q)))-cost(p);

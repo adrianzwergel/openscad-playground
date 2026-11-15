@@ -39,3 +39,6 @@ console.log('Rocker-Bogie: alle drei Räder 0,4 × Motor über Riemen, Gelenke d
  const {planShaft}=await import('../../src/shaft/plan.ts'),sp=planShaft(files.p.doc);assert.equal(sp.sleeves.filter(s=>s.kind==='adapter').length,0);assert.equal(sp.issues.filter(i=>/sitzt direkt auf dem LEGO-Kreuz: 0,2 mm Spiel/.test(i.message)).length,2);assert.ok(!sp.issues.some(i=>i.level!=='hinweis'));
  const [keep,gc]=localGC(),parts=buildGearParts(doc,p,files,keep,{turn:0,groups:{g1:10,g2:-8}});assert.ok(parts.filter(x=>x.kind==='platte').length>=6);gc();
  console.log('Rocker-Bogie mit LEGO z40: neun z40 zwischen den Platten, z16 am Motor, Räder −0,4 × Motor, Lager direkt auf dem Kreuz, als Volumen in einer Stellung.');}
+// ---- Planning stays quick enough to drag: both examples well under two seconds (they took six and ten) ----
+for(const key of ['rocker','rocker-lego']){const ex=gearExamples.find(e=>e.key===key),files=Object.fromEntries(ex.shafts.map(s=>[s.key,{name:s.name,doc:s.doc}])),ids=Object.fromEntries(ex.shafts.map(s=>[s.key,s.key])),d=parseGear(ex.make(ids)),t=performance.now();planGear(d,files);const ms=performance.now()-t;assert.ok(ms<2000,`${key}: Planung ${ms.toFixed(0)} ms`);}
+console.log('Planung beider Rocker-Beispiele unter 2 s.');
