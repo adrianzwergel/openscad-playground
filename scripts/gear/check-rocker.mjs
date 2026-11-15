@@ -32,7 +32,7 @@ console.log('Rocker-Bogie: alle drei Räder 0,4 × Motor über Riemen, Gelenke d
 {const ex=gearExamples.find(e=>e.key==='rocker-lego'),files=Object.fromEntries(ex.shafts.map(s=>[s.key,{name:s.name,doc:s.doc}])),ids=Object.fromEntries(ex.shafts.map(s=>[s.key,s.key]));
  const doc=parseGear(ex.make(ids)),p=planGear(doc,files);assert.deepEqual(p.issues.filter(i=>i.level!=='hinweis').map(i=>i.message),[]);assert.equal(p.meshes.length,9);
  // Narrow: 1 mm between plates and gears, the side 38 mm across its plates.
- {const zs=p.layers.flatMap(l=>l.band);assert.equal(Math.max(...zs)-Math.min(...zs),38);}
+ {const zs=p.layers.filter(l=>!l.motor).flatMap(l=>l.band);assert.equal(Math.max(...zs)-Math.min(...zs),38);}
  for(const w of ['w1','w2','w3']){const v=p.drive.shafts[w];assert.ok(Math.abs(v[0]+.2)<1e-9&&Math.abs(v[1])<1e-9&&Math.abs(v[2])<1e-9,`${w}: ${v}`);}
  assert.equal(p.wheels.filter(w=>w.teeth===40).length,7);assert.equal(p.wheels.filter(w=>w.teeth===24).length,2);assert.equal(p.wheels.filter(w=>w.teeth===8).length,1);assert.ok(!p.wheels.some(w=>w.teeth===16||w.teeth===36),'kein z16, kein z36');
  // The ball stud of the rover finds a place on the rocker.
