@@ -20,4 +20,9 @@ const gear=extra=>parseGear({...newGear(),shafts:[{id:'a',shaft:'A',at:[0,0],z:0
  assert.ok(at(18,-20)>.5,'Material jenseits der alten Stegkante, um das Loch');assert.ok(at(12,-20)<1e-6,'das Loch bleibt frei');assert.ok(at(14.5,-20)<1e-6,'auch am Rand des Lochs');gc();}
 // A wheel just outside that ring: reported.
 {const p=planGear(gear([{id:'w',shaft:'W',at:[12+7.5+11+.5,-20],z:0}]),files);assert.ok(p.issues.some(i=>/der Ring um das Freiloch für P trifft z20 m1 auf W/.test(i.message)),p.issues.map(i=>i.message).join(' | '));}
-console.log('Freilöcher: Ring aus Material um ein Loch, das in die Platte schneidet, Loch bleibt frei, Platte bleibt ein Stück, Rad am Ring gemeldet.');
+// Through the web to a bolt's eye: A alone in layer 1, a bolt set at (40, 0) is joined to it; P passes at (30, 0).
+{const doc=parseGear({...newGear(),shafts:[{id:'a',shaft:'A',at:[0,0],z:0},{id:'p',shaft:'P',at:[30,0],z:0}],bolts:[[40,0],[-30,0],[0,-30]]}),p=planGear(doc,files),h=p.layers[0].holes.find(x=>x.on==='p');
+ assert.ok(p.bolts[0].attach[p.layers[0].id]==='a/l1');assert.equal(h?.ring,7.5,'Ring auch am Steg zum Bolzen');
+ const [keep,gc]=localGC(),plate=buildGearParts(doc,p,files,keep).find(x=>x.file==='schicht-1').shape,at=(x,y)=>measureVolume(keep(plate.intersect(keep(makeBox([x-.3,y-.3,3.5],[x+.3,y+.3,4.5])))));
+ assert.ok(at(30,7)>.1,'Material um das Loch neben dem schmalen Steg');assert.ok(at(30,0)<1e-6,'Loch frei');assert.ok(at(36,0)>.1,'der Steg geht hinter dem Loch weiter');gc();}
+console.log('Freilöcher: Ring aus Material um ein Loch, das in die Platte oder einen Steg zum Bolzen schneidet, Loch bleibt frei, Platte bleibt ein Stück, Rad am Ring gemeldet.');

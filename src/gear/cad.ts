@@ -15,9 +15,14 @@ import {tangents} from './draw.ts';
 type Keep=<T extends {delete():void}>(v:T)=>T;
 type P=[number,number];
 import {slug} from './notes.ts';
-const disc=(c:P,r:number)=>drawCircle(r).translate(c[0],c[1]);
+// A circle's seam turned off the axes: on a grid, the seam point of one circle can lie exactly on another outline,
+// and OpenCascade's 2D booleans fail on that coincidence. The shape is the same.
+const disc=(c:P,r:number)=>drawCircle(r).rotate(37.3).translate(c[0],c[1]);
 /** Two discs and the quadrilateral between their outer tangents: their hull. */
-function hull(a:P,ra:number,b:P,rb:number):Drawing{const t=tangents(a,ra,b,rb);let d=disc(a,ra).fuse(disc(b,rb));if(t)d=d.fuse(draw(t[0]).lineTo(t[1]).lineTo(t[2]).lineTo(t[3]).close());return d;}
+function hull(a:P,ra:number,b:P,rb:number):Drawing{const d0=Math.hypot(b[0]-a[0],b[1]-a[1]);
+ // One disc inside the other (also touching it from inside, which OpenCascade cannot fuse): the hull is the larger one.
+ if(d0<=Math.abs(ra-rb)+1e-6)return ra>=rb?disc(a,ra):disc(b,rb);
+ const t=tangents(a,ra,b,rb);let d=disc(a,ra).fuse(disc(b,rb));if(t)d=d.fuse(draw(t[0]).lineTo(t[1]).lineTo(t[2]).lineTo(t[3]).close());return d;}
 /** A web's shape: the hull of both rings, or bars of one width through the points round a part. */
 function webShape(plan:GearPlan,l:LayerPlan,w:LayerPlan['webs'][number]):Drawing{const bearing=(k:string)=>plan.bearings.find(x=>x.key===k)!,ring=(k:string)=>bearing(k).D/2+l.rim;
  if(!w.path)return hull(bearing(w.a).at,ring(w.a),bearing(w.b).at,ring(w.b));const pts:P[]=[bearing(w.a).at,...w.path,bearing(w.b).at];let d=hull(pts[0],w.width!,pts[1],w.width!);for(let i=2;i<pts.length;i++)d=d.fuse(hull(pts[i-1],w.width!,pts[i],w.width!));return d;}
