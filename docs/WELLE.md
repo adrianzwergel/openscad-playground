@@ -164,3 +164,19 @@ Im 3D-Modell ein gemachtes Teil (`hebel-<id>`, STEP und STL), im Längsschnitt N
 ## Losrad (2026-11-15)
 
 Räder und Riemenscheiben haben die Wahl „Dreht frei auf der Welle (Losrad)“ (`OnItem.free`, im Plan `Placed.free`): das Rad läuft mit runder Bohrung als Gleitsitz auf seinem Sitz und dreht nicht mit der Welle. Eine nicht runde Bohrung (LEGO-Kreuz) ist ein Fehler. Auf der Zeitleiste trägt es ⟳. Gebraucht wird es im Getriebe-Generator, um durch ein Gelenk hindurch zu treiben (`docs/GETRIEBE.md`, „Glieder“).
+
+## Rutschkupplung (2026-11-15)
+
+Katalog „Rutschkupplung“ (`clutchPart`, Logik `src/shaft/clutch.ts`): eine Baugruppe auf der Welle, von ihrem Anfang an
+Reibscheibe, Rad, Reibscheibe, Druckfeder, Federteller. Das Rad (gedrucktes Stirnrad, Modul 1 kämmt mit LEGO, oder eine
+Riemenscheibe; Vorgabe z40 m1, 8 mm breit) läuft lose; die zwei Scheiben (2,5 mm) und der Teller (2 mm) sind gedruckt
+und sitzen verdrehfest auf einem D der Radbohrung (D5, 0,5 flach), die Feder aus dem Sortiment (`springs.ts`, gemessene
+Werte aus dem Ordner `federn`) presst sie gegen beide Seiten des Rads. Die Kupplung ist so lang wie ihre Teile, die
+Feder eingebaut L0 − Vorspannung. Rutschmoment T = 2 · μ · F · r_m (zwei Flächen, F = Rate · Vorspannung, r_m Mitte
+zwischen Wellenradius + 0,5 und Scheibenradius; μ Vorgabe 0,3 für PLA trocken). Die Seite zeigt T, F, die Kraft am
+Teilkreis und eine Liste der Druckfedern (✗: zu eng für die Welle). Gemeldet: Rad mit Kreuzloch (LEGO, kann nicht
+rutschen), Feder zu eng, Vorspannung auf Block, ohne Vorspannung. Für das Getriebe ist das Rad ein festes Rad
+(`Placed.inside`, kein Losrad); die Prüfungen fürs Aufschieben und Anschläge gelten der ganzen Kupplung. Neu dafür:
+Ein Teil mit runder Bohrung sitzt auf einem gleich großen D (Hinweis „sitzt auf dem D5“), etwa ein Lager 685 neben
+der Kupplung. Stückliste: zwei Reibscheiben, Federteller, Feder, Rad. 3D: Scheiben und Teller als Druckteile, Feder als
+Rohr. Prüfung: `scripts/shaft/check-clutch.mjs`, `scripts/shaft/check-clutch-browser.mjs`.

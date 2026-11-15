@@ -25,7 +25,7 @@ self.onmessage=async(e:MessageEvent<CadRequest>)=>{
  const oc=await ready,memory=()=>oc.wasmMemory?.buffer.byteLength??0,{id,kind}=e.data;let free=()=>{};
  try{let built:{parts:ReturnType<typeof buildParts>['parts'];free:()=>void};
   if(e.data.gear){const files:Record<string,ShaftFile>={};for(const [k,v] of Object.entries(e.data.files??{}))files[k]={name:v.name,doc:parseShaft(v.doc)};const doc=parseGear(e.data.doc),plan=planGear(doc,files,springCatalog(parseMeasures(e.data.springs))),[keep,gc]=localGC();built={parts:buildGearParts(doc,plan,files,keep as never,kind==='mesh'?e.data.pose:undefined),free:gc};}
-  else{const doc=parseShaft(e.data.doc),plan=planShaft(doc);built=buildParts(doc,plan);}free=built.free;
+  else{const doc=parseShaft(e.data.doc),plan=planShaft(doc,springCatalog(parseMeasures(e.data.springs)));built=buildParts(doc,plan);}free=built.free;
   if(kind==='mesh'){const meshes=meshParts(built.parts);free();free=()=>{};post({id,kind,meshes,memory:memory()},meshes.flatMap(m=>[m.vertices.buffer,m.normals.buffer,m.triangles.buffer,m.edges.buffer]));}
   else{const files=await exportParts(built.parts);free();free=()=>{};post({id,kind,files,memory:memory()},files.map(f=>f.data));}}
  catch(err){free();post({id,kind:'error',message:err instanceof Error?err.message:String(err),memory:memory()});}

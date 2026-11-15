@@ -116,7 +116,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
  const relative=(from:string,to:string):Sweep[]=>{if(from===to)return [];const a=chain(from),b=chain(to);while(a.length&&b.length&&a.at(-1)===b.at(-1)){a.pop();b.pop();}
   return [...a.filter(g=>moving(g.id)).map(g=>({c:g.at,from:g.from,to:g.to})),...b.reverse().filter(g=>moving(g.id)).map(g=>({c:g.at,from:-g.to,to:-g.from}))];};
  for(const p of doc.shafts){const f=files[p.shaft];if(!f){issues.push({level:'fehler',message:`Welle ${p.id}: die Datei im Wellen-Generator fehlt`,ref:p.id});continue;}
-  const body=bodyOf(p.id),plan=planShaft(f.doc),L=f.doc.length,span=(x0:number,x1:number):[number,number]=>p.flip?[p.z+L-x1,p.z+L-x0]:[p.z+x0,p.z+x1];
+  const body=bodyOf(p.id),plan=planShaft(f.doc,catalog),L=f.doc.length,span=(x0:number,x1:number):[number,number]=>p.flip?[p.z+L-x1,p.z+L-x0]:[p.z+x0,p.z+x1];
   const pieces=plan.sections.map(c=>{const [z0,z1]=span(c.x0,c.x1);return {z0,z1,r:outer(c.profile)/2};});
   shafts.push({id:p.id,label:f.name,at:p.at,z0:p.z,z1:p.z+L,plan,pieces});
   if(plan.issues.some(i=>i.level==='fehler'))issues.push({level:'warnung',message:`${f.name}: die Welle selbst hat noch Fehler (im Wellen-Generator ansehen)`,ref:p.id});

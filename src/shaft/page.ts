@@ -1,5 +1,7 @@
 // The shaft generator's page: a list of shafts (own files beside the Studio's projects); an open shaft in the editor
 // (catalog, timeline, properties), its messages and parts list. Undo per open shaft; saved a moment after a change.
+import {springCatalog,parseMeasures} from './springs.ts';
+import type {SpringMeasure} from './springs.ts';
 import {ProjectStore} from '../mechanics/project-store.ts';
 import {newShaft,parseShaft} from './model.ts';
 import type {ShaftDoc} from './model.ts';
@@ -18,6 +20,9 @@ const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
 
 const store=await ProjectStore.open('wellen',FORMAT);
+// The springs as measured in the gearbox generator (folder `federn`): a slip clutch's spring.
+let measures:Record<string,SpringMeasure>={};try{measures=parseMeasures((await (await ProjectStore.open('federn','spring-1')).read('messungen')).doc);}catch{/* nothing measured */}
+const catalog=springCatalog(measures);
 let open:{id:string;name:string;doc:ShaftDoc;readOnly:boolean}|undefined;
 let plan:Plan|undefined,saveTimer:ReturnType<typeof setTimeout>|undefined;
 let past:string[]=[],future:string[]=[],before:string|undefined;
@@ -27,9 +32,9 @@ const cad=new CadClient(Number(new URLSearchParams(location.search).get('cadlimi
 let preview:ShaftPreview|undefined,meshed='',meshTimer:ReturnType<typeof setTimeout>|undefined,filesFor='',files:Promise<{name:string;data:ArrayBuffer}[]>|undefined;
 const previewState=(text:string,state:string)=>{const e=$('preview-state');e.textContent=text;e.dataset.state=state;};
 function schedulePreview(){if(!open)return;const key=JSON.stringify(open.doc);if(key===meshed)return;meshed=key;clearTimeout(meshTimer);previewState('3D-Modell rechnet …','busy');
- meshTimer=setTimeout(()=>{const doc=JSON.parse(key);void cad.request('mesh',doc).then(r=>{if(meshed!==key)return;if(r.kind==='error'){previewState(`Kein 3D-Modell: ${r.message}`,'error');return;}if(r.kind!=='mesh')return;preview??=new ShaftPreview($('preview'));(window as unknown as {preview?:ShaftPreview}).preview=preview;preview.show(r.meshes);previewState('Ziehen dreht, Rad zoomt, rechte Taste verschiebt.','ready');},e=>{if(meshed===key){meshed='';previewState(`Kein 3D-Modell: ${e.message}`,'error');}});},250);}
+ meshTimer=setTimeout(()=>{const doc=JSON.parse(key);void cad.request('mesh',doc,undefined,measures).then(r=>{if(meshed!==key)return;if(r.kind==='error'){previewState(`Kein 3D-Modell: ${r.message}`,'error');return;}if(r.kind!=='mesh')return;preview??=new ShaftPreview($('preview'));(window as unknown as {preview?:ShaftPreview}).preview=preview;preview.show(r.meshes);previewState('Ziehen dreht, Rad zoomt, rechte Taste verschiebt.','ready');},e=>{if(meshed===key){meshed='';previewState(`Kein 3D-Modell: ${e.message}`,'error');}});},250);}
 /** The files of the open shaft, made once per state. */
-function shaftFiles(){const key=JSON.stringify(open!.doc);if(key!==filesFor||!files){filesFor=key;files=cad.request('files',JSON.parse(key)).then(r=>{if(r.kind==='error')throw Error(r.message);if(r.kind!=='files')throw Error('Unerwartete Antwort');return r.files;});files.catch(()=>{if(filesFor===key)files=undefined;});}return files;}
+function shaftFiles(){const key=JSON.stringify(open!.doc);if(key!==filesFor||!files){filesFor=key;files=cad.request('files',JSON.parse(key),undefined,measures).then(r=>{if(r.kind==='error')throw Error(r.message);if(r.kind!=='files')throw Error('Unerwartete Antwort');return r.files;});files.catch(()=>{if(filesFor===key)files=undefined;});}return files;}
 function download(name:string){const base=open!.name.replace(/[^wäöüÄÖÜß-]+/g,'_');status('Datei wird erzeugt …');void shaftFiles().then(all=>{const f=all.find(x=>x.name===name);if(!f)throw Error(`${name} fehlt`);const url=URL.createObjectURL(new Blob([f.data],{type:name.endsWith('.stl')?'model/stl':'model/step'})),a=el('a',{href:url,download:`${base}-${name}`});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status(`${base}-${name} gespeichert.`);},e=>status(`Datei nicht erzeugt: ${e.message}`));}
 /** Everything in one archive: STEP and STL of every made part, the assembly, the parts list and the making notes. */
 function downloadZip(){const o=open!,p=plan!,base=o.name.replace(/[^wäöüÄÖÜß-]+/g,'_');status('ZIP wird erzeugt …');
@@ -38,6 +43,7 @@ function downloadZip(){const o=open!,p=plan!,base=o.name.replace(/[^wäöüÄÖ�
 function renderFiles(p:Plan){const row=(label:string,file:string,formats:string[])=>el('li',{className:'file-row'},el('span',{textContent:label}),...formats.map(x=>{const b=el('button',{className:'ghost',textContent:x.toUpperCase()});b.dataset.file=`${file}.${x}`;b.onclick=()=>download(`${file}.${x}`);return b;}));
  $('files').replaceChildren(row('Welle','welle',['step','stl']),...p.sleeves.map((sl,i)=>row(sl.label,`${sl.kind}-${i+1}`,['step','stl'])),row('Baugruppe mit Kaufteilen','baugruppe',['step']),(()=>{const b=el('button',{className:'primary',textContent:'Alles als ZIP (mit Stückliste und Fertigung)'});b.dataset.file='zip';b.onclick=downloadZip;return el('li',{className:'file-row zip'},b);})());}
 const editor=new ShaftEditor({
+ catalog:()=>catalog,
  doc:()=>open!.doc,plan:()=>plan!,readOnly:()=>!!open?.readOnly,
  begin:()=>{before??=JSON.stringify(open!.doc);},
  commit:message=>{if(before!==undefined&&before!==JSON.stringify(open!.doc)){past.push(before);if(past.length>200)past.shift();future=[];save();}before=undefined;if(message)status(message);draw();},
@@ -65,7 +71,7 @@ function undo(back:boolean){if(!open||open.readOnly)return;const from=back?past:
 function draw(){
  document.body.dataset.view=open?'shaft':'start';if(!$('shaft-name').querySelector('input'))$('shaft-name').textContent=open?.name??'';
  ($('undo') as HTMLButtonElement).disabled=!past.length;($('redo') as HTMLButtonElement).disabled=!future.length;
- if(!open)return;plan=planShaft(open.doc);const p=plan;
+ if(!open)return;plan=planShaft(open.doc,catalog);const p=plan;
  if(!$('catalog').childElementCount)editor.renderCatalog($('catalog'));
  editor.renderTimeline($('timeline'));editor.renderProperties($('properties'));
  const counts=['fehler','warnung','hinweis'].map(l=>p.issues.filter(i=>i.level===l).length);

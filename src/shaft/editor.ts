@@ -1,6 +1,8 @@
 // The shaft editor: catalog on the left, the timeline in the middle (x is the place on the shaft, one track per kind of
 // thing), properties on the right. Everything is dragged: from the catalog onto the timeline, clips along it, ranges at
 // their edges, the shaft's end. Drops snap to edges and the grid (Alt: free); parts on the shaft never overlap.
+import {clutchLayout,defaultClutch} from './clutch.ts';
+import type {SpringCatalog} from './springs.ts';
 import type {ShaftDoc,OnItem,InItem,Work,Side,OwnSection,Settings} from './model.ts';
 import type {Plan,Issue} from './plan.ts';
 import {onParts,inParts,onGroups,inGroups,onPart,inPart,defaultArm} from './catalog.ts';
@@ -11,7 +13,7 @@ import {snapMove,snapPoint,freeSpot,tickStep,toGrid} from './snap.ts';
 import {threads} from './din.ts';
 
 export type Selection={kind:'item';id:string}|{kind:'insert';id:string}|{kind:'work';id:string}|{kind:'section';index:number}|undefined;
-export type Host={doc():ShaftDoc;plan():Plan;/** Before a change: what undo goes back to. */begin():void;/** After a change: record, save, draw. */commit(message?:string):void;/** While dragging: draw only. */live():void;readOnly():boolean};
+export type Host={/** The springs as known (measured where measured). */catalog():SpringCatalog;doc():ShaftDoc;plan():Plan;/** Before a change: what undo goes back to. */begin():void;/** After a change: record, save, draw. */commit(message?:string):void;/** While dragging: draw only. */live():void;readOnly():boolean};
 type Lane='motor'|'auf'|'erzeugt'|'in'|'bearb'|'abschn';
 type Clip={key:string;lane:Lane;sel?:Selection;x0:number;x1:number;text:string;title:string;cls:string;resize?:'both'|'inner';point?:boolean};
 type Drag={sel:Selection;mode:'move'|'l'|'r'|'length'|'motor';start:number;orig:unknown;targets:number[];moved:boolean};
@@ -42,7 +44,7 @@ export class ShaftEditor{
  private item(id:string){return this.doc.items.find(x=>x.id===id);}
  private insert(id:string){return this.doc.inserts.find(x=>x.id===id);}
  private work(id:string){return this.doc.works.find(x=>x.id===id);}
- private widthOf(it:OnItem){const p=onPart(it.part);return p?.own&&it.width?it.width:p?.width??5;}
+ private widthOf(it:OnItem){const p=onPart(it.part);if(p?.clutch)return clutchLayout(it.clutch??defaultClutch,onPart,this.host.catalog())?.width??p.width;return p?.own&&it.width?it.width:p?.width??5;}
  /** Selection of whatever an issue names: a part, a shaft in it, a machining step, or the part of an adapter or spacer. */
  selectRef(ref:string){const d=this.doc,s=this.host.plan().sleeves.find(x=>x.id===ref),id=s?.for??ref;
   this.sel=d.items.some(x=>x.id===id)?{kind:'item',id}:d.inserts.some(x=>x.id===id)?{kind:'insert',id}:d.works.some(x=>x.id===id)?{kind:'work',id}:this.sel;}
@@ -53,7 +55,7 @@ export class ShaftEditor{
   const group=(title:string,cards:HTMLElement[])=>cards.length?[el('h3',{textContent:title}),...cards]:[];
   const filterBox=el('input',{type:'search',placeholder:'Suchen …',value:filter,id:'catalog-filter'});filterBox.oninput=()=>{this.renderCatalog(root,filterBox.value);const x=document.getElementById('catalog-filter') as HTMLInputElement;x.focus();x.setSelectionRange(x.value.length,x.value.length);};
   root.replaceChildren(filterBox,
-   el('h2',{textContent:'Auf der Welle'}),...onGroups.flatMap(g=>group(g,onParts.filter(p=>p.group===g&&hit(p.label,g)).map(p=>card(`auf:${p.id}`,p.label,p.spacer?'Länge frei, innen wie der Abschnitt':p.arm?'Dreht mit der Welle; Bohrung wie der Abschnitt':`${label(p.bore)} · ${n(p.width)} mm breit`,!p.checked)))),
+   el('h2',{textContent:'Auf der Welle'}),...onGroups.flatMap(g=>group(g,onParts.filter(p=>p.group===g&&hit(p.label,g)).map(p=>card(`auf:${p.id}`,p.label,p.spacer?'Länge frei, innen wie der Abschnitt':p.arm?'Dreht mit der Welle; Bohrung wie der Abschnitt':p.clutch?'Rad rutscht ab einem Moment durch: schont die Zahnräder':`${label(p.bore)} · ${n(p.width)} mm breit`,!p.checked)))),
    el('h2',{textContent:'In der Welle'}),...inGroups.flatMap(g=>group(g,inParts.filter(p=>p.group===g&&hit(p.label,g)).map(p=>card(`in:${p.id}`,p.label.split(':')[0],`${label(p.profile)}${p.length?` · ${n(p.length)} mm lang`:''} · von einem Ende`,!p.checked)))),
    el('h2',{textContent:'Bearbeitung'}),...workTemplates.filter(w=>hit(w.label)).map(w=>card(`work:${w.key}`,w.label,w.text)),
    el('h2',{textContent:'Abschnitt'}),...(hit('abschnitt','von hand')?[card('section','Abschnitt von Hand','Eigenes Profil für einen Bereich; die Prüfung läuft weiter')]:[]));
@@ -63,7 +65,7 @@ export class ShaftEditor{
   const [kind,id]=key.split(/:(.*)/);
   if(kind==='auf'){const p=onPart(id)!;const w=p.width,taken=d.items.map(i=>({x0:i.x,x1:i.x+this.widthOf(i)}));let at=toGrid(x===undefined?d.length/2-w/2:x-w/2,GRID);at=freeSpot(taken,at,w,d.length);
    if(taken.some(t=>at<t.x1-1e-9&&at+w>t.x0+1e-9)||at+w>d.length+1e-9){at=Math.max(d.length,...taken.map(t=>t.x1))+1;d.length=toGrid(at+w+1,GRID);}
-   const it:OnItem={id:this.newId(p.spacer?'h':'t'),part:p.id,x:+at.toFixed(2),...(p.arm?{arm:{...defaultArm}}:{})};d.items.push(it);this.sel={kind:'item',id:it.id};this.host.commit(`${p.label} bei ${n(it.x)} mm`);return;}
+   const it:OnItem={id:this.newId(p.spacer?'h':'t'),part:p.id,x:+at.toFixed(2),...(p.arm?{arm:{...defaultArm}}:{}),...(p.clutch?{clutch:{...defaultClutch}}:{})};d.items.push(it);this.sel={kind:'item',id:it.id};this.host.commit(`${p.label} bei ${n(it.x)} mm`);return;}
   if(kind==='in'){const p=inPart(id)!;const free=(['links','rechts'] as Side[]).filter(s=>!d.inserts.some(i=>i.end===s));const end:Side=x!==undefined?(x<d.length/2?'links':'rechts'):free[0]??'links';
    const depth=toGrid(Math.min(p.length?Math.max(5,p.length-3):12,d.length*.6),GRID),old=d.inserts.find(i=>i.end===end);if(old)d.inserts.splice(d.inserts.indexOf(old),1);
    const it:InItem={id:this.newId('w'),part:p.id,end,depth};d.inserts.push(it);this.sel={kind:'insert',id:it.id};this.host.commit(`${p.label.split(':')[0]} steckt von ${end}${old?' (ersetzt die bisherige)':''}`);return;}
@@ -76,7 +78,7 @@ export class ShaftEditor{
  clips():Clip[]{const d=this.doc,p=this.host.plan(),out:Clip[]=[],L=d.length;
   const level=(refs:string[])=>{const mine=p.issues.filter(i=>i.ref&&refs.includes(i.ref));return mine.some(i=>i.level==='fehler')?'fehler':mine.some(i=>i.level==='warnung')?'warnung':'';};
   for(const it of d.items){const part=onPart(it.part),pl=p.placed.find(t=>t.id===it.id),sl=p.sleeves.find(s=>s.id===it.id),side=pl?.side??sl?.side,w=this.widthOf(it);
-   out.push({key:`item:${it.id}`,lane:'auf',sel:{kind:'item',id:it.id},x0:it.x,x1:it.x+w,text:(part?.short??it.part)+(it.free?' ⟳':''),title:`${part?.label??it.part}${side?` · von ${side} aufgeschoben`:''}${it.side?' (fest)':''}`,cls:`${part?.spacer?'spacer':part?.arm?'arm':part?.group==='Lager'?'bearing':'gear'}${side?' from-'+side:''} ${level([it.id])}`,...(part?.own?{resize:'both' as const}:{})});}
+   out.push({key:`item:${it.id}`,lane:'auf',sel:{kind:'item',id:it.id},x0:it.x,x1:it.x+w,text:(part?.short??it.part)+(it.free?' ⟳':''),title:`${part?.label??it.part}${side?` · von ${side} aufgeschoben`:''}${it.side?' (fest)':''}`,cls:`${part?.spacer?'spacer':part?.clutch?'clutch':part?.arm?'arm':part?.group==='Lager'?'bearing':'gear'}${side?' from-'+side:''} ${level([it.id])}`,...(part?.own?{resize:'both' as const}:{})});}
   for(const s of p.sleeves.filter(x=>x.auto))out.push({key:`sleeve:${s.id}`,lane:'erzeugt',...(s.for?{sel:{kind:'item',id:s.for} as Selection}:{}),x0:s.x0,x1:s.x1,text:s.kind==='adapter'?'Adapter':'Hülse',title:s.label,cls:`${s.kind} ${level([s.id])}`});
   for(const m of p.motors??[])out.push({key:`motor:${m.id}`,lane:'motor',sel:{kind:'insert',id:m.id},x0:m.x0,x1:m.x1,text:m.label,title:`${m.label}: Flansch bei ${n(m.face)} mm. Ziehen schiebt den Motor entlang der Achse (wie tief seine Welle steckt)`,cls:'motor'});
   for(const i of p.inserts)out.push({key:`insert:${i.id}`,lane:'in',sel:{kind:'insert',id:i.id},x0:i.x0,x1:i.x1,text:`${i.end==='links'?'':'→ '}${i.label}${i.end==='links'?' ←':''}`,title:`${i.label} · ${label(i.profile)} · ${n(i.x1-i.x0)} mm tief von ${i.end}`,cls:`insert ${level([i.id])}`,resize:'inner'});
@@ -160,10 +162,11 @@ export class ShaftEditor{
   const head=(title:string,sub?:string)=>[el('h2',{textContent:title}),...(sub?[el('p',{className:'muted',textContent:sub})]:[])];
   if(s?.kind==='item'){const it=this.item(s.id);if(!it){this.sel=undefined;return this.renderProperties(root);}const part=onPart(it.part)!,pl=p.placed.find(t=>t.id===it.id),sleeves=p.sleeves.filter(x=>x.for===it.id||x.id===it.id);
    root.replaceChildren(...head(part.label,part.note),field('Position [mm]',it.x,v=>{it.x=Math.max(0,v!);}),
-    ...(part.own?[field(part.arm?'Dicke entlang der Welle [mm]':'Breite [mm]',this.widthOf(it),v=>{if(v&&v>0)it.width=v;},{min:.5})]:[]),
+    ...(part.clutch?this.clutchFields(it,field,choice,p):[]),
+    ...(part.own&&!part.clutch?[field(part.arm?'Dicke entlang der Welle [mm]':'Breite [mm]',this.widthOf(it),v=>{if(v&&v>0)it.width=v;},{min:.5})]:[]),
     ...(part.arm?(()=>{const a=it.arm??={...defaultArm},own=!!it.bore;return [field('Länge Achse bis Auge [mm]',a.length,v=>{if(v&&v>0)a.length=v;},{min:1}),field('Breite des Arms [mm]',a.width,v=>{if(v&&v>0)a.width=v;},{min:1}),field('Winkel auf der Welle [°]',a.angle,v=>{a.angle=v??0;},{step:15}),field('Loch am Ende Ø [mm]',a.hole,v=>{a.hole=Math.max(0,v??0);},{step:.5,min:0}),
      choice('Bohrung',own?'eigen':'auto' as 'auto'|'eigen',[['auto',`wie der Abschnitt${pl?` (jetzt ${label(pl.bore)})`:''}`],['eigen','eigenes Profil']],v=>{if(v==='auto')delete it.bore;else it.bore=pl?.bore??part.bore;}),...(own?[profile('Profil',it.bore!,b=>{it.bore=b;})]:[]),this.armView(pl)];})():[]),
-    ...(part.own&&!part.spacer&&!part.arm?[profile('Bohrung',it.bore??part.bore,b=>{it.bore=b;})]:[]),
+    ...(part.own&&!part.spacer&&!part.arm&&!part.clutch?[profile('Bohrung',it.bore??part.bore,b=>{it.bore=b;})]:[]),
     ...(part.teeth?[(()=>{const c=el('input',{type:'checkbox',checked:!!it.free,disabled:ro});c.dataset.free='true';c.onchange=()=>{this.host.begin();if(c.checked)it.free=true;else delete it.free;this.host.commit(c.checked?'Dreht frei auf der Welle (Losrad)':'Dreht mit der Welle');};return el('label',{className:'prop'},el('span',{textContent:'Dreht frei auf der Welle (Losrad)'}),c);})()]:[]),
     choice('Aufschieben von','auto' as 'auto'|Side,[['auto',`selbst wählen${pl?` (jetzt ${pl.side})`:''}`],['links','links (fest)'],['rechts','rechts (fest)']],v=>{if(v==='auto')delete it.side;else it.side=v;}),
     el('p',{className:'prop-info'},pl?`Sitzt auf ${label(p.sections.find(c=>pl.x0+.01>=c.x0&&pl.x0+.01<=c.x1)?.profile??pl.bore)}, Bohrung ${label(pl.bore)}, von ${pl.side} aufgeschoben.`:sleeves[0]?`Innen ${label(sleeves[0].inner)}, von ${sleeves[0].side} aufgeschoben.`:''),
@@ -187,6 +190,19 @@ export class ShaftEditor{
    choice('Fertigung',d.making,[['druck','3D-Druck'],['cnc','CNC (Drehen/Fräsen)']],v=>{d.making=v;}),field('Bund-Ø [mm]',d.collar,v=>{if(v===undefined)delete d.collar;else d.collar=v;},{optional:true,placeholder:'aus den Nachbarn'}),
    el('h3',{textContent:'Regeln'}),set('shoulder','Absatz über Nachbar [mm]'),set('spacerWall','Wand Distanzhülse [mm]'),set('minWall','Dünnste Wand [mm]'),set('insertWall','Wand um gesteckte Wellen [mm]'),set('chamfer','Fase an den Enden [mm]'),set('play','Spiel je Seite beim Druck [mm]',.05));
  }
+ /** A slip clutch's page: the wheel, the spring of the assortment, its preload, friction and the discs; what it slips at. */
+ private clutchFields(it:OnItem,field:(t:string,v:number,set:(v:number|undefined)=>void,o?:{step?:number;min?:number})=>HTMLElement,choice:<T extends string>(t:string,v:T,o:[T,string][],set:(v:T)=>void)=>HTMLElement,p:Plan):(HTMLElement|string)[]{
+  const c=it.clutch??={...defaultClutch},cat=this.host.catalog(),pl=p.placed.find(t=>t.id===it.id),shaft=pl?outer(pl.bore):5,n2=(x:number,k=2)=>String(+x.toFixed(k)).replace('.',',');
+  const wheels=onParts.filter(q=>q.teeth&&q.bore.kind==='rund').map(q=>[q.id,q.label] as [string,string]);
+  const springs=Object.values(cat).filter(q=>q.kind==='druck').map(q=>{const inside=q.D-2*q.d,ok=inside>=shaft+.3;return [q.id,`${ok?'✓':'✗'} ${q.label} · ${n2(q.R,3)} N/mm${q.estimated.R?' (geschätzt)':''}${ok?'':' · zu eng für die Welle'}`] as [string,string];});
+  const out:(HTMLElement|string)[]=[field('Position [mm]',it.x,v=>{it.x=Math.max(0,v!);}).cloneNode(false) as HTMLElement];out.length=0;
+  out.push(choice('Rad',c.wheel,wheels,v=>{c.wheel=v;delete c.disc;const w=onPart(v);if(w&&!w.pulley)c.width=Math.min(w.width,8);else delete c.width;}),
+   field('Breite des Rads [mm]',c.width??onPart(c.wheel)?.width??8,v=>{if(v&&v>0)c.width=v;},{min:1}),
+   choice('Druckfeder',c.spring,springs,v=>{c.spring=v;}),field('Vorspannung [mm]',c.preload,v=>{c.preload=Math.max(0,v??0);},{step:.5,min:0}),
+   field('Reibwert μ',c.mu,v=>{if(v&&v>0)c.mu=v;},{step:.05,min:.05}),field('Reibscheiben Ø [mm]',c.disc??clutchLayout(c,onPart,cat)?.discD??14,v=>{if(v&&v>2)c.disc=v;else delete c.disc;},{step:1,min:3}));
+  if(pl?.clutch){const k=pl.clutch,l=k.layout;out.push(el('p',{className:'prop-info',id:'clutch-info',textContent:`Rutscht ab etwa ${n2(k.T/10)} N·cm (${n2(k.T)} N·mm): ${l.spring.label} ${n2(l.Ls,1)} mm lang eingebaut, drückt ${n2(k.F)} N${l.spring.estimated.R?' (Rate geschätzt: im Getriebe-Generator unter „Federn“ messen)':''}, zwei Reibflächen bis Ø${n2(l.discD,1)}, Reibwert ${n2(k.spec.mu)}. Länge der Kupplung ${n2(l.width,1)} mm. Am Rad wirkt das als ${n2(k.T/((l.wheel.module??1)*(l.wheel.teeth??20)/2),2)} N am Teilkreis.`}),
+   el('p',{className:'muted small',textContent:'Reibwert: gedrucktes PLA auf PLA trocken etwa 0,3; mit Fett weniger und gleichmäßiger. Mehr Moment: mehr Vorspannung, eine härtere Feder oder größere Scheiben.'}));}
+  return out;}
  /** An arm seen along the axis: 0° is up, where a D shaft's flat looks. */
  private armView(pl?:Plan['placed'][number]):HTMLElement|string{const a=pl?.arm;if(!a)return '';const R=a.length+a.width/2+2,S=150,k=S/2/Math.max(R,a.hub/2+2),t=a.angle*Math.PI/180,f=a.length>Math.abs(a.hub-a.width)/2?Math.acos((a.hub-a.width)/2/a.length):0;
   // Drawing coordinates as in the solid (x: world y, y: world z), turned by the angle, y up on the screen.
