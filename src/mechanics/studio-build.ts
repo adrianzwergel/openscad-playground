@@ -113,7 +113,7 @@ export class BuildEditor{
   moveUnit:(unit,delta,message)=>{const frames=this.frames();this.host.change(()=>{moveGroup(this.build()!,unit,{delta},frames);},message);}});this.trains.onChange=()=>this.refresh();
   this.links=new LinkageEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;this.trains.select(undefined);this.multi.clear();this.groupId=undefined;this.gearboxes.select(undefined);},ray:host.ray,canvas:host.canvas,root:()=>this.group,orbit:host.orbit,ensure:()=>this.ensure(),
    bodies:()=>Object.keys(this.frames(true)).filter(k=>!k.startsWith('lenker:')).map(k=>[k,this.bodyName(k)] as [string,string]),name:k=>this.bodyName(k),phase:()=>this.host.phase?.()??3,exportSolid:(g,n)=>this.exportSolid(g,n)});
-  this.gearboxes=new GearboxEditor({build:()=>this.build(),ensure:()=>this.ensure(),change:host.change,status:host.status,refresh:()=>this.refresh(),leave:host.leave,beside:()=>this.besideAll(),values:()=>this.values,picked:()=>{this.host.picked?.();this.deselect();}});}
+  this.gearboxes=new GearboxEditor({build:()=>this.build(),ensure:()=>this.ensure(),change:host.change,status:host.status,refresh:()=>this.refresh(),leave:host.leave,beside:()=>this.besideAll(),values:()=>this.values,picked:()=>{this.host.picked?.();this.deselect();},frames:()=>this.frames(true),exportSolid:(g,n)=>this.exportSolid(g,n)});}
  private get wheels(){return !!this.build()?.train?.wheels.length;}
  /** A build on its own is open (a mechanism's parts come along with the mechanism). */
  get active(){return !!this.activeId&&!!this.build();}
@@ -184,6 +184,8 @@ export class BuildEditor{
  setLinkageInput(link:string,value:number){this.links.setInput(link,value);}
  /** Test entry: a linked gearbox as drawn. */
  gearboxDrawn(id:string){return this.gearboxes.drawn(id);}
+ /** Test entry: a gearbox's bracket. */
+ gearboxMount(id:string){return this.gearboxes.mount(id);}
  /** Test entry: where a body stands now (its frame in the room). */
  frameOf(key:string){return this.frames()[key]?.position;}
  /** Test entry: where the first thing that hangs on a link stands. */

@@ -14,12 +14,15 @@ import type {GearPlan,ShaftFile} from '../gear/plan.ts';
 import {links} from '../gear/sweep.ts';
 import {CadClient} from '../shaft/cad-client.ts';
 import type {MeshData} from '../shaft/cad.ts';
-import type {Build,GearLink} from './parts/build';
-import {newPlateNode,newItem} from './parts/build';
+import type {Build,GearLink,PlateNode} from './parts/build';
+import {newPlateNode,newItem,plateRect,sheet,worldOf,reframe} from './parts/build';
+import {gearMount,middle} from './parts/gearmount';
+import type {Mount} from './parts/gearmount';
+import type {Prim} from '../structure/sdf';
 import {partById} from './parts/catalog';
 import {linkBody} from './parts/linkage';
 import {gearExamples} from '../gear/examples.ts';
-import {gearBody,armBody} from './parts/links';
+import {gearBody,armBody,plateBody} from './parts/links';
 import {compose,axisAngle,rotate,dot} from './kinematics/math';
 import type {Frame,V} from './kinematics/math';
 
@@ -27,7 +30,9 @@ export type GearboxHost={build:()=>Build|undefined;ensure:()=>Build;change:(edit
  /** Draws the view again; draws the panels again. */refresh:()=>void;leave:()=>void;
  /** Where a new thing goes: beside all there is. */beside:()=>V;
  /** How far each body's slider is moved (the swing arms' by `armBody`). */values:()=>Record<string,number>;
- /** Something else is picked: the gearbox is not selected any more. */picked:()=>void;};
+ /** Something else is picked: the gearbox is not selected any more. */picked:()=>void;
+ /** The room's bodies at rest (every slider at 0). */frames:()=>Record<string,Frame>;
+ /** Saves solids as an STL file. */exportSolid:(g:{solids:Prim[];holes:Prim[]},name:string)=>void;};
 type Loaded={name:string;doc:GearDoc;files:Record<string,ShaftFile>;key:string;plan?:GearPlan};
 /** A part of a gearbox for the view: shared by every link of the same gearbox, never disposed with the scene. */
 type Piece={geometry:THREE.BufferGeometry;material:THREE.Material;body:string;matrix?:THREE.Matrix4;edges?:THREE.BufferGeometry};
@@ -47,8 +52,19 @@ let shared:Promise<{gear:ProjectStore;shaft:ProjectStore}>|undefined;
 const stores=()=>shared??=Promise.all([ProjectStore.open('getriebe','gear-1'),ProjectStore.open('wellen','shaft-1')]).then(([gear,shaft])=>({gear,shaft}));
 /** New files were written: the library lists the gearboxes again. */
 let listed=0;
-/** The middle of a gearbox's height: what it is mirrored across. */
-export function middle(plan:GearPlan){const zs=[...plan.shafts.flatMap(x=>[x.z0,x.z1]),...plan.layers.flatMap(l=>l.band)];return zs.length?(Math.min(...zs)+Math.max(...zs))/2:0;}
+/** The angle bracket between a linked gearbox and a plate, where both stand (`frames`: the room's bodies at rest); the
+ * points of the linkage on the gearbox's swing arms (ball studs) are kept clear. */
+export function mountOf(b:Build,l:GearLink,plate:PlateNode,plan:GearPlan,frames:Record<string,Frame>):Mount{
+ const prefix=gearBody(l.id)+'/',studs=(b.linkage?.links??[]).flatMap(k=>k.points.filter(p=>p.body.startsWith(prefix)).map(p=>({at:p.at,group:p.body.slice(prefix.length),what:`Kugelbolzen von ${k.label}`})));
+ return gearMount({plan,mirror:!!l.mirror,gear:frames[gearBody(l.id)]??worldOf(l.free,frames),plate:frames[plateBody(plate.id)]??worldOf(plate.free,frames),thickness:plate.thickness,rect:plateRect(sheet(b,plate.id)),studs});}
+/** Writes a bracket's holes into its plate (in place of the old ones). */
+function holesOf(plate:PlateNode,id:string,m:Mount){plate.holes=[...plate.holes.filter(h=>!h.id.startsWith(`winkel-${id}-`)),...m.plateHoles.map((at,k)=>({id:`winkel-${id}-${k+1}`,at,d:m.d}))];}
+/** Screws a gearbox to a plate: the bracket, its holes in the plate, and the gearbox hangs on the plate from then on. */
+export function screwTo(b:Build,l:GearLink,plate:PlateNode,plan:GearPlan,frames:Record<string,Frame>){const id=`w-${l.id}`,m=mountOf(b,l,plate,plan,frames);
+ b.mounts=[...(b.mounts??[]).filter(x=>x.gear!==l.id),{id,gear:l.id,plate:plate.id}];holesOf(plate,id,m);
+ if(l.free.body!==plateBody(plate.id))l.free={...reframe(l.free,plateBody(plate.id),frames),...(l.free.joint?{joint:l.free.joint}:{})};return m;}
+/** The solids of a bracket for the view. */
+function primObject(p:Prim,material:THREE.Material){if(p.kind!=='slab')return undefined;const g=new THREE.ExtrudeGeometry(new THREE.Shape(p.points.map(([x,y])=>new THREE.Vector2(x,y))),{depth:p.z1-p.z0,bevelEnabled:false}).translate(0,0,p.z0),o=new THREE.Mesh(g,material);place(o,p.frame);return o;}
 /** A gearbox example of the generator written into its folders, its shafts first, as the generator's start page does;
  * `tweak` changes it before. Its id and plan. */
 export async function saveGearExample(key:string,tweak?:(d:GearDoc)=>void){const x=gearExamples.find(e=>e.key===key)!,{gear,shaft}=await stores(),ids:Record<string,string>={},files:Record<string,ShaftFile>={},now=new Date().toISOString();
@@ -65,7 +81,7 @@ export const roverExample={key:'rover',title:'Rocker-Bogie-Rover mit Ausgleichsb
   const W=60,H=90,m=middle(plan),up=axisAngle([1,0,0],90);
   b.gears=[{id:'links',gear:id,label:'Seite links',free:{frame:{position:[0,-W,H],rotation:up}}},{id:'rechts',gear:id,label:'Seite rechts',mirror:true,free:{frame:{position:[0,W+2*m,H],rotation:up}}}];
   b.balances=[{a:armBody('links','g1'),b:armBody('rechts','g1')}];
-  const deck=newPlateNode('deck',{position:[35,0,80],rotation:[0,0,0,1]});deck.mode='fixed';deck.size=[150,90];b.plates=[deck];
+  const deck=newPlateNode('deck',{position:[35,0,80],rotation:[0,0,0,1]});deck.mode='fixed';deck.size=[150,90];deck.mount.on=false;b.plates=[deck];
   b.items.push({...newItem('uno',partById('arduinouno3')!,[-25,0]),plate:'deck'});
   // The bar over the deck, about x; the studs 6 mm inside the rockers' plates (gearbox z −6), 36 mm in front of the pivot
   // and level with it: they move up and down, the same on both sides.
@@ -73,7 +89,9 @@ export const roverExample={key:'rover',title:'Rocker-Bogie-Rover mit Ausgleichsb
   b.linkage={floor:80,links:[
    {id:'balken',label:'Ausgleichsbalken',kind:'lenker',d:6,points:[{id:'achse',kind:'dreh',at:[x-8,0,bar],to:[x+8,0,bar],body:''}]},
    {id:'stange-l',label:'Stange links',kind:'stab',points:[{id:'balken',kind:'kugel',at:[x,-y,bar],body:linkBody('balken'),part:'kugel-5.8'},{id:'rocker',kind:'kugel',at:[x,-y,stud],body:armBody('links','g1'),part:'kugel-5.8'}]},
-   {id:'stange-r',label:'Stange rechts',kind:'stab',points:[{id:'balken',kind:'kugel',at:[x,y,bar],body:linkBody('balken'),part:'kugel-5.8'},{id:'rocker',kind:'kugel',at:[x,y,stud],body:armBody('rechts','g1'),part:'kugel-5.8'}]}]};}};
+   {id:'stange-r',label:'Stange rechts',kind:'stab',points:[{id:'balken',kind:'kugel',at:[x,y,bar],body:linkBody('balken'),part:'kugel-5.8'},{id:'rocker',kind:'kugel',at:[x,y,stud],body:armBody('rechts','g1'),part:'kugel-5.8'}]}]};
+  // Both sides screwed to the deck by a bracket each: from here on they hang on it.
+  const rest={[plateBody('deck')]:deck.free.frame};for(const l of b.gears)screwTo(b,l,deck,plan,rest);}};
 
 export class GearboxEditor{
  /** The selected gearbox link. */
@@ -154,7 +172,10 @@ export class GearboxEditor{
    const arms=new Map<string,THREE.Object3D>(),angles=this.angles(l,plan,values,frames),bodyOf=(body:string)=>{if(!body)return inner;let a=arms.get(body);if(!a){a=new THREE.Group();place(a,armFrame(plan,body,angles));inner.add(a);arms.set(body,a);}return a;};
    for(const p of pieces){const m=new THREE.Mesh(p.geometry,p.material);m.userData.shared=true;if(p.matrix){m.matrixAutoUpdate=false;m.matrix.copy(p.matrix);}const into=bodyOf(plan.groups.some(g=>g.id===p.body)?p.body:'');into.add(m);
     if(p.edges){const e=new THREE.LineSegments(p.edges,new THREE.LineBasicMaterial({color:selected?0xffffff:0x1b2329}));e.userData.shared=true;into.add(e);}}
-   this.shown.push({link:l,object:outer,arms,plan});}}
+   this.shown.push({link:l,object:outer,arms,plan});}
+  // The brackets, in the room.
+  for(const mt of b.mounts??[]){const l=b.gears?.find(x=>x.id===mt.gear),plate=b.plates.find(p=>p.id===mt.plate),plan=l&&this.planOf(l.gear);if(!l||!plate||!plan)continue;const r=mountOf(b,l,plate,plan,frames),mat=new THREE.MeshStandardMaterial({color:r.issues.length?0xd9845c:0xc58a4a,roughness:.6});
+   const g=new THREE.Group();g.userData.gearbox=l.id;g.userData.mount=mt.id;for(const p of r.solids){const o=primObject(p,mat);if(o)g.add(o);}root.add(g);}}
  /** The sliders moved: frames and swing arms follow, nothing is drawn again. */
  follow(frames:Record<string,Frame>,values:Record<string,number>){for(const s of this.shown){const f=frames[gearBody(s.link.id)];if(f)place(s.object,f);const angles=this.angles(s.link,s.plan,values,frames);for(const [g,o] of s.arms)place(o,armFrame(s.plan,g,angles));}}
  get moving(){return this.shown.some(s=>s.arms.size>0)||this.shown.some(s=>s.link.free.body);}
@@ -208,8 +229,28 @@ export class GearboxEditor{
     s.onchange=()=>this.host.change(()=>{const x=this.host.build()!;x.balances=(x.balances??[]).filter(y=>y.b!==key&&!(y.a===key&&y.b===s.value));if(s.value)x.balances.push({a:s.value,b:key});if(!x.balances.length)delete x.balances;},s.value?`${g.name} folgt ${this.armName(s.value)} gegenläufig: Ausgleich.`:`${g.name} hat wieder einen eigenen Regler.`);
     root.append(el('label',{},`${g.name}: Ausgleich mit`,s));}
    if(others.length)root.append(el('p',{className:'muted',textContent:'Ausgleich: Die Schwinge dreht im Raum gegenläufig zur gewählten, so wie ein Ausgleichsbalken die beiden Rocker eines Rovers koppelt. Den Balken selbst baust du als Gestänge (Bibliothek „Fahrwerk“) oder nimmst das Beispiel „Rocker-Bogie-Rover“.'}));}
-  const remove=el('button',{className:'ghost danger',textContent:'Aus dem Projekt nehmen'});remove.dataset.gearboxRemove=l.id;remove.onclick=()=>{this.selectedId=undefined;this.host.change(()=>{const b=this.host.build()!;b.gears=(b.gears??[]).filter(x=>x.id!==l.id);if(!b.gears.length)delete b.gears;if(b.balances){b.balances=b.balances.filter(x=>!x.a.startsWith(gearBody(l.id)+'/')&&!x.b.startsWith(gearBody(l.id)+'/'));if(!b.balances.length)delete b.balances;}for(const i of b.items)if(i.free?.body?.startsWith(gearBody(l.id)))delete i.free.body;for(const p of b.plates)if(p.free.body?.startsWith(gearBody(l.id)))delete p.free.body;},'Getriebe aus dem Projekt genommen (die Datei bleibt im Getriebe-Generator).');};
+  this.mountPage(root,l);
+  const remove=el('button',{className:'ghost danger',textContent:'Aus dem Projekt nehmen'});remove.dataset.gearboxRemove=l.id;remove.onclick=()=>{this.selectedId=undefined;this.host.change(()=>{const b=this.host.build()!;b.gears=(b.gears??[]).filter(x=>x.id!==l.id);if(!b.gears.length)delete b.gears;for(const o of b.mounts??[])if(o.gear===l.id){const q=b.plates.find(y=>y.id===o.plate);if(q)q.holes=q.holes.filter(h=>!h.id.startsWith(`winkel-${o.id}-`));}if(b.mounts){b.mounts=b.mounts.filter(o=>o.gear!==l.id);if(!b.mounts.length)delete b.mounts;}if(b.balances){b.balances=b.balances.filter(x=>!x.a.startsWith(gearBody(l.id)+'/')&&!x.b.startsWith(gearBody(l.id)+'/'));if(!b.balances.length)delete b.balances;}for(const i of b.items)if(i.free?.body?.startsWith(gearBody(l.id)))delete i.free.body;for(const p of b.plates)if(p.free.body?.startsWith(gearBody(l.id)))delete p.free.body;},'Getriebe aus dem Projekt genommen (die Datei bleibt im Getriebe-Generator).');};
   root.append(remove);}
+ /** "An einer Platte festschrauben": which plate, the bracket that does it, its parts and its STL. */
+ private mountPage(root:HTMLElement,l:GearLink){const b=this.host.build()!,plan=this.planOf(l.gear),mt=b.mounts?.find(x=>x.gear===l.id);root.append(el('h3',{textContent:'Festschrauben'}));
+  if(!b.plates.length){root.append(el('p',{className:'muted',textContent:'Eine Bodenplatte (Deck) ins Projekt holen: Dann lässt sich das Getriebe mit einem gedruckten Winkel an sie schrauben.'}));return;}
+  const s=el('select');s.dataset.mount=l.id;s.add(new Option('keiner',''));b.plates.forEach((p,k)=>s.add(new Option(`Bodenplatte${b.plates.length>1?' '+(k+1):''}`,p.id)));s.value=mt?.plate??'';
+  s.onchange=()=>{const frames=this.host.frames(),v=s.value;if(!plan)return;this.host.change(()=>{const x=this.host.build()!,g=x.gears?.find(y=>y.id===l.id),p=x.plates.find(y=>y.id===v);for(const o of x.mounts??[])if(o.gear===l.id){const q=x.plates.find(y=>y.id===o.plate);if(q)q.holes=q.holes.filter(h=>!h.id.startsWith(`winkel-${o.id}-`));}
+   x.mounts=(x.mounts??[]).filter(o=>o.gear!==l.id);if(!x.mounts.length)delete x.mounts;if(g&&p)screwTo(x,g,p,plan,frames);},v?'Mit einem Winkel an die Platte geschraubt: das Getriebe hängt jetzt an ihr.':'Winkel entfernt.');};
+  root.append(el('label',{},'An Platte schrauben',s));
+  const plate=mt&&b.plates.find(p=>p.id===mt.plate);if(!mt||!plate||!plan){root.append(el('p',{className:'muted',textContent:'Ein gedruckter Winkel liegt an der Gestellplatte, die zur Platte zeigt, auf den Säulenbolzen des Gestells, und greift mit einem Flansch unter die Platte.'}));return;}
+  const r=mountOf(b,l,plate,plan,this.host.frames()),box=el('div',{id:'mount-state'});
+  box.append(el('p',{className:r.issues.length?'state-warn':'state-pass',textContent:r.solids.length?`${r.issues.length?'⚠':'✓'} Winkel auf ${r.bolts.length} Säulenbolzen des Gestells, Flansch mit 2 Schrauben unter der Platte.`:'Kein Winkel möglich.'}));
+  for(const i of r.issues)box.append(el('p',{className:'state-warn',textContent:i}));
+  // The holes in the plate are written when it is screwed on; moved since, they are set again by hand.
+  const want=r.plateHoles,have=plate.holes.filter(h=>h.id.startsWith(`winkel-${mt.id}-`)).map(h=>h.at),off=want.length!==have.length||want.some((p,k)=>Math.hypot(p[0]-have[k][0],p[1]-have[k][1])>.2);
+  if(off){const fix=el('button',{textContent:'Löcher in der Platte neu setzen'});fix.dataset.mountHoles=l.id;fix.onclick=()=>this.host.change(()=>{const x=this.host.build()!,p=x.plates.find(y=>y.id===plate.id),g=x.gears?.find(y=>y.id===l.id);if(p&&g)holesOf(p,mt.id,mountOf(x,g,p,plan,this.host.frames()));},'Löcher für den Winkel neu gesetzt.');box.append(el('p',{className:'state-warn',textContent:'Getriebe oder Platte stehen anders als beim Festschrauben: Die Löcher in der Platte passen nicht mehr.'}),fix);}
+  for(const x of r.bom)box.append(el('p',{className:'muted',textContent:`${x.count} × ${x.what}`}));
+  if(r.solids.length){const stl=el('button',{className:'primary',textContent:'⬇ Winkel als STL'});stl.dataset.mountStl=l.id;stl.onclick=()=>this.host.exportSolid({solids:r.solids,holes:r.holes},`winkel-${(l.label??this.nameOf(l.gear)).replace(/[^\wäöüÄÖÜß-]+/g,'_')}`);box.append(stl);}
+  root.append(box);}
+ /** Test entry: the bracket of a gearbox, where it stands now. */
+ mount(id:string){const b=this.host.build(),mt=b?.mounts?.find(x=>x.gear===id),l=b?.gears?.find(x=>x.id===id),p=mt&&b?.plates.find(x=>x.id===mt.plate),plan=l&&this.planOf(l.gear);if(!b||!l||!p||!plan)return undefined;const r=mountOf(b,l,p,plan,this.host.frames());return {bolts:r.bolts.length,issues:r.issues,solids:r.solids.length,holes:p.holes.filter(h=>h.id.startsWith(`winkel-${mt!.id}-`)).length};}
  private write(id:string,message:string,fn:(l:GearLink)=>void){this.host.change(()=>{const l=this.linkOf(id);if(l)fn(l);},message);}
 
  // ---------- the generator in a window ----------

@@ -92,6 +92,7 @@ window.addEventListener('keydown',e=>{if(e.key==='Alt'&&!free){free=true;snaps()
 (window as unknown as {studioScreen:(p:[number,number,number])=>[number,number]}).studioScreen=p=>{mechRoot.updateMatrixWorld(true);const v=mechRoot.localToWorld(new THREE.Vector3(...p)).project(camera),r=renderer.domElement.getBoundingClientRect();return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];};
 (window as unknown as {studioFrame:(key:string)=>number[]|undefined}).studioFrame=key=>build.frameOf(key);
 (window as unknown as {studioGearbox:(id:string)=>unknown}).studioGearbox=id=>build.gearboxDrawn(id);
+(window as unknown as {studioMount:(id:string)=>unknown}).studioMount=id=>build.gearboxMount(id);
 (window as unknown as {studioPart:(key?:string)=>number[]|undefined}).studioPart=key=>build.followerAt(key);
 (window as unknown as {studioLinkage:object}).studioLinkage={point:(l:string,p:string)=>build.linkagePoint(l,p),reading:()=>build.linkageReading(),set:(l:string,v:number)=>build.setLinkageInput(l,v),screen:(l:string,p:string)=>{const w=build.linkagePoint(l,p);if(!w)return undefined;build.group.updateMatrixWorld(true);const v=new THREE.Vector3(...w).applyMatrix4(build.group.matrixWorld).project(camera),r=renderer.domElement.getBoundingClientRect();return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];}};
 // Test entry: the document as the old save slot held it (checks read it from there).

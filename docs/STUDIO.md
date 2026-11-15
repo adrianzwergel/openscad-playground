@@ -120,8 +120,16 @@ Daten: `GearLink` in `parts/build.ts`; geprüft von `scripts/check-studio-gearbo
   stehend, 60 mm von der Mitte. Dazu ein Deck mit Arduino und der Balken 30 mm über den Kugelbolzen (die sitzen 6 mm
   innerhalb der Rocker-Platten: ein längerer M3-Bolzen mit Kugelkopf). Der rechte Rocker folgt dem linken gegenläufig; bei
   12° heben und senken sich die Kugelbolzen um je 7,5 mm, die Stangen bleiben 30 mm lang
-  (`scripts/check-studio-rover-browser.mjs`). Offen: Das Deck ist noch nicht an die Gestelle geschraubt, beide stehen
-  fest in der Welt.
+  (`scripts/check-studio-rover-browser.mjs`). Beide Seiten sind mit je einem Winkel ans Deck geschraubt und hängen an ihm;
+  das Deck hat keine Eckbohrungen, es trägt sich über die Winkel.
+- **Festschrauben** (`Build.mounts`, Geometrie `parts/gearmount.ts`): Auf der Seite eines Getriebes „An Platte
+  schrauben“ wählen. Ein gedruckter Winkel (4 mm) liegt flach an der Gestellplatte, die zur Platte zeigt, und sitzt auf den
+  Säulenbolzen des Gestells (je 4 mm länger); sein Flansch greift 14 mm unter die Platte, zwei M3 mit Mutter. Der Winkel
+  nimmt nur Bolzen, die er erreicht, ohne an etwas zu kommen, das aus dieser Seite ragt oder vorbeischwenkt: Motoren,
+  Wellen, Teile der Schwingen über ihren ganzen Bereich und Gelenkpunkte des Gestänges auf den Schwingen (Kugelbolzen).
+  Die zwei Löcher kommen in die Platte (`winkel-<id>-<n>`), das Getriebe hängt danach an der Platte. Steht später etwas
+  anders, sagt die Seite es und bietet „Löcher in der Platte neu setzen“. Dazu Stückliste und „⬇ Winkel als STL“.
+  Meldungen: kein freier Bolzen, nur einer (dreht sich), Platte parallel zum Gestell, zu weit weg oder bis ans Gestell.
 
 ### Gestänge aus Gelenkpunkten (Fahrwerk)
 
