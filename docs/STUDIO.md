@@ -159,6 +159,15 @@ Logik: `parts/linkage.ts`, Editor: `studio-linkage.ts`; geprüft von `scripts/pa
   Spindel“**: Die Ecke ist um 90° gedreht (Fahrtrichtung y, `forward` des Gestänges für Sturz und Spur), der Dämpfer ist
   durch eine Stellstange zur Mutter einer TR8-Spindel in Fahrtrichtung ersetzt, der Umlenkhebel ist ein Winkelhebel um die
   Normale der Ebene aus Fahrtrichtung und Pushrod. ±6 mm Schlitten stellen etwa ±10 mm Höhe.
+- **Federbein gedruckt** (`parts/strut.ts`, Bibliothek „Federbein gedruckt“ oder bei einem Federbein „Ausführung: gedruckt“):
+  ein Rohr mit dem Gewinde der unteren Kugelpfanne, eine Stange, die darin gleitet, mit Kopf und dem Gewinde der oberen,
+  dazwischen außen um die Stange eine Druckfeder aus dem Sortiment (Katalog wie im Getriebe-Generator, gemessene Werte
+  gelten). Die Maße folgen aus Feder und Punkten: Stange so dick, wie der Innen-Ø der Feder erlaubt (−0,6 mm), Bohrung
+  +0,4 mm, Rohr so lang, dass die Stange bei freier Feder noch 1,5 × ihren Ø (mindestens 8 mm) geführt ist und auf Block
+  nicht ans untere Gewinde stößt; „Vorspannung“ drückt die Feder in der Konstruktionslage zusammen. Abgelesen werden
+  Länge, Federlänge und Kraft, über den Bereich als Spanne; gemeldet: zu kurz für die Feder (mit nötiger Länge), auf
+  Block, auseinander. Gedämpft wird nur durch Reibung. ③ gibt Rohr und Stange als STL, die Stückliste nennt Feder,
+  Federbein und zwei Kugelpfannen. Prüfung: `scripts/parts/check-strut.mjs`, `scripts/check-studio-strut-browser.mjs`.
 - **③:** „Gestänge · Druckteile & Halter“ gibt jeden gedruckten Lenker als STL aus (Rohre zwischen den Punkten, Hülse an
   Drehachsen mit Bohrung Ø 3,2 für M3, Kernloch Ø 2,5 für Kugelbolzen bzw. den Gewindestift der Pfanne) und die
   **Halter am Chassis** (Säule mit Fuß und Schraubloch bis zum einstellbaren Boden, Laschen an Drehachsen). Die Stückliste

@@ -7,6 +7,8 @@
 // Points are in the room at the design pose (all inputs 0); there a link's frame is the identity, so a point's
 // coordinates are its place on the link. Closed loops are solved here, at every pose, by Levenberg–Marquardt over the
 // six coordinates of every rigid link. Room: z up; a car's x forward, y to its left.
+import {strutOf,strutAt} from './strut.ts';
+import type {StrutSpec} from './strut.ts';
 import type {Frame,V,Q} from '../kinematics/math.ts';
 import {add,scale,norm,cross,dot,rotate,multiply,inverseQ,compose,inverse,unit} from '../kinematics/math.ts';
 import {solveLinear} from '../kinematics/solver.ts';
@@ -18,7 +20,7 @@ export type Point={id:string;at:V;kind:JointKind;to?:V;body:string;part?:string}
 export type LinkKind='lenker'|'stab'|'feder';
 /** `d`: tube Ø of a printed link. `part`: the damper of a `feder`. `wheel`: hub face (`at`) and wheel centre (`to`) on a
  * link that carries a wheel. `input`: a slider turns the link about its axis point `point`, in degrees. */
-export type Link={id:string;label:string;kind:LinkKind;points:Point[];d?:number;part?:string;wheel?:{at:V;to:V;part:string};input?:{point:string;min:number;max:number}};
+export type Link={id:string;label:string;kind:LinkKind;points:Point[];d?:number;part?:string;wheel?:{at:V;to:V;part:string};input?:{point:string;min:number;max:number};/** A `feder` printed with a compression spring of the assortment instead of a bought damper (parts/strut.ts). */strut?:StrutSpec};
 /** `floor`: where the brackets on the world stand (z); without, a little below the lowest of them. `forward`: the
  * direction the car drives in, for camber and toe (x without). */
 export type Linkage={links:Link[];floor?:number;forward?:V};
@@ -106,12 +108,16 @@ export class LinkageSolver{private last?:{key:string;pose:LinkPose};private warm
 
 // ---------- what one reads off ----------
 export type Reading={/** wheel centre up from the design pose (mm) */lift?:number;/** degrees, negative: top of the wheel inwards */camber?:number;/** degrees, positive: front of the wheel inwards */toe?:number;
- dampers:{id:string;label:string;length:number;/** compressed from the design pose (mm) */travel:number;/** within its stroke */fits:boolean}[]};
+ dampers:{id:string;label:string;length:number;/** compressed from the design pose (mm) */travel:number;/** within its stroke */fits:boolean;/** a printed strut: its spring's length and force */spring?:number;force?:number}[]};
+/** A printed strut of a `feder`, at its design length. */
+export const strutOfLink=(l:Link)=>l.strut&&l.points.length===2?strutOf(l.strut,dist(l.points[0].at,l.points[1].at),ballOf(l.points[0].part).reach):undefined;
 export function read(g:Linkage,pose:LinkPose):Reading{const out:Reading={dampers:[]};
  const wheel=g.links.find(l=>l.wheel);if(wheel?.wheel){const key=linkBody(wheel.id),c=pose.at(key,wheel.wheel.to),h=pose.at(key,wheel.wheel.at),a=unit(sub(c,h)),f=g.forward??[1,0,0],ahead=unit([f[0],f[1],0]),side=cross([0,0,1],ahead),across=Math.abs(dot(a,side));
   // Both sides alike: camber negative with the top of the wheel inwards, toe positive with its front inwards.
   out.lift=c[2]-wheel.wheel.to[2];out.camber=-Math.atan2(a[2],across)*180/Math.PI;out.toe=Math.atan2(dot(a,ahead),across)*180/Math.PI;}
- for(const l of g.links)if(l.kind==='feder'&&l.points.length===2){const [a,b]=l.points,d=damperOf(l.part),length=dist(pose.at(a.body,a.at),pose.at(b.body,b.at));out.dampers.push({id:l.id,label:l.label,length,travel:dist(a.at,b.at)-length,fits:length<=d.length+1e-6&&length>=d.length-d.stroke-1e-6});}
+ for(const l of g.links)if(l.kind==='feder'&&l.points.length===2){const [a,b]=l.points,d=damperOf(l.part),length=dist(pose.at(a.body,a.at),pose.at(b.body,b.at)),st=strutOfLink(l);
+  if(st){const at=strutAt(st,length);out.dampers.push({id:l.id,label:l.label,length,travel:dist(a.at,b.at)-length,fits:!at.block&&!at.apart,spring:at.Ls,force:at.F});continue;}
+  out.dampers.push({id:l.id,label:l.label,length,travel:dist(a.at,b.at)-length,fits:length<=d.length+1e-6&&length>=d.length-d.stroke-1e-6});}
  return out;}
 /** The linkage over the range of its first input: readings at `samples` steps. From the design pose outwards both
  * ways, each step solved from the one before, so it stays on its branch. */
@@ -134,7 +140,8 @@ export function linkageIssues(g:Linkage,bodies:ReadonlySet<string>=new Set()):Li
    else if(p.body&&!other&&!bodies.has(p.body))out.push({links:[l.id],message:`${l.label}: Punkt ${p.id} hängt an etwas, das es nicht mehr gibt.`});
    if(p.kind==='dreh'&&(!p.to||dist(p.at,p.to)<2))out.push({links:[l.id],message:`${l.label}: die Drehachse bei ${p.id} braucht zwei Punkte mindestens 2 mm auseinander.`});}
   if((l.kind==='stab'||l.kind==='feder')&&l.points.length!==2)out.push({links:[l.id],message:`${l.label}: braucht genau zwei Enden.`});
-  if(l.kind==='feder'&&l.points.length===2){const d=damperOf(l.part),len=dist(l.points[0].at,l.points[1].at);if(len>d.length+1e-6||len<d.length-d.stroke-1e-6)out.push({links:[l.id],message:`${l.label}: Abstand der Augen ${len.toFixed(1).replace('.',',')} mm, der Dämpfer kann ${d.length-d.stroke}–${d.length} mm.`});}
+  if(l.kind==='feder'&&l.strut&&l.points.length===2){const st=strutOfLink(l);if(!st)out.push({links:[l.id],message:`${l.label}: die Feder ${l.strut.spring} steht nicht im Sortiment.`});else for(const m of st.issues)out.push({links:[l.id],message:m});}
+  else if(l.kind==='feder'&&l.points.length===2){const d=damperOf(l.part),len=dist(l.points[0].at,l.points[1].at);if(len>d.length+1e-6||len<d.length-d.stroke-1e-6)out.push({links:[l.id],message:`${l.label}: Abstand der Augen ${len.toFixed(1).replace('.',',')} mm, der Dämpfer kann ${d.length-d.stroke}–${d.length} mm.`});}
   if(l.kind==='lenker'&&l.points.length+pointsOn(g,l.id).length<2)out.push({links:[l.id],message:`${l.label}: hängt an weniger als zwei Punkten.`});}
  const f=freedomOf(g),stabs=g.links.filter(isDistance).length;
  if(g.links.some(isBody)&&f>0)out.push({links:[],message:`Das Gestänge hat noch ${f} freie Bewegung${f===1?'':'en'}: ein Gelenk, ein Stab oder ein Eingang fehlt${stabs?'':''}.`});
@@ -192,7 +199,8 @@ const screws=[8,10,12,16,20,25,30,35,40,45,50,60];
 /** What to buy: ball joints, turnbuckles by length, dampers, wheels, screws through the axes. */
 export function linkageShopping(g:Linkage){const lines=new Map<string,number>(),add1=(k:string,n=1)=>lines.set(k,(lines.get(k)??0)+n);
  for(const l of g.links){
-  if(l.kind==='feder')add1(damperOf(l.part).label);
+  if(l.kind==='feder'&&l.strut){const st=strutOfLink(l);if(st){add1(st.spring.label);add1(`Federbein gedruckt (Rohr ${String(+st.tubeLen.toFixed(1)).replace('.',',')} mm, Stange Ø ${String(st.rod).replace('.',',')} mm)`);}for(const p of l.points){const b=ballOf(p.part);add1(`Kugelpfanne ${b.ball.toString().replace('.',',')} mm mit Gewindestift M3`);}}
+  else if(l.kind==='feder')add1(damperOf(l.part).label);
   if(l.kind==='stab'&&l.points.length===2)add1(`Spannschloss M3 mit 2 Kugelpfannen, Kugelmitte zu Kugelmitte ${dist(l.points[0].at,l.points[1].at).toFixed(1).replace('.',',')} mm`);
   if(l.wheel)add1(wheelOf(l.wheel.part).label);
   for(const p of l.points){if(p.kind==='kugel'){const b=ballOf(p.part);add1(`Kugelbolzen ${b.ball.toString().replace('.',',')} mm M3`);if(l.kind==='lenker')add1(`Kugelpfanne ${b.ball.toString().replace('.',',')} mm mit Gewindestift M3`);}
@@ -209,6 +217,7 @@ export function parseLinkage(value:unknown):Linkage{const g=value as Linkage;if(
   const out:Link={id:name(l.id,'Lenker'),label:l.label,kind:l.kind,points};
   if(l.d!==undefined){if(typeof l.d!=='number'||!(l.d>=2&&l.d<=30))throw Error('Gestänge: Rohr-Ø ungültig');out.d=l.d;}
   if(typeof l.part==='string')out.part=l.part;
+  if(l.strut){const st=l.strut;if(typeof st.spring!=='string'||st.spring.length>40||typeof st.preload!=='number'||!(st.preload>=0&&st.preload<100))throw Error('Gestänge: Federbein ungültig');out.strut={spring:st.spring,preload:st.preload};}
   if(l.wheel)out.wheel={at:vec(l.wheel.at,'Radnabe'),to:vec(l.wheel.to,'Radmitte'),part:typeof l.wheel.part==='string'?l.wheel.part:wheelParts[0].id};
   if(l.input){const i=l.input;if(typeof i.point!=='string'||!Number.isFinite(i.min)||!Number.isFinite(i.max)||i.min>i.max)throw Error('Gestänge: Eingang ungültig');out.input={point:i.point,min:i.min,max:i.max};}
   return out;});

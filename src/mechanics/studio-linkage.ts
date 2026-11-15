@@ -9,6 +9,10 @@ import type {Prim} from '../structure/sdf';
 import type {Frame,V} from './kinematics/math';
 import {newLinkage,pushrodCorner,linkBody,linkOfBody,isBody,isDistance,LinkageSolver,read,sweep,motionRatio,linkageIssues,linkSolids,mountSolids,linkageShopping,dampers,ballJoints,wheelParts,damperOf,wheelOf,ballOf,pointsOn} from './parts/linkage';
 import type {Linkage,Link,Point,Around,LinkPose,LinkKind} from './parts/linkage';
+import {strutOfLink} from './parts/linkage';
+import {strutOf,strutSolids,strutSprings,setStrutSprings,strutShortest,STRUT} from './parts/strut';
+import {springCatalog,parseMeasures} from '../shaft/springs';
+import {ProjectStore} from './project-store';
 
 export type LinkageHost={build:()=>Build|undefined;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;leave:()=>void;
  /** Clears the other selections. */pick:()=>void;ray:(e:{clientX:number;clientY:number})=>THREE.Raycaster;canvas:()=>HTMLCanvasElement;/** The group the build is drawn in: points are in its coordinates. */root:()=>THREE.Object3D;orbit:(on:boolean)=>void;
@@ -44,10 +48,10 @@ export class LinkageEditor{
  private solver=new LinkageSolver();private pose?:LinkPose;
  /** The linkage as a running drag shows it (the design pose). */private preview?:Linkage;private drag?:Drag;
  /** What moves with each frame: bodies of printed links, the stabs and dampers between their ends, the handles. */
- private bodies=new Map<string,THREE.Object3D>();private spans:{link:Link;parts:{object:THREE.Object3D;from:number;to:number;at?:number}[]}[]=[];private handles:{object:THREE.Object3D;point:Point;which:'at'|'to'}[]=[];
+ private bodies=new Map<string,THREE.Object3D>();private spans:{link:Link;parts:{object:THREE.Object3D;from:number;to:number;at?:number;/** mm along the strut: from the first end (a), from the second (b), or from the first end to mm before the second (ab) */mm?:{a0:number;a1:number;of:'a'|'b'|'ab'}}[]}[]=[];private handles:{object:THREE.Object3D;point:Point;which:'at'|'to'}[]=[];
  private readout?:HTMLElement;private range?:{key:string;text:string};
  /** ③: the brackets on the chassis show in the view. */private showMounts=false;
- constructor(private host:LinkageHost){}
+ constructor(private host:LinkageHost){void ProjectStore.open('federn','spring-1').then(st=>st.read('messungen')).then(f=>{setStrutSprings(springCatalog(parseMeasures(f.doc)));this.range=undefined;this.host.leave();},()=>{/* nothing measured */});}
  get selectedId(){return this.sel;}
  /** The pointer's ray in the coordinates of the build (the room, z up). */
  private local(e:{clientX:number;clientY:number}){const root=this.host.root();root.updateWorldMatrix(true,false);return this.host.ray(e).ray.clone().applyMatrix4(root.matrixWorld.clone().invert());}
@@ -74,8 +78,12 @@ export class LinkageEditor{
      tire.position.set(...l.wheel.to);tire.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),u);tire.userData.linkage=l.id;body.add(tire);}
     root.add(body);this.bodies.set(linkBody(l.id),body);continue;}
    // Bought: drawn between their two ends as they stand now.
-   if(l.points.length!==2)continue;const parts:{object:THREE.Object3D;from:number;to:number;at?:number}[]=[];
+   if(l.points.length!==2)continue;const parts:{object:THREE.Object3D;from:number;to:number;at?:number;mm?:{a0:number;a1:number;of:'a'|'b'|'ab'}}[]=[];
    if(l.kind==='stab'){const m=unitCylinder(1.5,new THREE.MeshStandardMaterial({color:lit(l)??0xb8c2cc,metalness:.6,roughness:.35}));m.userData.linkage=l.id;parts.push({object:m,from:0,to:1});
+    for(const k of [0,1]){const c=new THREE.Mesh(new THREE.SphereGeometry(ballOf(l.points[k].part).ball/2+1.2,14,10),new THREE.MeshStandardMaterial({color:0x2d3640}));c.userData.linkage=l.id;parts.push({object:c,from:k,to:k,at:0});}}
+   else if(l.strut&&strutOfLink(l)){const st=strutOfLink(l)!,printed=(c:number)=>new THREE.MeshStandardMaterial({color:lit(l)??c,roughness:.6}),tube=unitCylinder(st.tube/2,printed(0xc58a4a)),rod=unitCylinder(st.rod/2,printed(0xd9a06a)),head=unitCylinder(st.spring.D/2,printed(0xc58a4a)),spring=unitCylinder(st.spring.D/2,new THREE.MeshStandardMaterial({color:0xc9d1d8,wireframe:true}));
+    for(const o of [tube,rod,head,spring])o.userData.linkage=l.id;const r=st.reach;
+    parts.push({object:tube,from:0,to:1,mm:{a0:r,a1:r+st.tubeLen,of:'a'}},{object:head,from:0,to:1,mm:{a0:r,a1:r+STRUT.head,of:'b'}},{object:rod,from:0,to:1,mm:{a0:r+STRUT.head,a1:r+STRUT.head+st.rodLen,of:'b'}},{object:spring,from:0,to:1,mm:{a0:r+st.tubeLen,a1:r+STRUT.head,of:'ab'}});
     for(const k of [0,1]){const c=new THREE.Mesh(new THREE.SphereGeometry(ballOf(l.points[k].part).ball/2+1.2,14,10),new THREE.MeshStandardMaterial({color:0x2d3640}));c.userData.linkage=l.id;parts.push({object:c,from:k,to:k,at:0});}}
    else{const d=damperOf(l.part),body=unitCylinder(d.body/2,new THREE.MeshStandardMaterial({color:lit(l)??0x6f7d8a,metalness:.5,roughness:.4})),rod=unitCylinder(1.5,new THREE.MeshStandardMaterial({color:0xd8dde2,metalness:.8,roughness:.2})),spring=unitCylinder(d.spring/2,new THREE.MeshStandardMaterial({color:0xe2b93b,wireframe:true}));
     for(const o of [body,rod,spring])o.userData.linkage=l.id;
@@ -95,13 +103,14 @@ export class LinkageEditor{
    // A part spans from share `from` to share `to` of the way between the ends; with `at` it is a cup on one end (0) or a
    // piece `at` mm long from the first end (a damper's body).
    for(const p of s.parts){if(p.at===0){p.object.position.set(...(p.from===0?pa:pb));continue;}
+    if(p.mm){const L=Math.max(length,1e-6),m=p.mm,t=(x:number)=>Math.min(1,Math.max(0,x/L));if(m.of==='a')between(p.object,lerp(pa,pb,t(m.a0)),lerp(pa,pb,t(m.a1)));else if(m.of==='b')between(p.object,lerp(pa,pb,1-t(m.a1)),lerp(pa,pb,1-t(m.a0)));else between(p.object,lerp(pa,pb,t(m.a0)),lerp(pa,pb,1-t(m.a1)));continue;}
     if(p.at!==undefined){between(p.object,pa,lerp(pa,pb,Math.min(1,p.at/Math.max(length,1e-6))));continue;}
     between(p.object,lerp(pa,pb,p.from),lerp(pa,pb,p.to));}}
   for(const h of this.handles){const p=h.which==='to'?h.point.to!:h.point.at;h.object.position.set(...pose.at(h.point.body,p));}
   if(this.readout){const g=this.shown();if(g)this.readout.textContent=this.readingText(g,pose);}}
  private readingText(g:Linkage,pose:LinkPose){const r=read(g,pose),parts:string[]=[];
   if(r.lift!==undefined)parts.push(`Radhub ${signed(r.lift)} mm`,`Sturz ${signed(r.camber!,2)}°`,`Spur ${signed(r.toe!,2)}°`);
-  for(const d of r.dampers)parts.push(`${d.label} ${de(d.length)} mm (${d.travel>=0?'eingefedert':'ausgefedert'} ${de(Math.abs(d.travel))} mm)${d.fits?'':' ⚠ außerhalb des Hubs'}`);
+  for(const d of r.dampers)parts.push(`${d.label} ${de(d.length)} mm (${d.travel>=0?'eingefedert':'ausgefedert'} ${de(Math.abs(d.travel))} mm)${d.spring!==undefined?`, Feder ${de(d.spring)} mm, ${de(d.force??0,1)} N`:''}${d.fits?'':d.spring!==undefined?' ⚠ auf Block oder auseinander':' ⚠ außerhalb des Hubs'}`);
   // Below the play of a ball joint (some hundredths of a mm) the loop closes for every purpose: a balanced swing arm that
   // only nearly mirrors the other one leaves such a rest.
   if(pose.error>.05)parts.push(`⚠ schließt nicht (${de(pose.error,3)} mm)`);
@@ -157,6 +166,8 @@ export class LinkageEditor{
   card('Umlenkhebel','Gedruckt · dreht an einer Achse','hebel',at=>[{id:this.fresh('hebel'),label:'Umlenkhebel',kind:'lenker',d:5,points:[{id:'achse',kind:'dreh',at:add(at,[-6,0,0]),to:add(at,[6,0,0]),body:''}]}],'Pushrod und Dämpfer mit einem Ende auf den Hebel ziehen.');
   card('Radträger mit Rad','Gedruckt · Rad 1:10 Ø 56','traeger',at=>[{id:this.fresh('traeger'),label:'Radträger',kind:'lenker',d:7,points:[],wheel:{at:add(at,[0,6,0]),to:add(at,[0,19,0]),part:'rad-56'}}],'Querlenker und Spurstange mit dem äußeren Ende auf den Träger ziehen.');
   card('Stab mit Kugelpfannen','Spannschloss M3 · Pushrod, Spurstange','stab',at=>[{id:this.fresh('stab'),label:'Stab',kind:'stab',points:[{id:'a',kind:'kugel',at,body:''},{id:'b',kind:'kugel',at:add(at,[0,40,0]),body:''}]}],'Beide Enden auf Lenker ziehen. Die Länge stellt man am Spannschloss ein.');
+  card('Federbein gedruckt','Druckfeder aus dem Sortiment · Rohr und Stange gedruckt, Kugelpfannen M3','federbein',at=>{const spec={spring:'druck-9x35',preload:2},need=strutShortest(spec,ballOf().reach)+4;
+   return [{id:this.fresh('federbein'),label:'Federbein',kind:'feder',part:dampers[0].id,strut:spec,points:[{id:'a',kind:'kugel',at,body:''},{id:'b',kind:'kugel',at:add(at,[0,Math.ceil(need),0]),body:''}]}];},'Wie ein Dämpfer zwischen zwei Punkte setzen. Die Feder wählst du auf seiner Seite; Rohr und Stange entstehen aus Feder und Abstand der Punkte. Gedämpft wird nur durch Reibung.');
   for(const d of dampers)card(d.label,`${d.length-d.stroke}–${d.length} mm Auge zu Auge · ${d.stroke} mm Hub`,d.id,at=>[{id:this.fresh('daempfer'),label:'Federbein',kind:'feder',part:d.id,points:[{id:'a',kind:'kugel',at,body:''},{id:'b',kind:'kugel',at:add(at,[0,d.length-d.stroke/2,0]),body:''}]}],d.note);
   root.append(list);
   // Ball joints and wheels are chosen at the joint or the carrier; listed here with their measures.
@@ -187,7 +198,7 @@ export class LinkageEditor{
  private rangeText(g:Linkage){const l=g.links.find(x=>x.input);if(!l||linkageIssues(g).length)return '';const key=JSON.stringify(g.links);if(this.range?.key===key)return this.range.text;
   let text='';try{const rows=sweep(g,{now:{},rest:{}},21),bad=rows.filter(r=>r.error>1e-3).length,lift=rows.map(r=>r.reading.lift??0),camber=rows.map(r=>r.reading.camber??0),toe=rows.map(r=>r.reading.toe??0),mr=motionRatio(rows),span=(xs:number[],d=1)=>`${signed(Math.min(...xs),d)} … ${signed(Math.max(...xs),d)}`;
    const parts=[`Über ${de(l.input!.min,0)}° … ${de(l.input!.max,0)}°: Radhub ${span(lift)} mm`];if(rows[0].reading.camber!==undefined)parts.push(`Sturz ${span(camber,2)}°`,`Spur ${span(toe,2)}°`);
-   for(let k=0;k<rows[0].reading.dampers.length;k++){const d=rows.map(r=>r.reading.dampers[k]);parts.push(`${d[0].label} ${de(Math.min(...d.map(x=>x.length)))}–${de(Math.max(...d.map(x=>x.length)))} mm${d.every(x=>x.fits)?'':' ⚠ verlässt den Hub'}`);}
+   for(let k=0;k<rows[0].reading.dampers.length;k++){const d=rows.map(r=>r.reading.dampers[k]);parts.push(`${d[0].label} ${de(Math.min(...d.map(x=>x.length)))}–${de(Math.max(...d.map(x=>x.length)))} mm${d[0].force!==undefined?`, Feder ${de(Math.min(...d.map(x=>x.force??0)))}–${de(Math.max(...d.map(x=>x.force??0)))} N`:''}${d.every(x=>x.fits)?'':' ⚠ verlässt den Hub'}`);}
    if(mr!==undefined)parts.push(`Motion Ratio ${de(Math.abs(mr),2)}`);if(bad)parts.push(`⚠ ${bad} Stellungen schließen nicht`);text=parts.join(' · ');}catch(e){text=String(e);}
   this.range={key,text};return text;}
 
@@ -200,9 +211,17 @@ export class LinkageEditor{
   const select=(text:string,value:string,options:[string,string][],write:(v:string)=>void)=>{const s=el('select');s.dataset.field=text;for(const [v,t] of options)s.add(new Option(t,v));s.value=value;s.onchange=()=>write(s.value);return el('label',{},text,s);};
   const xyz=(text:string,p:V,write:(k:number,v:number)=>void)=>{const row=el('div',{className:'xyz'});row.dataset.xyz=text;['X','Y','Z'].forEach((a,k)=>row.append(number(`${text} ${a}`,p[k],v=>write(k,v))));return el('div',{},el('small',{className:'muted',textContent:text}),row);};
   const name=el('input',{type:'text',value:l.label});name.dataset.field='Name';name.onchange=()=>{const v=name.value.trim();if(v)edit('Umbenannt',x=>{x.label=v.slice(0,60);});};
-  root.append(el('h3',{textContent:`${icon[l.kind]} ${l.label}`}),el('label',{},'Name',name),el('p',{className:'muted',textContent:kindText[l.kind]}));
+  root.append(el('h3',{textContent:`${icon[l.kind]} ${l.label}`}),el('label',{},'Name',name),el('p',{className:'muted',textContent:l.strut?'Gedruckt: Rohr und Stange, eine Druckfeder aus dem Sortiment sitzt außen um die Stange. Es hält nichts fest; seine Länge, die der Feder und ihre Kraft liest man ab.':kindText[l.kind]}));
   if(l.kind==='lenker')root.append(number('Rohr-Ø [mm]',l.d??6,v=>edit('Rohr-Ø geändert',x=>{x.d=Math.min(30,Math.max(2,v));})));
-  if(l.kind==='feder'){const d=damperOf(l.part),len=l.points.length===2?Math.hypot(...sub(l.points[1].at,l.points[0].at)):0;root.append(select('Dämpfer',d.id,dampers.map(x=>[x.id,x.label]),v=>edit('Dämpfer gewählt',x=>{x.part=v;})),el('p',{className:'muted',textContent:`In der Konstruktionslage ${de(len)} mm Auge zu Auge; der Dämpfer kann ${d.length-d.stroke}–${d.length} mm.`}));}
+  if(l.kind==='feder')root.append(select('Ausführung',l.strut?'gedruckt':'gekauft',[['gekauft','Öldämpfer, gekauft'],['gedruckt','gedruckt, mit Druckfeder aus dem Sortiment']],v=>edit(v==='gedruckt'?'Federbein gedruckt: Rohr und Stange mit Druckfeder.':'Gekaufter Öldämpfer.',x=>{if(v==='gedruckt')x.strut=x.strut??{spring:'druck-9x35',preload:2};else delete x.strut;})));
+  if(l.kind==='feder'&&l.strut){const len=l.points.length===2?Math.hypot(...sub(l.points[1].at,l.points[0].at)):0,reach=ballOf(l.points[0]?.part).reach,cat=strutSprings();
+   const opts=Object.values(cat).filter(c=>c.kind==='druck').map(c=>{const t=strutOf({...l.strut!,spring:c.id},len,reach);return [c.id,`${t&&!t.issues.length?'✓':'✗'} ${c.label} · ${de(c.R,3)} N/mm${c.estimated.R?' (geschätzt)':''}`] as [string,string];});
+   root.append(select('Druckfeder',l.strut.spring,opts,v=>edit('Feder gewählt',x=>{x.strut!.spring=v;})),number('Vorspannung [mm]',l.strut.preload,v=>edit('Vorspannung geändert',x=>{x.strut!.preload=Math.max(0,v);})));
+   const st=strutOfLink(l);if(st){const F0=st.spring.R*(st.spring.L0-st.Ls);
+    root.append(el('p',{className:'muted',id:'strut-info',textContent:`Kugelmitte zu Kugelmitte ${de(len)} mm; Rohr Ø ${de(st.tube)} × ${de(st.tubeLen)} mm, Stange Ø ${de(st.rod)} mm (${de(st.rodLen)} mm unter dem Kopf, ${de(st.guide)} mm Führung). Die Feder ist in der Konstruktionslage ${de(st.Ls)} mm lang und drückt ${de(F0,2)} N; das Federbein kann ${de(st.Emin)}–${de(st.Emax)} mm (auf Block bzw. Feder frei).`}));
+    for(const m of st.issues)root.append(el('p',{className:'state-fail',textContent:m}));
+    root.append(el('p',{className:'muted',textContent:'Federn messen: im Getriebe-Generator unter „Federn“. Gedämpft wird nur durch die Reibung der Stange im Rohr.'}));}}
+  else if(l.kind==='feder'){const d=damperOf(l.part),len=l.points.length===2?Math.hypot(...sub(l.points[1].at,l.points[0].at)):0;root.append(select('Dämpfer',d.id,dampers.map(x=>[x.id,x.label]),v=>edit('Dämpfer gewählt',x=>{x.part=v;})),el('p',{className:'muted',textContent:`In der Konstruktionslage ${de(len)} mm Auge zu Auge; der Dämpfer kann ${d.length-d.stroke}–${d.length} mm.`}));}
   if(l.kind==='stab'&&l.points.length===2)root.append(el('p',{className:'muted',textContent:`Kugelmitte zu Kugelmitte ${de(Math.hypot(...sub(l.points[1].at,l.points[0].at)))} mm: so lang das Spannschloss einstellen.`}));
   if(l.wheel){const w=l.wheel;root.append(heading('Rad'),select('Rad',w.part,wheelParts.map(x=>[x.id,x.label]),v=>edit('Rad gewählt',x=>{x.wheel!.part=v;})),xyz('Nabe (Anlage am Träger)',w.at,(k,v)=>edit('Nabe verschoben',x=>{x.wheel!.at[k]=v;})),xyz('Radmitte',w.to,(k,v)=>edit('Radmitte verschoben',x=>{x.wheel!.to[k]=v;})));}
   else if(l.kind==='lenker'){const add=el('button',{textContent:'＋ Rad an diesen Lenker'});add.dataset.linkageWheel='true';add.onclick=()=>{const ps=[...l.points.map(p=>p.at),...pointsOn(g,l.id).map(x=>x.point.at)],c=ps.length?ps.reduce((s,p)=>[s[0]+p[0]/ps.length,s[1]+p[1]/ps.length,s[2]+p[2]/ps.length] as V,[0,0,0] as V):[0,0,30] as V;edit('Rad angesetzt',x=>{x.wheel={at:add3(c,[0,8,0]),to:add3(c,[0,21,0]),part:wheelParts[0].id};});};root.append(add);}
@@ -233,6 +252,7 @@ export class LinkageEditor{
   root.append(heading('Stückliste'),...linkageShopping(g).map(x=>el('p',{className:'muted',textContent:`${x.count} × ${x.label}`})));}
  /** ③: every printed link as STL, the brackets on the chassis, and where they stand. */
  private makingPage(root:HTMLElement,g:Linkage){root.append(heading('Druckteile'));
+  for(const l of g.links.filter(x=>x.kind==='feder'&&x.strut)){const st=strutOfLink(l);if(!st)continue;for(const [part,text] of [['rohr','Rohr'],['stange','Stange']] as const){const b=el('button',{textContent:`⬇ ${l.label}: ${text} als STL`});b.dataset.strutStl=`${l.id}/${part}`;b.onclick=()=>this.host.exportSolid(strutSolids(st,part),`${l.label}-${part}`);root.append(b);}}
   for(const l of g.links.filter(x=>x.kind==='lenker')){const b=el('button',{textContent:`⬇ ${l.label} als STL`});b.dataset.linkageStl=l.id;b.onclick=()=>{try{this.host.exportSolid(linkSolids(g,l.id),l.label);}catch(e){this.host.status(String(e));}};root.append(b);}
   const m=mountSolids(g);if(m.solids.length){const show=el('input',{type:'checkbox',checked:this.showMounts});show.dataset.linkageMountsShow='true';show.onchange=()=>{this.showMounts=show.checked;this.host.leave();};
    const b=el('button',{textContent:'⬇ Halter am Chassis als STL',className:'primary'});b.dataset.linkageMounts='true';b.onclick=()=>this.host.exportSolid(m,'gestaenge-halter');
