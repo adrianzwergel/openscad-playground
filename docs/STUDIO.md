@@ -167,7 +167,7 @@ Logik: `parts/linkage.ts`, Editor: `studio-linkage.ts`; geprüft von `scripts/pa
   nicht ans untere Gewinde stößt; „Vorspannung“ drückt die Feder in der Konstruktionslage zusammen. Abgelesen werden
   Länge, Federlänge und Kraft, über den Bereich als Spanne; gemeldet: zu kurz für die Feder (mit nötiger Länge), auf
   Block, auseinander. Gedämpft wird nur durch Reibung. ③ gibt Rohr und Stange als STL, die Stückliste nennt Feder,
-  Federbein und zwei Kugelpfannen. Prüfung: `scripts/parts/check-strut.mjs`, `scripts/check-studio-strut-browser.mjs`.
+  Federbein und zwei Kugelpfannen. Prüfung: `scripts/parts/check-strut.mjs`, `scripts/check-studio-strut-browser.mjs`. Beispiel „Schwinge mit gedrucktem Federbein“ (`federbein`): Längsschwinge mit Rad Ø 56, Federbein mit Druckfeder 9,5 × 19 und 5 mm Vorspannung 30 mm hinter der Achse, über ±9° Radhub ±14 mm, Feder 0,8 bis 23,8 N.
 - **③:** „Gestänge · Druckteile & Halter“ gibt jeden gedruckten Lenker als STL aus (Rohre zwischen den Punkten, Hülse an
   Drehachsen mit Bohrung Ø 3,2 für M3, Kernloch Ø 2,5 für Kugelbolzen bzw. den Gewindestift der Pfanne) und die
   **Halter am Chassis** (Säule mit Fuß und Schraubloch bis zum einstellbaren Boden, Laschen an Drehachsen). Die Stückliste

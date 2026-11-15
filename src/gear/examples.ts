@@ -85,3 +85,9 @@ export const gearExamples:Example[]=[
      {id:'j2',shaft:ids.j,at:pol(B,32,180+drop),z:0},{id:'w2',shaft:ids.w,at:pol(B,64,180+drop),z:0},{id:'j3',shaft:ids.j,at:pol(B,32,-drop),z:0},{id:'w3',shaft:ids.w,at:pol(B,64,-drop),z:0}],
     groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['h','w1','v','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['j2','w2','j3','w3'],from:-10,to:20}]};}};})(),
 ];
+/** The LEGO rocker with a tension spring from the frame onto the rocker: it pulls the rocker back towards where it is
+ * drawn. The bolts of frame and rocker are set (where the plan put them), so the spring keeps its two bolts. */
+{const lego=gearExamples.find(e=>e.key==='rocker-lego')!;
+ gearExamples.push({...lego,key:'rocker-feder',title:'LEGO-Rocker mit Rückholfeder',text:'Der LEGO-Rocker, dazu eine Zugfeder 5 × 20,5 aus dem Sortiment vom Gestell an den Rocker: über ±15° 2,7 bis 6,9 N, die Säulen an ihren Bolzen für den Haken geteilt. Federn messen: Knopf „Federn“.',
+  make:(ids:Record<string,string>):GearDoc=>{const d=lego.make(ids);return {...d,bolts:[[0,54.42],[-26.34,8.79],[59.5,34.49]],groups:d.groups?.map(g=>g.id==='g1'?{...g,bolts:[[-80.39,-70.32],[100.69,-3.79],[-16.25,28.15],[-7.22,-45.96]] as [number,number][]}:g),
+   springs:[{id:'f1',part:'zug-5x20,5',a:{body:'',bolt:0},b:{body:'g1',bolt:2}}]};}});}

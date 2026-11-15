@@ -6,6 +6,7 @@ import {newItem,newPlateNode} from './build.ts';
 import {partById} from './catalog.ts';
 import {legoGears,newTrain,setEnds} from './train.ts';
 import {pushrodCorner} from './linkage.ts';
+import {strutShortest} from './strut.ts';
 import type {Train,Wheel} from './train.ts';
 import {compose,inverse,axisAngle} from '../kinematics/math.ts';
 import type {Frame,V} from '../kinematics/math.ts';
@@ -39,6 +40,10 @@ export const buildExamples:Example[]=[
   b.items.push({...newItem('pico',partById('rpi-pico')!,[50,0]),plate:'arm'},item('motor','nema17-40',at([-10,0,0])));}},
  {key:'aufhaengung',title:'Pushrod-Aufhängung 1:10',text:'Doppelquerlenker, Pushrod auf Umlenkhebel und Öldämpfer, Spurstange: Gelenkpunkte setzen, Lenker und Halter entstehen daraus.',make:b=>{b.linkage={links:pushrodCorner()};}},
  {key:'hoehe',title:'Höhenverstellung über Spindel',text:'Eine Spindel in Fahrtrichtung schiebt einen Schlitten; eine Stellstange dreht den Umlenkhebel um 90° auf den Pushrod: Der Motor stellt die Höhe statt einer Feder.',make:rideHeight},
+ {key:'federbein',title:'Schwinge mit gedrucktem Federbein',text:'Eine gedruckte Schwinge mit Rad dreht um eine Achse; ein Federbein aus Rohr, Stange und der Druckfeder 9,5 × 19 aus dem Sortiment drückt sie nach unten. Der Regler schwenkt sie, abgelesen werden Federlänge und Kraft; in ③ Rohr und Stange als STL.',make:b=>{
+  const spec={spring:'druck-9,5x19',preload:5},E=Math.ceil(strutShortest(spec,10)+5);
+  b.linkage={links:[{id:'schwinge',label:'Schwinge',kind:'lenker',d:7,points:[{id:'achse',kind:'dreh',at:[-8,0,0],to:[8,0,0],body:''}],wheel:{at:[8,90,0],to:[21,90,0],part:'rad-56'},input:{point:'achse',min:-9,max:9}},
+   {id:'federbein',label:'Federbein',kind:'feder',part:'daempfer-65',strut:spec,points:[{id:'oben',kind:'kugel',at:[0,30,E],body:'',part:'kugel-5.8'},{id:'unten',kind:'kugel',at:[0,30,0],body:'lenker:schwinge',part:'kugel-5.8'}]}],forward:[0,1,0]};}},
 ];
 /** The pushrod corner turned to drive along y (the Studio's shafts run along y), its damper replaced by a stab to the nut
  * of a lead screw. The rocker is a bell crank: it turns about the normal of the plane of driving direction and pushrod,

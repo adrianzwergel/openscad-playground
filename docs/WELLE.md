@@ -179,4 +179,4 @@ rutschen), Feder zu eng, Vorspannung auf Block, ohne Vorspannung. Für das Getri
 (`Placed.inside`, kein Losrad); die Prüfungen fürs Aufschieben und Anschläge gelten der ganzen Kupplung. Neu dafür:
 Ein Teil mit runder Bohrung sitzt auf einem gleich großen D (Hinweis „sitzt auf dem D5“), etwa ein Lager 685 neben
 der Kupplung. Stückliste: zwei Reibscheiben, Federteller, Feder, Rad. 3D: Scheiben und Teller als Druckteile, Feder als
-Rohr. Prüfung: `scripts/shaft/check-clutch.mjs`, `scripts/shaft/check-clutch-browser.mjs`.
+Rohr. Prüfung: `scripts/shaft/check-clutch.mjs`, `scripts/shaft/check-clutch-browser.mjs`. Beispiel „Rutschkupplung zwischen zwei 685“ (`kupplung`): z40 m1 lose, Feder 9,5 × 16 mit 3 mm Vorspannung, etwa 3,2 N·cm.

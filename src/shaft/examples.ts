@@ -2,6 +2,7 @@
 import {newShaft} from './model.ts';
 import type {ShaftDoc} from './model.ts';
 import {rund} from './profile.ts';
+import {defaultClutch} from './clutch.ts';
 
 export const shaftExamples:{key:string;title:string;text:string;make:()=>ShaftDoc}[]=[
  {key:'lego-mitte',title:'626 · LEGO z24 · 626',text:'Außen zwei Lager Ø6, in der Mitte ein LEGO-Rad: eine Seite rund, die andere Kreuz mit Adapter.',
@@ -12,4 +13,6 @@ export const shaftExamples:{key:string;title:string;text:string;make:()=>ShaftDo
   make:()=>({...newShaft(),length:60,items:[{id:'a',part:'lager-608',x:2},{id:'g',part:'stirnrad-m1-z40',x:25,bore:rund(8)},{id:'b',part:'lager-608',x:50}]})},
  {key:'hebel',title:'Welle mit Hebel',text:'Ein gedruckter Hebel zwischen Rad und Lager: seine Bohrung nimmt das Profil des Abschnitts, auf dem er sitzt.',
   make:()=>({...newShaft(),length:60,items:[{id:'a',part:'lager-608',x:2},{id:'g',part:'stirnrad-m1-z40',x:20,bore:rund(8)},{id:'h',part:'hebel',x:34,width:6,arm:{length:35,width:10,angle:0,hole:4}},{id:'b',part:'lager-608',x:50}]})},
+ {key:'kupplung',title:'Rutschkupplung zwischen zwei 685',text:'Ein gedrucktes z40 läuft lose zwischen zwei Reibscheiben, eine Druckfeder 9,5 × 16 presst sie zusammen: über etwa 3 N·cm rutscht das Rad durch. Distanzhülsen halten die Kupplung zwischen den Lagern.',
+  make:()=>({...newShaft(),length:70,items:[{id:'l1',part:'lager-685',x:0},{id:'k',part:'rutschkupplung',x:8,clutch:{...defaultClutch}},{id:'l2',part:'lager-685',x:65}]})},
 ];
