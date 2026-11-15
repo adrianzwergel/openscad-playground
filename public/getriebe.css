@@ -31,3 +31,6 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 #top g.web .joint{pointer-events:auto}
 .topview .bolt{fill:#10161c;stroke:#c58a4a;stroke-width:1.5}
 .topview .motor .slot{stroke:#10161c;stroke-linecap:round}.topview .motor .hole{fill:#10161c;stroke:#56656f}#top .motor{pointer-events:none}
+#shaft-dialog{position:fixed;inset:24px;z-index:40;display:flex;flex-direction:column;background:var(--panel);border:1px solid #52626e;border-radius:10px;box-shadow:0 12px 48px #000a;overflow:hidden}
+#shaft-dialog[hidden]{display:none}#shaft-dialog .dialog-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);background:#202a34}
+#shaft-frame{flex:1;border:0;width:100%;background:#151b22}

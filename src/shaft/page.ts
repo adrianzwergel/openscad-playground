@@ -55,7 +55,10 @@ async function openShaft(id:string){
  $('save-state').textContent=free?'Gespeichert':'Nur Ansicht';status(free?`${f.name} geöffnet.`:`${f.name} ist in einem anderen Tab offen: Änderungen hier werden nicht gespeichert.`);draw();void list();
 }
 function save(){if(!open||open.readOnly)return;clearTimeout(saveTimer);$('save-state').textContent='Speichert …';saveTimer=setTimeout(()=>void flush(),300);}
-async function flush(){if(saveTimer===undefined||!open)return;clearTimeout(saveTimer);saveTimer=undefined;const o=open;try{await store.write(o.id,{format:FORMAT,name:o.name,updated:new Date().toISOString(),doc:o.doc});$('save-state').textContent='Gespeichert';}catch(e){$('save-state').textContent=`Nicht gespeichert: ${e}`;}}
+/** Embedded in another page (the gearbox generator): it hears of every save. */
+const hash=new URLSearchParams(location.hash.slice(1)),embedded=hash.has('embed')&&window.parent!==window;
+const tell=(type:string,id:string,name:string)=>{if(embedded)window.parent.postMessage({source:'welle',type,id,name},location.origin);};
+async function flush(){if(saveTimer===undefined||!open)return;clearTimeout(saveTimer);saveTimer=undefined;const o=open;try{await store.write(o.id,{format:FORMAT,name:o.name,updated:new Date().toISOString(),doc:o.doc});$('save-state').textContent='Gespeichert';tell('saved',o.id,o.name);}catch(e){$('save-state').textContent=`Nicht gespeichert: ${e}`;}}
 function undo(back:boolean){if(!open||open.readOnly)return;const from=back?past:future,to=back?future:past,state=from.pop();if(state===undefined)return;to.push(JSON.stringify(open.doc));open.doc=parseShaft(JSON.parse(state));editor.sel=undefined;save();draw();status(back?'Rückgängig':'Wiederholt');}
 
 function draw(){
@@ -92,5 +95,8 @@ addEventListener('pagehide',()=>{void flush();});
 
 // #open=<id> (or ?open=): from the gearbox generator, straight to that shaft. The anchor survives servers that drop the
 // query when they redirect to clean URLs.
-const wanted=new URLSearchParams(location.hash.slice(1)).get('open')??new URLSearchParams(location.search).get('open'),last=wanted??await store.active();if(last&&(await store.list()).some(f=>f.id===last))await openShaft(last);else{draw();await list();}
+if(embedded)document.body.classList.add('embedded');
+// #new: a new shaft right away (from the gearbox generator), which then hears its id.
+if(hash.has('new')){await create(hash.get('name')||'Neue Welle',newShaft());if(open)tell('created',open.id,open.name);}
+const wanted=hash.has('new')?open?.id:hash.get('open')??new URLSearchParams(location.search).get('open'),last=wanted??await store.active();if(last&&(await store.list()).some(f=>f.id===last))await openShaft(last);else{draw();await list();}
 document.body.dataset.ready="true";

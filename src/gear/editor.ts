@@ -10,7 +10,7 @@ import type {View} from './draw.ts';
 import {snapShaft,around} from './snap.ts';
 
 export type Selection={kind:'shaft';id:string}|{kind:'web';a:string;b:string}|{kind:'layer';index:number}|undefined;
-export type Host={doc():GearDoc;plan():GearPlan;files():Record<string,ShaftFile>;fileNames():{id:string;name:string}[];begin():void;commit(message?:string):void;live():void;readOnly():boolean};
+export type Host={/** Opens the shaft editor over the page; without id: a new shaft. */editShaft(id?:string):void;doc():GearDoc;plan():GearPlan;files():Record<string,ShaftFile>;fileNames():{id:string;name:string}[];begin():void;commit(message?:string):void;live():void;readOnly():boolean};
 type Drag={kind:'shaft';id:string;from:[number,number];start:[number,number];plan:GearPlan;moved:boolean}|{kind:'band';index:number;mode:'move'|'l'|'r';start:number;orig:{z0:number;z1:number};moved:boolean};
 
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
@@ -26,7 +26,7 @@ export class GearEditor{
  renderLibrary(root:HTMLElement){const names=this.host.fileNames();
   root.replaceChildren(el('h2',{textContent:'Wellen'}),el('p',{className:'muted small',textContent:'Aus dem Wellen-Generator: auf die Ebene ziehen oder klicken.'}),
    ...names.map(f=>{const b=el('button',{className:'cat-card',title:'Auf die Ebene ziehen oder klicken'},el('strong',{textContent:f.name}),el('small',{textContent:`${this.doc.shafts.filter(s=>s.shaft===f.id).length||'nicht'} im Getriebe`}));b.dataset.addShaft=f.id;b.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();this.pending={file:f.id,x:e.clientX,y:e.clientY};};return b;}),
-   el('a',{className:'button ghost',href:'./welle.html',target:'_blank',textContent:'＋ Welle im Wellen-Generator anlegen'}));}
+   (()=>{const b=el('button',{className:'ghost',textContent:'＋ Neue Welle anlegen',disabled:this.host.readOnly()});b.id='new-shaft';b.onclick=()=>this.host.editShaft();return b;})());}
  /** Places a shaft file at `at` (mm), or right of what stands there. */
  place(file:string,at?:[number,number]){if(this.host.readOnly())return;const d=this.doc,p=this.host.plan(),b=bounds(p);this.host.begin();const id=this.newId();
   d.shafts.push({id,shaft:file,at:[0,0],z:0});const fresh=this.host.plan(),want=at??[b?Math.round(b.x1+20):0,b?Math.round((b.y0+b.y1)/2):0],s=snapShaft(fresh,id,want,{angle:d.settings.angle,grid:d.settings.grid,tol:at?8/(this.view?.scale??4):1e9});
@@ -75,7 +75,7 @@ export class GearEditor{
   if(s?.kind==='shaft'){const x=d.shafts.find(v=>v.id===s.id);if(!x){this.sel=undefined;return this.renderProperties(root);}const w=p.shafts.find(v=>v.id===x.id),label=w?.label??'fehlt';
    const partners=p.meshes.flatMap(m=>{const a=p.wheels.find(v=>v.key===m.a)!,b=p.wheels.find(v=>v.key===m.b)!;return a.on===x.id?[{me:a,other:b}]:b.on===x.id?[{me:b,other:a}]:[];});
    const pulleys=p.wheels.filter(v=>v.on===x.id&&v.pulley),others=p.wheels.filter(v=>v.on!==x.id&&v.pulley);
-   root.replaceChildren(...head(label,'Welle aus dem Wellen-Generator, hier nur ihre Lage.'),el('a',{className:'button ghost',href:`./welle.html#open=${encodeURIComponent(x.shaft)}`,target:'_blank',textContent:'Im Wellen-Generator öffnen ↗'}),
+   root.replaceChildren(...head(label,'Welle aus dem Wellen-Generator, hier nur ihre Lage.'),el('div',{className:'prop-row'},(()=>{const b=el('button',{textContent:'Welle bearbeiten'});b.dataset.editShaft=x.shaft;b.onclick=()=>this.host.editShaft(x.shaft);return b;})(),el('a',{className:'button ghost',href:`./welle.html#open=${encodeURIComponent(x.shaft)}`,target:'_blank',textContent:'In neuem Tab ↗'})),
     field('x [mm]',x.at[0],v=>{x.at[0]=v!;}),field('y [mm]',x.at[1],v=>{x.at[1]=v!;}),field('Höhe z [mm]',x.z,v=>{x.z=v!;}),
     (()=>{const c=el('input',{type:'checkbox',checked:!!x.flip,disabled:ro});c.onchange=()=>{this.host.begin();if(c.checked)x.flip=true;else delete x.flip;this.host.commit();};return el('label',{className:'prop'},el('span',{textContent:'Umgedreht'}),c);})(),
     ...partners.map(({me,other})=>{const o=d.shafts.find(v=>v.id===other.on)!,dist=me.pitch+other.pitch,ang=Math.atan2(x.at[1]-o.at[1],x.at[0]-o.at[0])*180/Math.PI;return field(`Winkel um ${p.shafts.find(v=>v.id===o.id)?.label} [°]`,((ang%360)+360)%360,v=>{x.at=around(o.at,dist,v!);},{step:d.settings.angle||1});}),

@@ -56,5 +56,17 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await choose('Außen herum');assert.ok(await p.$('#top g.web.round[data-web="a/l1|c/l1"]'),'außen herum gezeichnet');assert.doesNotMatch(await p.$eval('#issues',e=>e.textContent),/geht durch/);
  await choose('In die Tiefe');assert.ok(await p.$('#top .web.stepped[data-web="a/l1|c/l1"]'),'in der Tiefe');assert.match(await p.$eval('#issues',e=>e.textContent),/in der Tiefe nur 6,5 mm/);
  await choose('Gerade');assert.ok(await p.$('#top .web.hit[data-web="a/l1|c/l1"]'),'wieder gerade');
- assert.deepEqual(errors,[]);console.log('Getriebe-Editor: vom Studio erreichbar, Einrasten im Eingriff bei 45°, weg ohne Eingriff, Klick setzt kämmend, Winkel genau, Schicht-Band von Hand, Steg entfernt und Strg+Z, Neuladen, Welle per #open, Riemen weg und wieder dran, Motor mit Langlöchern, Normriemen-Abstand, Motor an die Platte, Steg außen herum, in der Tiefe und wieder gerade.');
+ // The shaft editor over the page: the shaft made longer there, the gearbox behind follows; a new shaft is in the
+ // gearbox when the dialog closes.
+ const axleEnd=()=>p.$eval('#side .row',g=>Number(g.querySelector('.axle').getAttribute('x2')));const before2=await axleEnd();
+ await p.click('#top [data-shaft="a"] .axle');await wait(100);await p.click('[data-edit-shaft]');await p.waitForSelector('#shaft-dialog:not([hidden])');
+ const frame=async()=>{for(let i=0;i<100;i++){const fr=p.frames().find(x=>/welle/.test(x.url()));if(fr&&await fr.$('body[data-ready=true]').catch(()=>null))return fr;await wait(100);}throw Error('Wellen-Fenster lädt nicht');};
+ let fr=await frame();assert.match(await fr.$eval('#shaft-name',e=>e.textContent),/Antrieb z20/);assert.equal(await fr.$eval('#shaft-close',e=>getComputedStyle(e).display),'none','eingebettet ohne „Alle Wellen“');
+ const len=await fr.evaluateHandle(()=>[...document.querySelectorAll('#properties .prop')].find(l=>/Länge/.test(l.textContent)).querySelector('input'));await len.evaluate(e=>{e.value='80';e.dispatchEvent(new Event('change'));});
+ await p.waitForFunction(b=>Number(document.querySelector('#side .row .axle').getAttribute('x2'))>b+1,{timeout:5000},before2);
+ await p.click('#shaft-dialog-close');await p.waitForSelector('#shaft-dialog[hidden]',{state:'hidden'}).catch(()=>{});await wait(500);
+ const count=await p.$$eval('#top [data-shaft]',e=>e.length);await p.click('#new-shaft');await p.waitForSelector('#shaft-dialog:not([hidden])');
+ fr=await frame();await fr.waitForSelector('[data-add="auf:lager-608"]');await fr.click('[data-add="auf:lager-608"]');await wait(600);assert.match(await p.$eval('#shaft-dialog-title',e=>e.textContent),/Neue Welle/);
+ await p.click('#shaft-dialog-close');await wait(800);assert.equal(await p.$$eval('#top [data-shaft]',e=>e.length),count+1,'neue Welle im Getriebe');assert.ok((await p.$$eval('[data-add-shaft]',e=>e.map(x=>x.textContent))).some(t=>/Neue Welle/.test(t)));
+ assert.deepEqual(errors,[]);console.log('Getriebe-Editor: vom Studio erreichbar, Einrasten im Eingriff bei 45°, weg ohne Eingriff, Klick setzt kämmend, Winkel genau, Schicht-Band von Hand, Steg entfernt und Strg+Z, Neuladen, Welle per #open, Riemen weg und wieder dran, Motor mit Langlöchern, Normriemen-Abstand, Motor an die Platte, Steg außen herum, in der Tiefe und wieder gerade, Welle im Fenster bearbeitet (Getriebe zieht mit), neue Welle aus dem Fenster im Getriebe.');
 }finally{await browser.close();}

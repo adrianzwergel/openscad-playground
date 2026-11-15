@@ -39,6 +39,7 @@ function renderFiles(p:GearPlan){const row=(label:string,file:string,formats:str
  const zip=el('button',{className:'primary',textContent:'Alles als ZIP (Platten, Säulen, Wellen, Stückliste)'});zip.dataset.file='zip';zip.onclick=downloadZip;
  $('files').replaceChildren(...p.layers.flatMap((l,i)=>[row(`Schicht ${i+1} unten`,`schicht-${i+1}-unten`,['step','stl']),row(`Schicht ${i+1} oben`,`schicht-${i+1}-oben`,['step','stl'])]),...p.columns.map((c,i)=>row(`Säule ${c.from} – ${c.to} (${p.bolts.length}×)`,`saeule-${i+1}`,['step','stl'])),row('Baugruppe mit Wellen und Kaufteilen','baugruppe',['step']),el('li',{className:'file-row zip'},zip));}
 const editor=new GearEditor({
+ editShaft:id=>editShaft(id),
  doc:()=>open!.doc,plan:()=>planGear(open!.doc,files),files:()=>files,fileNames:()=>names,readOnly:()=>!!open?.readOnly,
  begin:()=>{before??=JSON.stringify(open!.doc);},
  commit:m=>{if(before!==undefined&&before!==JSON.stringify(open!.doc)){past.push(before);if(past.length>200)past.shift();future=[];save();}before=undefined;if(m)status(m);draw();},
@@ -83,7 +84,22 @@ addEventListener('keydown',e=>{if(!open)return;const typing=(e.target as HTMLEle
  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!typing){e.preventDefault();undo(!e.shiftKey);}
  else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'&&!typing){e.preventDefault();undo(false);}
  else if((e.key==='Delete'||e.key==='Backspace')&&!typing){e.preventDefault();editor.removeSelected();}
- else if(e.key==='Escape'&&!typing){editor.sel=undefined;draw();}});
+ else if(e.key==='Escape'&&!typing){if(!$('shaft-dialog').hidden){void closeShaft();return;}editor.sel=undefined;draw();}});
+// ---------- the shaft editor over the page ----------
+// The shaft generator in a frame (#open=<id>&embed); every save there reads the shafts here again, so the gearbox
+// behind follows. A new shaft (#new) is put into the gearbox when the dialog closes.
+let editing:{id?:string;created?:string}|undefined,reloadTimer:ReturnType<typeof setTimeout>|undefined;
+function editShaft(id?:string){editing={...(id?{id}:{})};const frame=$('shaft-frame') as HTMLIFrameElement;frame.src=`./welle.html#${id?`open=${encodeURIComponent(id)}`:'new=1'}&embed=1`;
+ ($('shaft-dialog-tab') as HTMLAnchorElement).href=id?`./welle.html#open=${encodeURIComponent(id)}`:'./welle.html';$('shaft-dialog-title').textContent=id?`Welle bearbeiten: ${files[id]?.name??''}`:'Neue Welle';$('shaft-dialog').hidden=false;}
+async function closeShaft(){const d=$('shaft-dialog');if(d.hidden)return;const frame=$('shaft-frame') as HTMLIFrameElement;
+ // Let the frame write what is still waiting, then read the shafts.
+ try{frame.contentWindow?.dispatchEvent(new Event('pagehide'));}catch{/* other origin: not here */}
+ d.hidden=true;await new Promise(r=>setTimeout(r,350));frame.src='about:blank';await loadShafts();
+ const made=editing?.created;editing=undefined;if(made&&open&&!open.doc.shafts.some(s=>s.shaft===made))editor.place(made);else draw();}
+$('shaft-dialog-close').onclick=()=>void closeShaft();
+addEventListener('message',e=>{const m=e.data as {source?:string;type?:string;id?:string;name?:string};if(e.origin!==location.origin||m?.source!=='welle'||!m.id)return;
+ if(m.type==='created'&&editing){editing.created=m.id;$('shaft-dialog-title').textContent=`Neue Welle: ${m.name}`;}
+ if(m.type==='saved'){if(editing?.created===m.id)$('shaft-dialog-title').textContent=`Neue Welle: ${m.name}`;clearTimeout(reloadTimer);reloadTimer=setTimeout(()=>void loadShafts().then(draw),150);}});
 // Back from the shaft generator in another tab: read the shafts again.
 addEventListener('focus',()=>{if(open)void loadShafts().then(draw);});
 addEventListener('resize',()=>{if(open)draw();});
