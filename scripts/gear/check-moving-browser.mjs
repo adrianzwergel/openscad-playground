@@ -34,7 +34,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.keyboard.down('Control');await p.keyboard.press('z');await p.keyboard.up('Control');await wait(200);assert.ok(!(await p.$('#top .fan.endless')),'Strg+Z');
  await ready();
  // ---- gearbox: a swing arm ----
- await p.click('#gear-close');await p.waitForSelector('[data-example="schwinge"]',{visible:true});await p.click('[data-example="schwinge"]');await p.waitForSelector('#top svg .swing');
+ await p.click('#gear-close');await p.waitForSelector('[data-example="schwinge"]',{visible:true});await p.click('[data-example="schwinge"]');await p.waitForSelector('#top svg .pivot');
  assert.ok(await p.$('#top .pivot'));assert.equal(await p.$$eval('#layer-tabs button',e=>e.length),4);assert.match(await p.$eval('#layer-tabs',e=>e.textContent),/Schicht 3 · Schwinge/);
  await p.click('#layer-tabs [data-layer="1"]');await wait(150);assert.ok(await p.$('#top .hole-arc'),'Ausschnitt im Bogen in der oberen Gestellplatte');
  await p.click('#layer-tabs [data-layer="2"]');await wait(150);assert.ok(await p.$('#top .swing-plate'),'Platte der Schwinge');
@@ -48,11 +48,11 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await p.keyboard.down('Control');await p.keyboard.press('z');await p.keyboard.up('Control');await wait(200);assert.doesNotMatch(await issues(),/stößt beim Schwenken/);
  assert.match(await p.$eval('#files',e=>e.textContent),/Schicht 4/);
  // After a reload the swing arm is still there.
- await wait(500);await p.reload();await p.waitForSelector('#top svg .swing');
+ await wait(500);await p.reload();await p.waitForSelector('#top svg .pivot');
  // ---- a swing arm made by hand ----
  await p.click('#gear-close');await p.waitForSelector('[data-example="stufe"]',{visible:true});await p.click('[data-example="stufe"]');await p.waitForFunction(()=>/Eine Stufe/.test(document.querySelector('#gear-name').textContent)&&!!document.querySelector('#top [data-shaft="a"]'));const tabs=await p.$$eval('#layer-tabs button',e=>e.length);
  await p.click('#top [data-shaft="a"] .axle');await wait(150);await p.click('#properties [data-new-group="frei"]');await wait(200);assert.equal(await p.$eval('#properties h2',e=>e.textContent),'Schwinge 1');assert.match(await issues(),/noch keine Welle darauf/);
- await p.click('#properties [data-member="b"]');await wait(250);assert.ok(await p.$('#top .swing'),'Schwenkweg');assert.match(await issues(),/ihre Drehachse Antrieb z20 ist im Gestell nicht gelagert/);
- await press('Schwinge auflösen');assert.equal(await p.$('#top .swing'),null);assert.equal(await p.$$eval('#layer-tabs button',e=>e.length),tabs);assert.doesNotMatch(await issues(),/Schwinge/);
+ await p.click('#properties [data-member="b"]');await wait(250);assert.ok(await p.$('#top .pivot'),'Drehachse markiert');assert.match(await issues(),/ihre Drehachse Antrieb z20 ist im Gestell nicht gelagert/);
+ await press('Schwinge auflösen');assert.equal(await p.$('#top .pivot'),null);assert.equal(await p.$$eval('#layer-tabs button',e=>e.length),tabs);assert.doesNotMatch(await issues(),/Schwinge/);
  assert.deepEqual(errors,[]);console.log('Bewegliches im Browser: Hebel im Wellen-Editor (Zeitleiste, Stirnansicht, 3D), im Getriebe mit Fächer, Regler, Drehbereich, endlos und Strg+Z; Schwinge mit Schwenkweg, Drehachse, Ausschnitt im Bogen, Regler und 3D in der Stellung, Bereich und Meldung, Neuladen; von Hand angelegt und aufgelöst.');
 }finally{await browser.close();}

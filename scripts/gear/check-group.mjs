@@ -37,7 +37,7 @@ assert.deepEqual(parseGear(JSON.parse(JSON.stringify(doc({})))).groups,base.grou
  for(const b of mine('g1'))assert.deepEqual(Object.keys(b.attach).sort(),['s3','s4']);
  assert.ok(p.bom.some(x=>/Platte Schicht 3, Schwinge/.test(x.what))&&p.bom.filter(x=>/Distanzsäule/.test(x.what)).length===2);
  // The view and the notes.
- const svg=topView(p,p.layers[1]);assert.match(svg,/class="hole-arc"/);assert.match(svg,/class="swing"/);assert.match(svg,/class="pivot"/);assert.match(topView(p,p.layers[2]),/swing-plate/);
+ const svg=topView(p,p.layers[1]);assert.match(svg,/class="hole-arc"/);assert.doesNotMatch(svg,/class="swing"/);assert.match(svg,/class="pivot"/);assert.match(topView(p,p.layers[2]),/swing-plate/);
  const posed=posePlan(p,{turn:0,groups:{g1:45}});near(posed.shafts.find(x=>x.id==='b').at[0],30*Math.SQRT1_2,1e-9,'geschwenkte Welle');assert.deepEqual([posed.layers[1].holes[0].arc,posed.layers[1].holes[0].base],[{c:[0,0],from:-30,to:45},[30,0]],'der Ausschnitt bleibt in seiner Platte');near(posed.layers[2].holes[0].base[1],-45*Math.SQRT1_2,1e-9,'der Ausschnitt in der Platte der Schwinge schwenkt mit ihr');
  const notes=gearNotes('Test',doc({}),p);assert.match(notes,/Schwinge: schwenkt -30° bis 45° um Achse z20/);assert.match(notes,/Schicht 2: Ausschnitt im Bogen für Schwingenrad z40, 9 mm breit, 75° lang/);}
 // Swung further: the arc crosses the web from the axle to the post (straight down): the slot gets its ring, and the wheel meets the post.
