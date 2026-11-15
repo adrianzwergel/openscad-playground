@@ -12,6 +12,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  const cdp=await p.createCDPSession();await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:downloads});
  await p.goto('http://localhost:4001/welle');await p.waitForSelector('body[data-ready=true] [data-example="lego-mitte"]',{visible:true});await p.click('[data-example="lego-mitte"]');
  let r=await ready(p);assert.equal(r.state,'ready',r.text);await wait(500);const share=await painted(p);assert.ok(share>.03,`Vorschau zeigt etwas: ${(share*100).toFixed(1)} %`);
+ await p.waitForFunction(()=>window.preview?.summary().some(m=>m.original),{timeout:20000});assert.deepEqual(await p.evaluate(()=>window.preview.summary().filter(m=>m.original).map(m=>m.original)),['./mechanics-assets/ldraw/meshes/3648b.stl'],'das LDraw-Rad in der Vorschau');
  if(shots)await p.screenshot({path:path.join(shots,'welle-3d.png')});
  // Files.
  await p.click('[data-file="welle.step"]');const step=(await file('welle.step')).toString();assert.match(step,/^ISO-10303-21;/);

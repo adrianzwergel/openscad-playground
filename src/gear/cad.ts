@@ -6,7 +6,8 @@
 // plate keep OpenCascade's 3D booleans (which leak a little) to the pockets.
 import {draw,drawCircle,makeCylinder,makeBox} from 'replicad';
 import type {Drawing,Shape3D} from 'replicad';
-import {buildParts,profileDrawing} from '../shaft/cad.ts';
+import {buildParts,profileDrawing,matMul,matMove,matTurn} from '../shaft/cad.ts';
+import type {Mat} from '../shaft/cad.ts';
 import type {CadPart} from '../shaft/cad.ts';
 import type {GearDoc} from './model.ts';
 import type {GearPlan,LayerPlan,ShaftFile} from './plan.ts';
@@ -87,14 +88,14 @@ function plates(keep:Keep,doc:GearDoc,plan:GearPlan,l:LayerPlan,index:number):Ca
 function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,ShaftFile|undefined>,pose?:Pose):CadPart[]{
  const out:CadPart[]=[];
  for(const x of plan.shafts){const placed=doc.shafts.find(p=>p.id===x.id)!,f=files[placed.shaft];if(!f)continue;const L=f.doc.length;
-  for(const part of buildParts(f.doc,x.plan,keep).parts){let shape=keep(part.shape.rotate(-90,[0,0,0],[0,1,0]) as Shape3D);
-   if(placed.flip)shape=keep(keep(shape.rotate(180,[0,0,0],[1,0,0]) as Shape3D).translate([0,0,L]) as Shape3D);
+  for(const part of buildParts(f.doc,x.plan,keep).parts){let shape=keep(part.shape.rotate(-90,[0,0,0],[0,1,0]) as Shape3D),m:Mat=matTurn(-90,[0,0,0],[0,1,0]);
+   if(placed.flip){shape=keep(keep(shape.rotate(180,[0,0,0],[1,0,0]) as Shape3D).translate([0,0,L]) as Shape3D);m=matMul(matMove([0,0,L]),matMul(matTurn(180,[0,0,0],[1,0,0]),m));}
    // Turned about its own axis: as placed, plus how far the pose turns it; then with its swing arm about the pivot.
    const chain=links(plan.groups,plan.groups.find(v=>v.shafts.includes(x.id))?.id??'',pose?.groups??{}),fast=plan.groups.find(v=>v.fixed&&v.pivot===x.id&&!v.shafts.includes(x.id)),spin=(placed.turn??0)+(pose?(plan.turnRate[x.id]??0)*pose.turn:0)+chain.reduce((t,v)=>t+v.angle,0)+(fast?pose?.groups[fast.id]??0:0);
-   if(Math.abs(spin)>1e-9)shape=keep(shape.rotate(spin,[0,0,0],[0,0,1]) as Shape3D);
+   if(Math.abs(spin)>1e-9){shape=keep(shape.rotate(spin,[0,0,0],[0,0,1]) as Shape3D);m=matMul(matTurn(spin,[0,0,0],[0,0,1]),m);}
    const at=carried(placed.at,chain);
-   shape=keep(shape.translate([at[0],at[1],placed.z]) as Shape3D);
-   out.push({...part,shape,name:`${part.name} · ${x.label}`,file:`${slug(x.label)}-${part.file}`});}}
+   shape=keep(shape.translate([at[0],at[1],placed.z]) as Shape3D);m=matMul(matMove([at[0],at[1],placed.z]),m);
+   out.push({...part,...(part.asset?{asset:{url:part.asset.url,matrix:matMul(m,part.asset.matrix)}}:{}),shape,name:`${part.name} · ${x.label}`,file:`${slug(x.label)}-${part.file}`});}}
  return out;}
 /** Everything of a gearbox. `keep` registers what must be freed. */
 export function buildGearParts(doc:GearDoc,plan:GearPlan,files:Record<string,ShaftFile|undefined>,keep:Keep,pose?:Pose):CadPart[]{
