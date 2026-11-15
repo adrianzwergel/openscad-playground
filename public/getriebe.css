@@ -69,3 +69,15 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 .sideview .band .zone{fill:color-mix(in srgb,var(--tone) 38%,transparent)}.sideview .band .handle{fill:var(--tone);stroke:var(--tone-line)}.sideview .band.selected .handle{fill:var(--tone-line);stroke:#fff}.sideview .band.selected .zone{fill:color-mix(in srgb,var(--tone-line) 30%,transparent)}
 .sideview .row .grab{fill:color-mix(in srgb,var(--tone) 34%,transparent);stroke:var(--tone-line)}.sideview .row:hover .grab{fill:color-mix(in srgb,var(--tone) 55%,transparent);stroke:var(--tone-line)}.sideview .row.selected .grab{fill:color-mix(in srgb,var(--tone) 55%,transparent);stroke:#f0d36e;stroke-width:2}
 .sideview .item.wheel rect{fill:#234238;stroke:#6fc6a6}.sideview .item.bearing rect{fill:#2b3640;stroke:#aeb9c4}
+
+/* Simpler layout: top view and the standing side view side by side, the sliders inside the top view, the list of shafts folded. */
+body[data-view=gear] #generator{grid-template-columns:auto minmax(0,1fr) 330px}
+#library{width:250px;box-sizing:border-box}#library.collapsed{width:44px;padding:10px 4px!important}
+#library .library-toggle{width:100%;margin-bottom:8px}#library.collapsed .library-toggle{writing-mode:vertical-rl;padding:12px 4px;height:auto}
+#views{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start}
+#top-box{position:relative;min-width:0}#pose{position:absolute;left:10px;top:10px;margin:0;padding:6px 10px;background:#10161ce6;border:1px solid var(--line);border-radius:8px;z-index:2}
+#side{overflow:auto;max-height:100%}
+#preview-state[data-state=ready],#preview-state[data-state=idle]{display:none}
+.sideview text.name{fill:#cdd8df;font-size:11px}.sideview .band text{fill:#eef3f6;font-size:11px;text-anchor:middle}.sideview text.zmark{text-anchor:end}
+.sideview .edge{cursor:ns-resize}.sideview .row,.sideview .row .grab{cursor:ns-resize}
+#pose{padding:4px 8px;gap:2px 12px;font-size:12px}#pose .pose{font-size:12px;gap:5px}#pose input[type=range]{width:120px}#pose button{padding:3px 8px;font-size:12px}

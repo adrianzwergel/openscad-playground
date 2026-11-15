@@ -35,9 +35,9 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await ready();
  // ---- gearbox: a swing arm ----
  await p.click('#gear-close');await p.waitForSelector('[data-example="schwinge"]',{visible:true});await p.click('[data-example="schwinge"]');await p.waitForSelector('#top svg .pivot');
- assert.ok(await p.$('#top .pivot'));assert.equal(await p.$$eval('#layer-tabs button',e=>e.length),4);assert.match(await p.$eval('#layer-tabs',e=>e.textContent),/Schicht 3 · Schwinge/);
- await p.click('#layer-tabs [data-layer="1"]');await wait(150);assert.ok(await p.$('#top .hole-arc'),'Ausschnitt im Bogen in der oberen Gestellplatte');
- await p.click('#layer-tabs [data-layer="2"]');await wait(150);assert.ok(await p.$('#top .swing-plate'),'Platte der Schwinge');
+ assert.ok(await p.$('#top .pivot'));assert.equal(await p.$$eval('#side [data-band]',e=>e.length),4);assert.ok(await p.$('#side [data-band="2"].tone-1'),'Schicht 3 in der Farbe der Schwinge');
+ await p.click('#side [data-band="1"] .handle');await wait(150);assert.ok(await p.$('#top .hole-arc'),'Ausschnitt im Bogen in der oberen Gestellplatte');
+ await p.click('#side [data-band="2"] .handle');await wait(150);assert.ok(await p.$('#top .swing-plate'),'Platte der Schwinge');
  const axle=id=>p.$eval(`#top [data-shaft="${id}"] .axle`,e=>[e.getAttribute('cx'),e.getAttribute('cy')].join());const b0=await axle('b'),g0=await axle('g');
  await slide('g:g1',45);assert.notEqual(await axle('b'),b0,'der Regler schwenkt die Welle');assert.equal(await axle('g'),g0,'das Gestell steht');await ready();await wait(500);await shot('getriebe-schwinge.png');
  if(shots){await p.$eval('#preview',e=>e.scrollIntoView());await wait(300);await p.screenshot({path:path.join(shots,'getriebe-schwinge-3d.png'),clip:await (await p.$('#preview')).boundingBox()});await p.$eval('#top',e=>e.scrollIntoView());}
@@ -50,9 +50,9 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // After a reload the swing arm is still there.
  await wait(500);await p.reload();await p.waitForSelector('#top svg .pivot');
  // ---- a swing arm made by hand ----
- await p.click('#gear-close');await p.waitForSelector('[data-example="stufe"]',{visible:true});await p.click('[data-example="stufe"]');await p.waitForFunction(()=>/Eine Stufe/.test(document.querySelector('#gear-name').textContent)&&!!document.querySelector('#top [data-shaft="a"]'));const tabs=await p.$$eval('#layer-tabs button',e=>e.length);
+ await p.click('#gear-close');await p.waitForSelector('[data-example="stufe"]',{visible:true});await p.click('[data-example="stufe"]');await p.waitForFunction(()=>/Eine Stufe/.test(document.querySelector('#gear-name').textContent)&&!!document.querySelector('#top [data-shaft="a"]'));const tabs=await p.$$eval('#side [data-band]',e=>e.length);
  await p.click('#top [data-shaft="a"] .axle');await wait(150);await p.click('#properties [data-new-group="frei"]');await wait(200);assert.equal(await p.$eval('#properties h2',e=>e.textContent),'Schwinge 1');assert.match(await issues(),/noch keine Welle darauf/);
  await p.click('#properties [data-member="b"]');await wait(250);assert.ok(await p.$('#top .pivot'),'Drehachse markiert');assert.match(await issues(),/ihre Drehachse Antrieb z20 ist im Gestell nicht gelagert/);
- await press('Schwinge auflösen');assert.equal(await p.$('#top .pivot'),null);assert.equal(await p.$$eval('#layer-tabs button',e=>e.length),tabs);assert.doesNotMatch(await issues(),/Schwinge/);
+ await press('Schwinge auflösen');assert.equal(await p.$('#top .pivot'),null);assert.equal(await p.$$eval('#side [data-band]',e=>e.length),tabs);assert.doesNotMatch(await issues(),/Schwinge/);
  assert.deepEqual(errors,[]);console.log('Bewegliches im Browser: Hebel im Wellen-Editor (Zeitleiste, Stirnansicht, 3D), im Getriebe mit Fächer, Regler, Drehbereich, endlos und Strg+Z; Schwinge mit Schwenkweg, Drehachse, Ausschnitt im Bogen, Regler und 3D in der Stellung, Bereich und Meldung, Neuladen; von Hand angelegt und aufgelöst.');
 }finally{await browser.close();}

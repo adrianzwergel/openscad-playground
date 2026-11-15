@@ -22,17 +22,17 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // Far away: no mesh.
  await drag(b,{x:b.x+60*k,y:b.y});assert.equal(await meshes(),0,'weit weg');
  // A click on the z20 shaft in the library adds it meshing with the z40.
- const card=await p.evaluateHandle(()=>[...document.querySelectorAll('[data-add-shaft]')].find(x=>/Antrieb z20/.test(x.textContent)));await card.evaluate(e=>e.scrollIntoView());await card.click();await wait(200);
+ if(!(await p.$('#library [data-add-shaft]'))){await p.click('#library-toggle');await wait(150);}const card=await p.evaluateHandle(()=>[...document.querySelectorAll('[data-add-shaft]')].find(x=>/Antrieb z20/.test(x.textContent)));await card.evaluate(e=>e.scrollIntoView());await card.click();await wait(200);
  assert.equal(await p.$$eval('#top [data-shaft]',e=>e.length),3);assert.equal(await meshes(),1,'neue Welle kämmt mit z40');
  // Exact angle round the partner: the new shaft is selected.
  const angle=await p.evaluateHandle(()=>[...document.querySelectorAll('#properties .prop')].find(l=>/Winkel um/.test(l.textContent)).querySelector('input'));await angle.evaluate(e=>{e.value='';e.focus();});await angle.type('90');await p.keyboard.press('Tab');await wait(150);
  const w1=await axle('w1'),b2=await axle('b');k=await scale();assert.ok(Math.abs(w1.x-b2.x)<1&&Math.abs((b2.y-w1.y)/k-30)<.5,`90° über dem z40: ${JSON.stringify([w1,b2])}`);
  if(shots)await p.screenshot({path:path.join(shots,'getriebe-editor.png')});
  // The first band stretched: layers set by hand.
- const edge=await p.$eval('#side [data-band="0"] [data-edge="r"]',e=>{const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};});await drag(edge,{x:edge.x+40,y:edge.y});
+ const edge=await p.$eval('#side [data-band="0"] [data-edge="r"]',e=>{const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};});await drag(edge,{x:edge.x,y:edge.y-40});
  assert.match(await p.$eval('#properties h2',e=>e.textContent),/Schicht 1/);assert.ok(!(await p.$eval('#side [data-band="0"]',e=>e.classList.contains('auto'))),'von Hand');
  // A web removed, the plate falls apart; Ctrl+Z.
- await p.click('[data-layer="0"]');await wait(100);const web=await p.$('#top [data-web]');assert.ok(web,'Steg da');await web.click();await wait(100);
+ await p.click('#side [data-band="0"] .handle');await wait(150);const web=await p.$('#top [data-web]');assert.ok(web,'Steg da');await web.click();await wait(100);
  await p.evaluate(()=>[...document.querySelectorAll('#properties button')].find(b=>b.textContent==='Steg entfernen').click());await wait(150);assert.match(await p.$eval('#issues',e=>e.textContent),/zerfällt in \d Teile/);
  await p.keyboard.down('Control');await p.keyboard.press('z');await p.keyboard.up('Control');await wait(150);const back=await p.$$eval('#top [data-web]',e=>e.length);assert.ok(back>=1,'Strg+Z');
  // After a reload.
@@ -43,7 +43,7 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  // The belt example: remove the belt, add it again.
  await p.click('#gear-close');await p.waitForSelector('[data-example="riemen"]',{visible:true});await p.click('[data-example="riemen"]');await p.waitForSelector('#top svg .belt');
  await p.click('#top [data-shaft="a"] .axle');await wait(100);await p.evaluate(()=>[...document.querySelectorAll('#properties button')].find(b=>b.textContent==='entfernen').click());await wait(150);assert.equal(await p.$$eval('#top .belt',e=>e.length),0);
- await p.click('[data-belt]');await wait(150);assert.equal(await p.$$eval('#top .belt',e=>e.length),1);assert.match(await p.$eval('#drives',e=>e.textContent),/Normlänge 200 mm/);
+ await p.click('[data-belt]');await wait(150);assert.equal(await p.$$eval('#top .belt',e=>e.length),1);assert.match(await p.$eval('#properties',e=>e.textContent),/Norm 200/);
  // The motor: on layer 1 with slots; the belt set to the stock length's centre distance; the shaft raised, moved back by its button.
  assert.match(await p.$eval('#properties',e=>e.textContent),/Flansch an der Unterseite von Schicht 1, Langlöcher ±3 mm in Riemenrichtung/);assert.ok(await p.$('#top [data-motor]'),'Motor in der Draufsicht');
  await p.click('[data-belt-fit]');await wait(150);assert.match(await p.$eval('#issues',e=>e.textContent),/Normriemen 200 mm passt/);
@@ -59,12 +59,12 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  await choose('Gerade');assert.ok(await p.$('#top .web.hit[data-web="a/l1|c/l1"]'),'wieder gerade');
  // The shaft editor over the page: the shaft made longer there, the gearbox behind follows; a new shaft is in the
  // gearbox when the dialog closes.
- const axleEnd=()=>p.$eval('#side .row',g=>Number(g.querySelector('.axle').getAttribute('x2')));const before2=await axleEnd();
+ const axleEnd=()=>p.$eval('#side .row',g=>{const a=g.querySelector('.axle');return Number(a.getAttribute('y2'))-Number(a.getAttribute('y1'));});const before2=await axleEnd();
  await p.click('#top [data-shaft="a"] .axle');await wait(100);await p.click('[data-edit-shaft]');await p.waitForSelector('#shaft-dialog:not([hidden])');
  const frame=async()=>{for(let i=0;i<100;i++){const fr=p.frames().find(x=>/welle/.test(x.url()));if(fr&&await fr.$('body[data-ready=true]').catch(()=>null))return fr;await wait(100);}throw Error('Wellen-Fenster lädt nicht');};
  let fr=await frame();assert.match(await fr.$eval('#shaft-name',e=>e.textContent),/Antrieb z20/);assert.equal(await fr.$eval('#shaft-close',e=>getComputedStyle(e).display),'none','eingebettet ohne „Alle Wellen“');
  const len=await fr.evaluateHandle(()=>[...document.querySelectorAll('#properties .prop')].find(l=>/Länge/.test(l.textContent)).querySelector('input'));await len.evaluate(e=>{e.value='80';e.dispatchEvent(new Event('change'));});
- await p.waitForFunction(b=>Number(document.querySelector('#side .row .axle').getAttribute('x2'))>b+1,{timeout:5000},before2);
+ await p.waitForFunction(b=>{const a=document.querySelector('#side .row .axle');return Number(a.getAttribute('y2'))-Number(a.getAttribute('y1'))>b+1;},{timeout:5000},before2);
  await p.click('#shaft-dialog-close');await p.waitForSelector('#shaft-dialog[hidden]',{state:'hidden'}).catch(()=>{});await wait(500);
  const count=await p.$$eval('#top [data-shaft]',e=>e.length);await p.click('#new-shaft');await p.waitForSelector('#shaft-dialog:not([hidden])');
  fr=await frame();await fr.waitForSelector('[data-add="auf:lager-608"]');await fr.click('[data-add="auf:lager-608"]');await wait(600);assert.match(await p.$eval('#shaft-dialog-title',e=>e.textContent),/Neue Welle/);
