@@ -115,11 +115,11 @@ Daten: `GearLink` in `parts/build.ts`; geprüft von `scripts/check-studio-gearbo
   Er wird gelöst, wie die Schwingen gerade stehen; ein Rest unter 0,05 mm (weniger als das Spiel eines Kugelkopfs) gilt als
   geschlossen.
 - **Beispiel „Rocker-Bogie-Rover mit Ausgleichsbalken“** (`roverExample`): Es schreibt das Getriebe „Rocker-Bogie mit LEGO
-  z40 und z16“ samt Wellen in den Getriebe- und Wellen-Generator, mit einem von Hand gesetzten Bolzen am Rocker 36 mm vor
-  seinem Drehpunkt und auf seiner Höhe. Im Projekt steht es zweimal: links wie gezeichnet, rechts gespiegelt, die Platten
+  z40, z24 und z8“ samt Wellen in den Getriebe- und Wellen-Generator, mit einem von Hand gesetzten Bolzen am Rocker auf
+  der Höhe seines Drehpunkts, wo er frei bleibt (`studPlace` in `parts/gearmount.ts`: 40 mm dahinter). Im Projekt steht es zweimal: links wie gezeichnet, rechts gespiegelt, die Platten
   stehend, 60 mm von der Mitte. Dazu ein Deck mit Arduino und der Balken 30 mm über den Kugelbolzen (die sitzen 6 mm
   innerhalb der Rocker-Platten: ein längerer M3-Bolzen mit Kugelkopf). Der rechte Rocker folgt dem linken gegenläufig; bei
-  12° heben und senken sich die Kugelbolzen um je 7,5 mm, die Stangen bleiben 30 mm lang
+  12° heben und senken sich die Kugelbolzen um je 8,3 mm, die Stangen bleiben 30 mm lang
   (`scripts/check-studio-rover-browser.mjs`). Beide Seiten sind mit je einem Winkel ans Deck geschraubt und hängen an ihm;
   das Deck hat keine Eckbohrungen, es trägt sich über die Winkel.
 - **Festschrauben** (`Build.mounts`, Geometrie `parts/gearmount.ts`): Auf der Seite eines Getriebes „An Platte

@@ -18,9 +18,9 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  const rest=await ends();assert.deepEqual(len(rest).map(v=>+v.toFixed(3)),[30,30]);
  await p.$eval('#axes input[data-arm="getriebe:links/g1"]',e=>{e.value='12';e.dispatchEvent(new Event('input'));});await wait(600);
  const moved=await ends(),up=moved.map((e,i)=>e[1][2]-rest[i][1][2]);
- assert.ok(up[0]>5&&Math.abs(up[0]+up[1])<.01,`die Rocker gehen gegenläufig (${up.map(v=>v.toFixed(2))})`);
+ assert.ok(Math.abs(up[0])>5&&Math.abs(up[0]+up[1])<.01,`die Rocker gehen gegenläufig (${up.map(v=>v.toFixed(2))})`);
  assert.ok(len(moved).every(v=>Math.abs(v-30)<.02),`Stangen behalten ihre Länge (${len(moved).map(v=>v.toFixed(3))})`);
- assert.ok(moved[0][0][2]-rest[0][0][2]>5&&moved[1][0][2]-rest[1][0][2]<-5,'der Balken kippt');
+ {const tilt=[0,1].map(i=>moved[i][0][2]-rest[i][0][2]);assert.ok(Math.abs(tilt[0])>5&&Math.abs(tilt[0]+tilt[1])<.1,`der Balken kippt (${tilt})`);}
  assert.doesNotMatch(await p.$eval('#axes',e=>e.textContent),/schließt nicht/);
  if(shots)await p.screenshot({path:path.join(shots,'rover.png')});
  // Both sides screwed to the deck: a bracket each on two frame bolts, two holes each in the deck, nothing in the way; the

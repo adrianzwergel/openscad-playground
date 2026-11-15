@@ -16,7 +16,7 @@ import {CadClient} from '../shaft/cad-client.ts';
 import type {MeshData} from '../shaft/cad.ts';
 import type {Build,GearLink,PlateNode} from './parts/build';
 import {newPlateNode,newItem,plateRect,sheet,worldOf,reframe} from './parts/build';
-import {gearMount,middle} from './parts/gearmount';
+import {gearMount,middle,studPlace} from './parts/gearmount';
 import type {Mount} from './parts/gearmount';
 import type {Prim} from '../structure/sdf';
 import {partById} from './parts/catalog';
@@ -66,26 +66,26 @@ export function screwTo(b:Build,l:GearLink,plate:PlateNode,plan:GearPlan,frames:
 /** The solids of a bracket for the view. */
 function primObject(p:Prim,material:THREE.Material){if(p.kind!=='slab')return undefined;const g=new THREE.ExtrudeGeometry(new THREE.Shape(p.points.map(([x,y])=>new THREE.Vector2(x,y))),{depth:p.z1-p.z0,bevelEnabled:false}).translate(0,0,p.z0),o=new THREE.Mesh(g,material);place(o,p.frame);return o;}
 /** A gearbox example of the generator written into its folders, its shafts first, as the generator's start page does;
- * `tweak` changes it before. Its id and plan. */
-export async function saveGearExample(key:string,tweak?:(d:GearDoc)=>void){const x=gearExamples.find(e=>e.key===key)!,{gear,shaft}=await stores(),ids:Record<string,string>={},files:Record<string,ShaftFile>={},now=new Date().toISOString();
+ * `tweak` may give it changed. Its id and plan. */
+export async function saveGearExample(key:string,tweak?:(d:GearDoc,files:Record<string,ShaftFile>)=>GearDoc){const x=gearExamples.find(e=>e.key===key)!,{gear,shaft}=await stores(),ids:Record<string,string>={},files:Record<string,ShaftFile>={},now=new Date().toISOString();
  for(const s of x.shafts){const id=crypto.randomUUID().slice(0,12),doc=parseShaft(s.doc);ids[s.key]=id;files[id]={name:s.name,doc};await shaft.write(id,{format:'shaft-1',name:s.name,updated:now,doc});}
- await shaft.settled();const doc=x.make(ids);tweak?.(doc);const id=crypto.randomUUID().slice(0,12);await gear.write(id,{format:'gear-1',name:x.title,updated:now,doc:parseGear(doc)});await gear.settled();listed++;
+ await shaft.settled();const doc=tweak?tweak(x.make(ids),files):x.make(ids);const id=crypto.randomUUID().slice(0,12);await gear.write(id,{format:'gear-1',name:x.title,updated:now,doc:parseGear(doc)});await gear.settled();listed++;
  return {id,plan:planGear(parseGear(doc),files)};}
 /** The Studio's example of a whole rover: one rocker-bogie gearbox linked twice (the left side as drawn, the right side
  * mirrored), a deck between them with an Arduino, and the differential bar: a printed bar on the deck, turning about
  * the length of the rover, and two turnbuckles down to a ball stud on each rocker (a bolt of the rocker set by hand, level
- * with its pivot and in front of it). The right rocker is balanced against the left: it turns the other way round. */
+ * with its pivot, where it stays clear: parts/gearmount.ts `studPlace`). The right rocker is balanced against the left: it turns the other way round. */
 export const roverExample={key:'rover',title:'Rocker-Bogie-Rover mit Ausgleichsbalken',text:'Beide Seiten aus einem Getriebe (rechts gespiegelt), Deck mit Arduino, Ausgleichsbalken mit zwei Stangen zu den Rockern.',
- make:async(b:Build)=>{const {id,plan}=await saveGearExample('rocker-lego',d=>{const g=d.groups?.find(x=>x.id==='g1');if(g)g.bolts=[[-88.2,-73.8],[107.4,-23.6],[-14.5,39.9],[-17,-38.8],[36,0]];});
+ make:async(b:Build)=>{let lever=36;const {id,plan}=await saveGearExample('rocker-lego',(d,files)=>{const s=studPlace(d,files,'g1');if(!s)throw Error('Am Rocker ist kein Platz für den Kugelbolzen.');lever=s.at[0];return s.doc;});
   // The sides: plates standing (the gearbox's z across the rover), the wheels' side outwards, 60 mm from the middle.
   const W=60,H=90,m=middle(plan),up=axisAngle([1,0,0],90);
   b.gears=[{id:'links',gear:id,label:'Seite links',free:{frame:{position:[0,-W,H],rotation:up}}},{id:'rechts',gear:id,label:'Seite rechts',mirror:true,free:{frame:{position:[0,W+2*m,H],rotation:up}}}];
   b.balances=[{a:armBody('links','g1'),b:armBody('rechts','g1')}];
-  const deck=newPlateNode('deck',{position:[35,0,80],rotation:[0,0,0,1]});deck.mode='fixed';deck.size=[150,90];deck.mount.on=false;b.plates=[deck];
-  b.items.push({...newItem('uno',partById('arduinouno3')!,[-25,0]),plate:'deck'});
-  // The bar over the deck, about x; the studs 6 mm inside the rockers' plates (gearbox z −6), 36 mm in front of the pivot
-  // and level with it: they move up and down, the same on both sides.
-  const x=36,stud=H,bar=stud+30,y=W-6;
+  const deck=newPlateNode('deck',{position:[30,0,80],rotation:[0,0,0,1]});deck.mode='fixed';deck.size=[160,90];deck.mount.on=false;b.plates=[deck];
+  b.items.push({...newItem('uno',partById('arduinouno3')!,[30,0]),plate:'deck'});
+  // The bar over the deck, about x, above the studs: those 6 mm inside the rockers' plates (gearbox z −6), level with the
+  // pivot: they move up and down, the same on both sides.
+  const x=lever,stud=H,bar=stud+30,y=W-6;
   b.linkage={floor:80,links:[
    {id:'balken',label:'Ausgleichsbalken',kind:'lenker',d:6,points:[{id:'achse',kind:'dreh',at:[x-8,0,bar],to:[x+8,0,bar],body:''}]},
    {id:'stange-l',label:'Stange links',kind:'stab',points:[{id:'balken',kind:'kugel',at:[x,-y,bar],body:linkBody('balken'),part:'kugel-5.8'},{id:'rocker',kind:'kugel',at:[x,-y,stud],body:armBody('links','g1'),part:'kugel-5.8'}]},

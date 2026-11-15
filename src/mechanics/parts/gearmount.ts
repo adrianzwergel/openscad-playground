@@ -4,7 +4,9 @@
 // takes only bolts it can reach without touching what sticks out of that face or swings past it: motors, shafts, parts
 // of swing arms over their whole range, and points of the Studio (ball studs) on the swing arms.
 // Everything here is in three frames: the gearbox's (`g`, mirrored like the view: z → 2m − z), the world, the plate's.
-import type {GearPlan} from '../../gear/plan.ts';
+import type {GearPlan,ShaftFile} from '../../gear/plan.ts';
+import {planGear} from '../../gear/plan.ts';
+import type {GearDoc} from '../../gear/model.ts';
 import {links} from '../../gear/sweep.ts';
 import type {Frame,V} from '../kinematics/math.ts';
 import {compose,inverse,rotate,dot,cross,unit} from '../kinematics/math.ts';
@@ -17,8 +19,9 @@ export type MountInput={plan:GearPlan;mirror:boolean;/** The gearbox's frame in 
  thickness:number;/** The plate's outline (in its own frame). */rect:{x0:number;x1:number;y0:number;y1:number};/** Points on the gearbox's swing arms in the room as drawn: `group` the arm. */studs?:{at:V;group:string;what:string}[]};
 export type Mount={/** Leg and flange as solids, with their holes (room). */solids:Prim[];holes:Prim[];/** Holes in the plate (its frame), Ø. */plateHoles:P[];d:number;
  /** The frame bolts it is screwed to (gearbox xy). */bolts:P[];issues:string[];bom:{count:number;what:string}[]};
-/** Leg and flange thickness, bolt hole Ø, how far the flange reaches under the plate, the room kept to anything. */
-export const MOUNT={t:4,d:3.4,overlap:14,gap:1.5,eye:5};
+/** Leg and flange thickness, bolt hole Ø, how far the flange reaches under the plate, the room kept to anything. Round
+ * each bolt the leg is as wide as the gearbox's own eye there. */
+export const MOUNT={t:4,d:3.4,overlap:14,gap:1};
 const sub=(a:P,b:P):P=>[a[0]-b[0],a[1]-b[1]],len=(a:P)=>Math.hypot(a[0],a[1]),rot=(p:P,c:P,deg:number):P=>{const a=deg*Math.PI/180,x=p[0]-c[0],y=p[1]-c[1];return [c[0]+x*Math.cos(a)-y*Math.sin(a),c[1]+x*Math.sin(a)+y*Math.cos(a)];};
 /** Distance from a point to a segment. */
 const toSeg=(p:P,a:P,b:P)=>{const ab=sub(b,a),l=dot([ab[0],ab[1],0],[ab[0],ab[1],0]),t=l?Math.max(0,Math.min(1,((p[0]-a[0])*ab[0]+(p[1]-a[1])*ab[1])/l)):0;return len(sub(p,[a[0]+ab[0]*t,a[1]+ab[1]*t]));};
@@ -53,17 +56,19 @@ export function gearMount(x:MountInput):Mount{
  for(const o of plan.obstacles){if(!beyond(o.z0,o.z1)||o.on.length!==1)continue;const mo=plan.motors.find(v=>v.on===o.on[0]);if(mo&&Math.abs(o.z0-(mo.down?mo.face-mo.depth:mo.face))<.01)continue;const sh=plan.shafts.find(v=>v.id===o.on[0]);if(!sh)continue;for(const c of sweep(o.body??'',sh.at))keep.push({c,r:o.ra,what:o.label});}
  for(const st of x.studs??[]){const q=toGear(st.at);if(s*(q[2]-zf)<=0)continue;for(const c of sweep(st.group,[q[0],q[1]]))keep.push({c,r:4,what:st.what});}
  // The frame's bolts through the face plate that the leg reaches without touching anything.
- const g=MOUNT.gap,eye=MOUNT.eye,band:[number,number]=[-t-3,3],chosen:P[]=[];
+ const g=MOUNT.gap,band:[number,number]=[-t-3,3],chosen:P[]=[],eyes=new Map<P,number>();
  for(const b of plan.bolts){if(b.body||!b.attach[faceLayer.id])continue;const {u,v}=uv(b.at);if(Math.abs(v)>90)continue;const foot=at(u,Math.max(band[0],Math.min(band[1],v)));
-  if(keep.every(k=>clear(b.at,foot,eye,k)>g))chosen.push(b.at);}
+  if(keep.every(k=>clear(b.at,foot,b.eye,k)>g)){chosen.push(b.at);eyes.set(b.at,b.eye);}}
  if(!chosen.length)return none(`Kein Säulenbolzen des Gestells ist frei zu erreichen (${keep.map(k=>k.what).filter((w,i,all)=>all.indexOf(w)===i).join(', ')||'nichts im Weg, aber keine Bolzen'}). Im Getriebe-Generator einen Bolzen setzen.`);
  if(chosen.length<2)issues.push('Der Winkel hält nur an einem Bolzen: er kann sich drehen. Im Getriebe-Generator einen zweiten Bolzen am Gestell setzen.');
- let us=chosen.map(b=>uv(b).u),u0=Math.min(...us)-eye-3,u1=Math.max(...us)+eye+3;if(u1-u0<30){const mid=(u0+u1)/2;u0=mid-15;u1=mid+15;}
+ let us=chosen.map(b=>uv(b).u),u0=Math.min(...us)-7,u1=Math.max(...us)+7;if(u1-u0<30){const mid=(u0+u1)/2;u0=mid-15;u1=mid+15;}
  const strip:P[]=[at(u0,band[0]),at(u1,band[0]),at(u1,band[1]),at(u0,band[1])];
- for(const k of keep)if(clear(at(u0,(band[0]+band[1])/2),at(u1,(band[0]+band[1])/2),(band[1]-band[0])/2,k)<=g)issues.push(`Der Winkel kommt ${k.what} zu nahe.`);
+ // The strip as it is (a rectangle): points over it, every mm or so.
+ const grid=Array.from({length:Math.ceil(u1-u0)+1},(_,i)=>u0+(u1-u0)*i/Math.ceil(u1-u0)).flatMap(u=>Array.from({length:6},(_,j)=>at(u,band[0]+(band[1]-band[0])*j/5)));
+ for(const k of keep)if(grid.some(q=>clear(q,q,0,k)<=g)){issues.push(`Der Winkel kommt ${k.what} zu nahe.`);}
  // The leg: the strip and a web to each bolt, between the face and t beyond it (unmirrored z for the room).
  const z0=Math.min(zf,zf+s*t),z1=Math.max(zf,zf+s*t),fz=(z:number)=>x.mirror?2*m-z:z,legFrame:Frame=x.gear,lz:[number,number]=[Math.min(fz(z0),fz(z1)),Math.max(fz(z0),fz(z1))];
- const solids:Prim[]=[{kind:'slab',frame:legFrame,points:hull(strip),z0:lz[0],z1:lz[1]},...chosen.map(b=>{const {u,v}=uv(b);return {kind:'slab' as const,frame:legFrame,points:hull([...circle(b,eye),...circle(at(u,Math.max(band[0],Math.min(band[1],v))),eye)]),z0:lz[0],z1:lz[1]};})];
+ const solids:Prim[]=[{kind:'slab',frame:legFrame,points:hull(strip),z0:lz[0],z1:lz[1]},...chosen.map(b=>{const {u,v}=uv(b);return {kind:'slab' as const,frame:legFrame,points:hull([...circle(b,eyes.get(b)!),...circle(at(u,Math.max(band[0],Math.min(band[1],v))),eyes.get(b)!)]),z0:lz[0],z1:lz[1]};})];
  const holes:Prim[]=chosen.map(b=>({kind:'cylinder',frame:compose(legFrame,{position:[b[0],b[1],0],rotation:[0,0,0,1]}),r:MOUNT.d/2,z0:lz[0]-1,z1:lz[1]+1}));
  // The flange: in a frame on the face's line at the plate's underside, x along the line, y towards the plate, z its normal.
  const origin=toWorld([...at(0,0),zf] as V),nz=unit(rotate(x.plate.rotation,[0,0,1]));let ax=unit(dirWorld([d[0],d[1],0])),ay=cross(nz,ax);
@@ -90,3 +95,18 @@ function quat(x:V,y:V,z:V):[number,number,number,number]{const [m00,m10,m20]=x,[
  const S=Math.sqrt(1+m22-m00-m11)*2;return [(m02+m20)/S,(m12+m21)/S,S/4,(m10-m01)/S];}
 /** The middle of a gearbox's height: what it is mirrored across. */
 export function middle(plan:GearPlan){const zs=[...plan.shafts.flatMap(x=>[x.z0,x.z1]),...plan.layers.flatMap(l=>l.band)];return zs.length?(Math.min(...zs)+Math.max(...zs))/2:0;}
+/** A place for a ball stud on a swing arm, for a turnbuckle (the differential bar of a rover): a bolt of the arm set by
+ * hand, level with its pivot (so it moves up and down, the same both ways), on either side of it. The bolt must fit the
+ * arm (the plan finds nothing wrong); the stud, sticking out of the arm's face beyond the frame's plate, stays clear of
+ * the frame's bearings, bolts and motors over the arm's whole range. The arm's own bolts are kept. */
+export function studPlace(doc:GearDoc,files:Record<string,ShaftFile>,group:string){
+ const plan=planGear(doc,files),g=plan.groups.find(x=>x.id===group);if(!g)return undefined;const own=plan.bolts.filter(b=>b.body===group).map(b=>[+b.at[0].toFixed(2),+b.at[1].toFixed(2)] as P);
+ const frame=plan.layers.filter(l=>!l.body),rim=frame[0]?.rim??3,keep:Keep[]=[];
+ for(const l of frame)for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k);if(b&&!b.motor)keep.push({c:b.at,r:b.D/2+rim,what:b.label});}
+ for(const b of plan.bolts)if(!b.body)keep.push({c:b.at,r:b.eye,what:'Bolzen'});
+ for(const mo of plan.motors){const sh=plan.shafts.find(v=>v.id===mo.on);if(sh)keep.push({c:sh.at,r:mo.part.size[0]/2,square:true,what:mo.label});}
+ for(const r of [36,40,44,48,32])for(const side of [-1,1]){const at:P=[g.at[0]+side*r,g.at[1]],path=Array.from({length:9},(_,i)=>rot(at,g.at,g.from+(g.to-g.from)*i/8));
+  if(!keep.every(k=>path.every(p=>clear(p,p,4,k)>1.5)))continue;
+  const next=structuredClone(doc),ng=next.groups?.find(x=>x.id===group);if(!ng)continue;ng.bolts=[...own,at];
+  if(planGear(next,files).issues.some(i=>i.level==='fehler'))continue;return {doc:next,at};}
+ return undefined;}

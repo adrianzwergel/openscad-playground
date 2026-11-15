@@ -58,26 +58,29 @@ export const gearExamples:Example[]=[
     shafts:[{id:'m',shaft:ids.m,at:[0,72],z:3.5},{id:'p',shaft:ids.p,at:P,z:0},{id:'w1',shaft:ids.w1,at:pol(P,80,rear),z:36},{id:'b',shaft:ids.b,at:B,z:27},{id:'w2',shaft:ids.w2,at:pol(B,80,180+bogie),z:27},{id:'w3',shaft:ids.w3,at:pol(B,80,-bogie),z:27}],
     belts:([['m','r','p','r'],['p','a','w1','r'],['p','b','b','r'],['b','c','w2','r'],['b','d','w3','r']] as const).map(([a,i,b,j],k)=>({id:`r${k+1}`,a:{on:a,item:i},b:{on:b,item:j}})),
     groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['w1','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['w2','w3'],from:-12,to:12}]};}};})(),
- // The same with LEGO gears, all between the plates: a z40 on every axle, between them z16 in a row (an odd number:
- // the wheels turn alike, swinging does not turn them), a z16 on the motor's shaft. The 685 bearings sit straight on
- // the LEGO cross where the gear had to pass. Frame and bogie plates share the outer heights (far apart), the rocker's
- // lie inside them, the gears in the middle.
- (()=>{const L=(id:string,x:number)=>({id,part:'lager-685',x}),Z40=(x:number)=>({id:'g',part:'lego-3649',x}),Z16=(x:number)=>({id:'g',part:'lego-4019',x}),K={kind:'kreuz' as const};
+ // The same with LEGO gears, all between the plates, from what one has plenty of: a z40 on every axle and between them
+ // one idler each (an odd number: the wheels turn alike, swinging does not turn them), a z40 on the rocker, a z24 on the
+ // bogie; a z8 on the motor's shaft. No z16 and no z36. The 685 bearings sit straight on the LEGO cross where the gear
+ // had to pass. Frame and bogie plates share the outer heights (far apart), the rocker's lie inside them, the gears in
+ // the middle.
+ (()=>{const L=(id:string,x:number)=>({id,part:'lager-685',x}),Z40=(x:number)=>({id:'g',part:'lego-3649',x}),Z24=(x:number)=>({id:'g',part:'lego-3648b',x}),Z8=(x:number)=>({id:'g',part:'lego-10928',x}),K={kind:'kreuz' as const};
   const pol=(c:[number,number],r:number,deg:number):[number,number]=>[+(c[0]+r*Math.cos(deg*Math.PI/180)).toFixed(3),+(c[1]+r*Math.sin(deg*Math.PI/180)).toFixed(3)];
-  // Rear wheel 88 mm from the pivot (three z16 between), the bogie's pivot 88 mm ahead of it, the bogie's wheels 56 mm
-  // from theirs (one z16 between): all three axles 60 mm below the rocker's pivot.
-  const P:[number,number]=[0,0],rear=223,front=-22,B=pol(P,88,front),drop=Math.asin((60+B[1])/56)*180/Math.PI;
-  return {key:'rocker-lego',title:'Rocker-Bogie mit LEGO z40 und z16',text:'Wie das Riemen-Beispiel, aber mit LEGO-Zahnrädern zwischen den Platten: z40 auf jeder Achse, dazwischen z16 in Reihe, ein z16 auf der Motorwelle. Die Lager 685 sitzen dort, wo das Rad vorbei muss, direkt auf dem LEGO-Kreuz. Die Radwellen enden als LEGO-Kreuz für die Reifen.',
-   shafts:[{key:'m',name:'Motor z16',doc:{...shaft([Z16(15.5)],24),inserts:[{id:'m',part:'motor-nema17-40',end:'links' as const,depth:15}],works:[{id:'s',kind:'madenschraube' as const,x:7,m:3}]}},
+  // The rear wheel 80 mm from the rocker's pivot, a z40 halfway; the bogie's pivot 76 mm ahead, its z40 40 mm from both,
+  // off the line and above it, clear of the bogie's gears when the bogie swings. The bogie's wheels 64 mm from theirs
+  // (a z24 between): all three axles at the height of the rear wheel. Searched for: nothing in the way over both ranges,
+  // the longest wheelbase.
+  const P:[number,number]=[0,0],rear=225,front=-10,W1=pol(P,80,rear),B=pol(P,76,front),up=Math.acos(38/40)*180/Math.PI,drop=Math.asin((B[1]-W1[1])/64)*180/Math.PI;
+  return {key:'rocker-lego',title:'Rocker-Bogie mit LEGO z40, z24 und z8',text:'Wie das Riemen-Beispiel, aber mit LEGO-Zahnrädern zwischen den Platten: z40 auf jeder Achse, dazwischen je ein Zwischenrad (am Rocker z40, an der Bogie z24), ein z8 auf der Motorwelle (5 : 1). Kein z16, kein z36. Die Lager 685 sitzen dort, wo das Rad vorbei muss, direkt auf dem LEGO-Kreuz. Die Radwellen enden als LEGO-Kreuz für die Reifen.',
+   shafts:[{key:'m',name:'Motor z8',doc:{...shaft([Z8(15.5)],24),inserts:[{id:'m',part:'motor-nema17-40',end:'links' as const,depth:15}],works:[{id:'s',kind:'madenschraube' as const,x:7,m:3}]}},
     {key:'p',name:'Achse z40',doc:shaft([L('l1',0),L('l2',9),Z40(19),L('l3',31),L('l4',41)],46)},
-    {key:'i',name:'Zwischenrad z16',doc:shaft([L('l1',0),Z16(10),L('l2',22)],27)},
+    {key:'i',name:'Zwischenrad z40',doc:shaft([L('l1',0),Z40(10),L('l2',22)],27)},
     {key:'w1',name:'Rad hinten z40',doc:{...shaft([L('l1',0),Z40(10),L('l2',22)],70),sections:[{x0:28,x1:70,profile:K}]}},
-    {key:'j',name:'Bogie-Zwischenrad z16',doc:shaft([L('l1',0),Z16(19),L('l2',41)],46)},
+    {key:'j',name:'Bogie-Zwischenrad z24',doc:shaft([L('l1',0),Z24(19),L('l2',41)],46)},
     {key:'w',name:'Bogie-Rad z40',doc:{...shaft([L('l1',0),Z40(19),L('l2',41)],79),sections:[{x0:47,x1:79,profile:K}]}}],
    make:(ids:Record<string,string>):GearDoc=>{const g=newGear();return {...g,settings:{...g.settings,lipIn:.7},input:'m',
-    shafts:[{id:'m',shaft:ids.m,at:[0,28],z:3.5},{id:'p',shaft:ids.p,at:P,z:0},
-     ...[28,44,60].map((d,k)=>({id:`h${k+1}`,shaft:ids.i,at:pol(P,d,rear),z:9})),{id:'w1',shaft:ids.w1,at:pol(P,88,rear),z:9},
-     ...[28,44,60].map((d,k)=>({id:`v${k+1}`,shaft:ids.i,at:pol(P,d,front),z:9})),{id:'b',shaft:ids.p,at:B,z:0},
-     {id:'j2',shaft:ids.j,at:pol(B,28,180+drop),z:0},{id:'w2',shaft:ids.w,at:pol(B,56,180+drop),z:0},{id:'j3',shaft:ids.j,at:pol(B,28,-drop),z:0},{id:'w3',shaft:ids.w,at:pol(B,56,-drop),z:0}],
-    groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['h1','h2','h3','w1','v1','v2','v3','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['j2','w2','j3','w3'],from:-10,to:20}]};}};})(),
+    shafts:[{id:'m',shaft:ids.m,at:[0,24],z:3.5},{id:'p',shaft:ids.p,at:P,z:0},
+     {id:'h',shaft:ids.i,at:pol(P,40,rear),z:9},{id:'w1',shaft:ids.w1,at:W1,z:9},
+     {id:'v',shaft:ids.i,at:pol(P,40,front+up),z:9},{id:'b',shaft:ids.p,at:B,z:0},
+     {id:'j2',shaft:ids.j,at:pol(B,32,180+drop),z:0},{id:'w2',shaft:ids.w,at:pol(B,64,180+drop),z:0},{id:'j3',shaft:ids.j,at:pol(B,32,-drop),z:0},{id:'w3',shaft:ids.w,at:pol(B,64,-drop),z:0}],
+    groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['h','w1','v','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['j2','w2','j3','w3'],from:-10,to:20}]};}};})(),
 ];
