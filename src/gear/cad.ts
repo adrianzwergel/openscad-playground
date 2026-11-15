@@ -31,7 +31,7 @@ function throughHoles(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|undefined{c
  // A motor: its pilot and screw holes, as slots along its belt so it can be moved to tension it.
  const slot=(c:P,r:number,m:{slot?:[number,number];travel:number})=>{if(!m.slot||!m.travel){hole(c,r);return;}const t=m.travel/2,a:P=[c[0]-m.slot[0]*t,c[1]-m.slot[1]*t],e:P=[c[0]+m.slot[0]*t,c[1]+m.slot[1]*t],h=hull(a,r,e,r);holes=holes?holes.fuse(h):h;};
  for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;if(b.motor){const m=b.motor;slot(b.at,(m.part.pilot??0)/2+s.hole,m);for(const h of m.part.holes)slot([b.at[0]+h.at[0],b.at[1]+h.at[1]],h.d/2+.2,m);continue;}hole(b.at,b.D/2-s.lipIn);}
- for(const h of l.holes)hole(plan.shafts.find(x=>x.id===h.on)!.at,h.r);
+ for(const h of l.holes){const c=plan.shafts.find(x=>x.id===h.on)!.at;hole(c,h.r);if(h.open){const [dx,dy]=h.open.dir,nx=-dy*h.r,ny=dx*h.r,e:P=[c[0]+dx*h.open.length,c[1]+dy*h.open.length],slot=draw([c[0]+nx,c[1]+ny]).lineTo([e[0]+nx,e[1]+ny]).lineTo([e[0]-nx,e[1]-ny]).lineTo([c[0]-nx,c[1]-ny]).close();holes=holes?holes.fuse(slot):slot;}}
  for(const bo of plan.bolts)if(bo.attach[l.id])hole(bo.at,bo.hole);
  return holes;}
 /** The outline of a layer's plates, with everything that goes through cut out. Webs lowered or raised under/over a

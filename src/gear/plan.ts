@@ -38,7 +38,10 @@ export type WebPlan={a:string;b:string;auto:boolean;forced:boolean;route?:'ausse
 /** `pair`: two plates clamping the bearings, split at `split`; else one plate. `lips`: a stop over the outer ring at the
  * bottom / at the top (one plate: only on the outer side of the lowest and the highest layer). */
 export type LayerPlan={id:string;z0:number;z1:number;band:[number,number];split:number;pair:boolean;lips:[boolean,boolean];auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];/** Holes for shafts passing through; `ring`: where the hole cuts into the plate, the plate gets material round it
- * out to this radius first, so it never falls apart or keeps only a sliver there. */holes:{on:string;r:number;ring?:number}[];parts:number};
+ * out to this radius first, so it never falls apart or keeps only a sliver there. `open`: a slot of the hole's width from
+ * it out of the plate (`dir`, `length` from the centre), where something on that shaft could not pass the hole when the
+ * plate goes on. */holes:Hole[];parts:number};
+export type Hole={on:string;r:number;ring?:number;open?:{dir:[number,number];length:number}};
 export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string};
 /** A bolt through all plates: where, the eye round it, which bearing of each layer its eye is joined to. */
 export type Bolt={at:[number,number];eye:number;hole:number;auto:boolean;attach:Record<string,string>;/** Set by hand onto a wheel, bearing or shaft. */hit?:boolean};
@@ -112,6 +115,22 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
  // The webs to the bolts' eyes come after the layers: a hole they cut into gets its ring of material too.
  layers.forEach((l,i)=>{for(const h of l.holes){if(h.ring)continue;const x=shafts.find(v=>v.id===h.on)!,touched=bolts.some(bo=>{const k=bo.attach[l.id];if(!k)return false;const b=bearings.find(v=>v.key===k)!;return hullDistance(x.at,b.at,b.D/2+l.rim,bo.at,bo.eye)<h.r;});if(!touched)continue;h.ring=h.r+l.rim;
   for(const o of obstacles)if(overlap(o.z0,o.z1,l.band[0],l.band[1])>eps&&!o.on.includes(h.on)&&(o.b?hullDistance(x.at,o.a,o.ra,o.b,o.rb!):dist(x.at,o.a)-o.ra)<h.ring+s.clearance-eps)issues.push({level:'fehler',message:`Schicht ${i+1}: der Ring um das Freiloch für ${x.label} trifft ${o.label}`,ref:x.id});}});
+ // Assembly: the lowest plate takes the shafts from above, every other plate goes on over them from above. A hole whose
+ // shaft carries something on that side larger than the hole is opened to the plate's nearest edge.
+ const lowestLayer=layers.reduce<LayerPlan|undefined>((a,l)=>!a||l.band[0]<a.band[0]?l:a,undefined);
+ layers.forEach((l,i)=>{const shapes=layerShapes(l,bearings,bolts);
+  for(const h of l.holes){const x=shafts.find(v=>v.id===h.on)!,below=l===lowestLayer,side=(z0:number,z1:number)=>below?z1<=l.band[0]+eps:z0>=l.band[1]-eps;
+   const parts=[...obstacles.filter(o=>!o.b&&o.on.includes(x.id)).map(o=>({label:o.label,r:o.ra,z0:o.z0,z1:o.z1})),...bearings.filter(b=>b.on===x.id&&!b.motor).map(b=>({label:b.label,r:b.D/2,z0:b.z0,z1:b.z1}))].filter(q=>side(q.z0,q.z1)&&q.r>h.r-1e-6);
+   if(!parts.length||!(h.ring||shapes.some(g=>hullDistance(x.at,g.a,g.ra,g.b,g.rb)<h.r)))continue;
+   const all=[...shapes,...l.holes.filter(o=>o.ring).map(o=>{const c=shafts.find(v=>v.id===o.on)!.at;return {a:c,ra:o.ring!,b:c,rb:o.ring!};})],rings=l.bearings.map(k=>bearings.find(b=>b.key===k)!);
+   // Shortest way out, and of those the one that cuts least of the plate beyond the hole's own ring (along its two edges).
+   let best:{dir:[number,number];length:number;score:number}|undefined;const ringR=h.ring??h.r,inside=(q:[number,number])=>all.some(g=>!(g.a===g.b&&g.a[0]===x.at[0]&&g.a[1]===x.at[1])&&hullDistance(q,g.a,g.ra,g.b,g.rb)<0);
+   for(let a=0;a<360;a+=10){const dir:[number,number]=[Math.cos(a*Math.PI/180),Math.sin(a*Math.PI/180)];let t=h.r,ok=true;
+    for(;t<400;t+=.5){const q:[number,number]=[x.at[0]+dir[0]*t,x.at[1]+dir[1]*t];if(rings.some(b=>dist(q,b.at)<b.D/2+l.rim-1e-6)){ok=false;break;}if(all.every(g=>hullDistance(q,g.a,g.ra,g.b,g.rb)>0))break;}
+    if(!ok||t>=400)continue;let cut=0;for(let u=0;u<=t+2;u+=.5)for(const side of [1,-1]){const q:[number,number]=[x.at[0]+dir[0]*u-dir[1]*h.r*side,x.at[1]+dir[1]*u+dir[0]*h.r*side];if(dist(q,x.at)>ringR&&inside(q))cut++;}
+    const score=t+cut*.5;if(!best||score<best.score-1e-9)best={dir:[+dir[0].toFixed(6),+dir[1].toFixed(6)],length:t+1,score};}
+   if(best){h.open={dir:best.dir,length:best.length};issues.push({level:'hinweis',message:`Schicht ${i+1}: das Freiloch für ${x.label} ist zum Rand hin offen, weil ${parts.map(q=>q.label).join(', ')} beim Aufsetzen nicht durchpasst`,ref:x.id});}
+   else issues.push({level:'warnung',message:`Schicht ${i+1}: ${parts.map(q=>q.label).join(', ')} passt nicht durch das Freiloch für ${x.label}, und es lässt sich nicht zum Rand öffnen, ohne einen Lager-Ring zu schneiden`,ref:x.id});}});
  const bom:BomLine[]=[];const add=(what:string,count=1,note?:string)=>{const b=bom.find(x=>x.what===what);if(b)b.count+=count;else bom.push({what,count,...(note?{note}:{})});};
  layers.forEach((l,i)=>{if(l.pair){add(`Platte Schicht ${i+1} unten (gedruckt)`,1,`${n(l.split-l.band[0])} mm dick`);add(`Platte Schicht ${i+1} oben (gedruckt)`,1,`${n(l.band[1]-l.split)} mm dick`);}else add(`Platte Schicht ${i+1} (gedruckt)`,1,`${n(l.band[1]-l.band[0])} mm dick${l.lips[0]?', Anschlag unten':l.lips[1]?', Anschlag oben':', ohne Anschlag'}`);});
  for(const c of columns)add(`Distanzsäule ${n(c.z1-c.z0)} mm (gedruckt)`,bolts.length,`zwischen ${c.from} und ${c.to}`);
@@ -152,7 +171,7 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   const comp=new Map(list.map(b=>[b.key,b.key])),f2=(k:string):string=>{const p=comp.get(k)!;if(p===k)return k;const r=f2(p);comp.set(k,r);return r;};for(const w of webs){const x=f2(w.a),y=f2(w.b);if(x!==y)comp.set(x,y);}
   const parts=new Set(list.map(b=>f2(b.key))).size;if(parts>1)issues.push({level:'warnung',message:`${name} zerfällt in ${parts} Teile: Stege fehlen`});
   // Shafts passing through without a bearing here: a hole.
-  const holes:{on:string;r:number;ring?:number}[]=shafts.filter(x=>!list.some(b=>b.on===x.id)&&overlap(x.z0,x.z1,band[0],band[1])>0).map(x=>({on:x.id,r:Math.max(...x.pieces.filter(p=>overlap(p.z0,p.z1,band[0],band[1])>0).map(p=>p.r),0)+s.hole}));
+  const holes:Hole[]=shafts.filter(x=>!list.some(b=>b.on===x.id)&&overlap(x.z0,x.z1,band[0],band[1])>0).map(x=>({on:x.id,r:Math.max(...x.pieces.filter(p=>overlap(p.z0,p.z1,band[0],band[1])>0).map(p=>p.r),0)+s.hole}));
   // What the plate hits: rings and webs against wheels, pulleys, sleeves and belts in the band's heights.
   const at=(k:string)=>list.find(b=>b.key===k)!;
   for(const o of obstacles){if(overlap(o.z0,o.z1,band[0],band[1])<=eps)continue;
@@ -220,3 +239,10 @@ function planBolts(doc:GearDoc,layers:LayerPlan[],bearings:Bearing[],shafts:Shaf
 
 /** The centre distance at which a belt of length `L` fits two pulleys of pitch radii r1, r2. */
 export function centerFor(L:number,r1:number,r2:number){const k=L-Math.PI*(r1+r2),d=k*k-8*(r1-r2)**2;return d<0?NaN:(k+Math.sqrt(d))/4;}
+
+/** What a layer's plate is made of, as hulls of discs: rings, webs (straight or the bars round a part; not the lowered
+ * ones), and the webs to the bolts' eyes. */
+function layerShapes(l:LayerPlan,bearings:Bearing[],bolts:Bolt[]){const at=(k:string)=>bearings.find(b=>b.key===k)!,ring=(b:Bearing)=>b.D/2+l.rim;
+ return [...l.bearings.map(k=>{const b=at(k);return {a:b.at,ra:ring(b),b:b.at,rb:ring(b)};}),
+  ...l.webs.filter(w=>!w.z).flatMap(w=>{const a=at(w.a),b=at(w.b);if(!w.path)return [{a:a.at,ra:ring(a),b:b.at,rb:ring(b)}];const pts=[a.at,...w.path,b.at];return pts.slice(1).map((q,k)=>({a:pts[k],ra:w.width!,b:q,rb:w.width!}));}),
+  ...bolts.flatMap(bo=>{const k=bo.attach[l.id];if(!k)return [];const b=at(k);return [{a:b.at,ra:ring(b),b:bo.at,rb:bo.eye}];})];}
