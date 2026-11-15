@@ -58,3 +58,11 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 .sideview .row{cursor:grab}.sideview .row rect.bearing,.sideview .row rect.wheel,.sideview .row rect.pulley,.sideview .row rect.arm,.sideview .row .axle{pointer-events:none}
 .sideview .link{stroke:#72dac1;stroke-width:1.5;fill:#72dac1;pointer-events:none}.sideview .link.belt{stroke:#e0c56c;fill:#e0c56c;stroke-dasharray:4 3}
 .sideview line.zmark{stroke:#56656f}.sideview text.zmark{fill:#8fa1ad;font-size:10px;text-anchor:middle}
+.topview .teeth{fill:#6fc6a618;stroke:#6fc6a6;stroke-width:1}.topview .wheel .tip{stroke-opacity:.35}.topview .pulley .tip{stroke-opacity:1;stroke-dasharray:3 3;stroke-width:2}
+.topview .bearing-sym .race{fill:none;stroke:#aeb9c4;stroke-width:1.2}.topview .bearing-sym .ball{fill:#aeb9c4;stroke:none}.topview .motor-body{fill:#31363d66;stroke:#9aa7b1;stroke-dasharray:6 4}
+#top .teeth,#top .bearing-sym,#top .motor-body{pointer-events:none}
+.sideview .row *{pointer-events:none}.sideview .row .grab{pointer-events:auto}
+.sideview .item rect{stroke-width:1}.sideview .item.bearing rect{fill:#3a4a57;stroke:#aeb9c4}.sideview .item .ball{fill:#cfd8df;stroke:#3a4a57}
+.sideview .item.wheel rect{fill:#2f5248;stroke:#6fc6a6}.sideview .item .teeth{stroke:#6fc6a6;stroke-width:1.5}.sideview .item.pulley rect{fill:#4d4526;stroke:#e0c56c}.sideview .item .flange{stroke:#e0c56c;stroke-width:3}
+.sideview .item.free rect{stroke-dasharray:3 2}.sideview .item.sleeve rect{fill:#4a3a5c;stroke:#b98fd6}.sideview .item.arm rect{fill:#5a3a22;stroke:#d98f5c}.sideview .item.motor rect{fill:#31363d;stroke:#9aa7b1}
+.sideview text.what{fill:#eef3f6;font-size:9.5px;text-anchor:middle;font-weight:600}

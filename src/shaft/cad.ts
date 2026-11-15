@@ -12,6 +12,7 @@ import type {ShaftDoc} from './model.ts';
 import type {Profile} from './profile.ts';
 import {LEGO_ACROSS,LEGO_ARM,outer,label} from './profile.ts';
 import {thread} from './din.ts';
+import {involuteOutline} from '../mechanics/kinematics/generate/involute.ts';
 
 export type CadKind='welle'|'adapter'|'huelse'|'kauf'|'platte'|'saeule'|'hebel';
 export type CadPart={name:string;file:string;kind:CadKind;shape:Shape3D;color:string;/** Made, not bought: gets files. */made:boolean};
@@ -71,6 +72,19 @@ function sleeveSolid(keep:Keep,doc:ShaftDoc,s:Sleeve){
 /** A bought part as a ring: its outer Ø, its bore. */
 const ring=(keep:Keep,x0:number,x1:number,D:number,d:number)=>keep(keep(makeCylinder(D/2,x1-x0,[x0,0,0],[1,0,0])).cut(keep(makeCylinder(Math.max(.1,d/2),x1-x0+2,[x0-1,0,0],[1,0,0]))) as Shape3D);
 
+/** A part that is bought or made elsewhere, as it looks, each one solid without a 3D boolean: a bearing turned from its
+ * section (outer ring, the recess of the cage and balls, inner ring), a gear extruded from its involute teeth with its
+ * bore, a belt pulley turned with its flanges and hub; anything else a plain ring. The flanks of the teeth have few points:
+ * every face of a solid costs OpenCascade a little memory that never comes back. */
+export function partSolid(keep:Keep,t:Plan['placed'][number]):Shape3D{
+ const x0=t.x0,x1=t.x1,w=x1-x0,R=t.part.outer/2,r=Math.max(.1,outer(t.bore)/2);
+ const turn=(pts:[number,number][])=>{let pen=draw(pts[0]);for(const q of pts.slice(1))pen=pen.lineTo(q);return keep(pen.close().sketchOnPlane('XY').revolve([1,0,0]) as Shape3D);},ring=()=>turn([[x0,r],[x1,r],[x1,R],[x0,R]]);
+ if(t.part.group==='Lager'){const a=r+(R-r)*.32,b=r+(R-r)*.68,c=Math.min(w*.2,1.2);return turn([[x0,r],[x1,r],[x1,a],[x1-c,a],[x1-c,b],[x1,b],[x1,R],[x0,R],[x0,b],[x0+c,b],[x0+c,a],[x0,a]]);}
+ if(t.part.pulley&&t.part.teeth){const seat=t.part.teeth/Math.PI-.25,f=1,belt=Math.min(w,6.5+2*f),flange=Math.min(R,seat+1.5),hub=Math.min(R,Math.max(r+3,6.5));if(seat<r+.6)return ring();
+  return turn(belt<w-.5?[[x0,r],[x1,r],[x1,hub],[x0+belt,hub],[x0+belt,flange],[x0+belt-f,flange],[x0+belt-f,seat],[x0+f,seat],[x0+f,flange],[x0,flange]]:[[x0,r],[x1,r],[x1,flange],[x1-f,flange],[x1-f,seat],[x0+f,seat],[x0+f,flange],[x0,flange]]);}
+ if(t.part.teeth){const m=t.part.module??1;if(m*(t.part.teeth/2-1.25)<r+.4)return ring();
+  try{const pts=involuteOutline({module:m,teeth:t.part.teeth,samples:t.part.teeth>30?1:2});let pen=draw(pts[0]);for(const q of pts.slice(1))pen=pen.lineTo(q);return keep(pen.close().cut(profileDrawing(t.bore).rotate(t.bore.kind==='rund'?37.3:0)).sketchOnPlane('YZ',x0).extrude(w) as Shape3D);}catch{return ring();}}
+ return ring();}
 /** An arm in the YZ plane (drawing x: world y, drawing y: world z): hub and end disc with the bar between their outer
  * tangents, the hole at its end; turned `angle` about the axis from +z (as a set screw's angle). */
 export function armDrawing(a:{length:number;width:number;angle:number;hole:number;hub:number}):Drawing{
@@ -90,8 +104,11 @@ export function buildParts(doc:ShaftDoc,plan:Plan,keep?:Keep):{parts:CadPart[];f
  const parts:CadPart[]=[];const safe=(name:string,make:()=>Shape3D)=>{try{return make();}catch(e){throw Error(`${name}: ${e instanceof Error?e.message:e}`);}};
  parts.push({name:'Welle',file:'welle',kind:'welle',shape:safe('Welle',()=>shaftSolid(keep!,doc,plan)),color:'#9aa7b1',made:true});
  plan.sleeves.forEach((s,i)=>parts.push({name:s.label,file:`${s.kind}-${i+1}`,kind:s.kind,shape:safe(s.label,()=>sleeveSolid(keep!,doc,s)),color:s.kind==='adapter'?'#e0a060':'#b98fd6',made:true}));
- for(const t of plan.placed)if(t.arm)parts.push({name:t.label,file:`hebel-${t.id}`,kind:'hebel',shape:safe(t.label,()=>armSolid(keep!,doc,t)),color:'#d98f5c',made:true});else parts.push({name:t.label,file:t.id,kind:'kauf',shape:ring(keep,t.x0,t.x1,t.part.outer,outer(t.bore)),color:t.part.group==='Lager'?'#6fa4c6':'#6fc6a6',made:false});
- for(const m of plan.motors??[]){const w=m.part.size[0]/2;parts.push({name:m.label,file:`motor-${m.id}`,kind:'kauf',shape:keep(makeBox([m.x0,-w,-w],[m.x1,w,w])),color:'#3a4048',made:false});}
+ for(const t of plan.placed)if(t.arm)parts.push({name:t.label,file:`hebel-${t.id}`,kind:'hebel',shape:safe(t.label,()=>armSolid(keep!,doc,t)),color:'#d98f5c',made:true});else parts.push({name:t.label,file:t.id,kind:'kauf',shape:safe(t.label,()=>partSolid(keep!,t)),color:t.part.group==='Lager'?'#aeb9c4':t.part.pulley?'#d9c06a':t.part.group==='LEGO-Zahnräder'?'#c9ced3':t.part.teeth?'#6fc6a6':'#9fb0bd',made:false});
+ // A motor: its body with rounded edges and the centring boss on its flange.
+ for(const m of plan.motors??[]){const w=m.part.size[0],left=m.end==='links';let shape=keep(drawRoundedRectangle(w,w,Math.min(4,w/8)).sketchOnPlane('YZ',m.x0).extrude(m.x1-m.x0) as Shape3D);
+  if(m.part.pilot)try{shape=keep(shape.fuse(keep(makeCylinder(m.part.pilot/2,2,[m.face,0,0],[left?1:-1,0,0]))) as Shape3D);}catch{/* the body alone */}
+  parts.push({name:m.label,file:`motor-${m.id}`,kind:'kauf',shape,color:'#31363d',made:false});}
  for(const i of plan.inserts){const len=i.part.length??(i.x1-i.x0)+12,x0=i.end==='links'?i.x1-len:i.x0,x1=i.end==='links'?i.x1:i.x0+len;parts.push({name:`${i.label} (${label(i.profile)})`,file:i.id,kind:'kauf',shape:along(keep,i.profile,x0,x1),color:'#e0c56c',made:false});}
  return {parts,free};}
 

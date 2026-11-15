@@ -13,5 +13,5 @@ assert.equal(p.motors.length,1);assert.equal(m.face,-5);assert.equal(m.x0,-45);a
 assert.ok(p.bom.some(b=>/NEMA 17/.test(b.what)),'in der Stückliste');assert.ok(inGroups.includes('Motoren')&&inParts.some(x=>x.group==='Motoren'));
 {const q=planShaft({...doc,inserts:[{...doc.inserts[0],end:'rechts'}]}),r=q.motors[0];assert.equal(r.face,doc.length-15+20);assert.equal(r.x1,r.face+40);}
 const oc=await opencascade({print:()=>{},printErr:()=>{},wasmBinary:fs.readFileSync('node_modules/replicad-opencascadejs/dist/replicad_single.wasm')});setOC(oc);
-{const [keep,gc]=localGC(),parts=buildParts(doc,p,keep).parts,body=parts.find(x=>/NEMA 17/.test(x.name)&&x.kind==='kauf');assert.ok(body,'Motorkörper als Kaufteil');const b=body.shape.boundingBox.bounds;assert.equal(+b[0][0].toFixed(3),-45);assert.equal(+b[1][0].toFixed(3),-5);gc();}
+{const [keep,gc]=localGC(),parts=buildParts(doc,p,keep).parts,body=parts.find(x=>/NEMA 17/.test(x.name)&&x.kind==='kauf');assert.ok(body,'Motorkörper als Kaufteil');const b=body.shape.boundingBox.bounds;assert.equal(+b[0][0].toFixed(3),-45);assert.equal(+b[1][0].toFixed(3),-3,'mit dem Zentrierbund 2 mm über den Flansch');gc();}
 console.log('Motor im Wellen-Generator: Flansch aus Steckungstiefe und Motorwellenlänge, Körper dahinter, Stückliste, Kaufteil im 3D-Modell.');

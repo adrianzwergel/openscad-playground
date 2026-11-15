@@ -17,8 +17,8 @@ export class ShaftPreview{
  show(meshes:MeshData[]){
   for(const c of [...this.group.children]){this.group.remove(c);const o=c as THREE.Mesh;o.geometry?.dispose();(o.material as THREE.Material)?.dispose();}
   for(const m of meshes){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(m.vertices,3));g.setAttribute('normal',new THREE.BufferAttribute(m.normals,3));g.setIndex(new THREE.BufferAttribute(m.triangles,1));
-   const bought=m.kind==='kauf',mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:m.color,metalness:bought?0:.35,roughness:.55,transparent:bought,opacity:bought?.22:1,depthWrite:!bought,side:THREE.DoubleSide}));mesh.name=m.name;mesh.userData.kind=m.kind;mesh.renderOrder=bought?1:0;this.group.add(mesh);
-   if(!bought&&m.edges.length){const e=new THREE.BufferGeometry();e.setAttribute('position',new THREE.BufferAttribute(m.edges,3));this.group.add(new THREE.LineSegments(e,new THREE.LineBasicMaterial({color:'#1b2329'})));}}
+   const bought=m.kind==='kauf',mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:m.color,metalness:bought?.55:.35,roughness:bought?.4:.55,side:THREE.DoubleSide}));mesh.name=m.name;mesh.userData.kind=m.kind;this.group.add(mesh);
+   if(m.edges.length){const e=new THREE.BufferGeometry();e.setAttribute('position',new THREE.BufferAttribute(m.edges,3));this.group.add(new THREE.LineSegments(e,new THREE.LineBasicMaterial({color:'#1b2329'})));}}
   const box=new THREE.Box3().setFromObject(this.group);if(box.isEmpty())return;const size=box.getSize(new THREE.Vector3()).length();
   if(this.fitted===undefined||Math.abs(size-this.fitted)>this.fitted*.25){const c=box.getCenter(new THREE.Vector3());this.controls.target.copy(c);this.camera.position.set(c.x+size*.35,c.y-size*.9,c.z+size*.45);this.camera.near=size/100;this.camera.far=size*20;this.camera.updateProjectionMatrix();this.fitted=size;}
  }

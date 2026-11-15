@@ -3,6 +3,7 @@
 // between their outer tangent points plus both discs.
 import type {GearPlan,LayerPlan} from './plan.ts';
 import {rot,carried,links} from './sweep.ts';
+import {involuteOutline} from '../mechanics/kinematics/generate/involute.ts';
 import type {Pose} from './sweep.ts';
 
 const esc=(s:string)=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]!));
@@ -55,9 +56,15 @@ export function topView(p:GearPlan,layer?:LayerPlan,{scale=4,pad=12,view,selecte
  const swings=drawn.groups.filter(g=>g.to>g.from).flatMap(g=>{const w={c:g.at,from:g.from,to:g.to};return [...g.shafts.flatMap(id=>{const x=drawn.shafts.find(v=>v.id===id);if(!x)return [];const big=Math.max(3,...x.pieces.map(q=>q.r),...drawn.wheels.filter(v=>v.on===id).map(v=>v.outer),...drawn.bearings.filter(v=>v.on===id&&!v.motor).map(v=>v.D/2),...drawn.arms.filter(v=>v.on===id).map(v=>v.length+v.r1));
    return [stroke('swing',x.at,w,big,`${g.name}: ${x.label} schwenkt ${g.from}° bis ${g.to}°`),`<path class="swing-line" d="${arc(x.at,w)}" fill="none"/>`];}),
   `<g class="pivot${group===g.id?' selected':''}"><title>Drehachse von ${esc(g.name)}</title><circle cx="${X(g.at[0])}" cy="${Y(g.at[1])}" r="9"/><path d="M${X(g.at[0])-13},${Y(g.at[1])}h26M${X(g.at[0])},${Y(g.at[1])-13}v26"/></g>`];});
- const wheels=p.wheels.map(w=>`<g class="wheel${w.free?' free':''}${w.pulley?' pulley':''}${away(w.z0,w.z1)?' away':''}" data-wheel="${esc(w.key)}">${circle(w.at,w.outer,'tip',`${w.label}`)}${circle(w.at,w.pitch,'pitch')}</g>`);
+ // Wheels with their teeth (the involute outline, as the 3D model has it), pulleys with their pitch as dashes, bearings as
+ // rings with balls, motors as their square bodies.
+ const teeth=(w:GearPlan['wheels'][number])=>{if(w.pulley||!w.module||w.module*(w.teeth/2-1.25)<1)return '';try{const pts=involuteOutline({module:w.module,teeth:w.teeth,samples:2});return `<path class="teeth" d="M${pts.map(q=>`${X(w.at[0]+q[0]).toFixed(1)},${Y(w.at[1]+q[1]).toFixed(1)}`).join('L')}Z"/>`;}catch{return '';}};
+ const balls=p.bearings.filter(b=>!b.motor&&!b.hub).map(b=>{const mid=(b.D+b.d)/4,rb=Math.max(.6,(b.D-b.d)/8),k=Math.max(6,Math.min(12,Math.floor(2*Math.PI*mid/(2.6*rb))));
+  return `<g class="bearing-sym${away(b.z0,b.z1)?' away':''}"><title>${esc(b.label)}</title>${circle(b.at,b.D/2,'race')}${circle(b.at,b.d/2+(b.D-b.d)*.08,'race')}${Array.from({length:k},(_,i)=>circle([b.at[0]+mid*Math.cos(2*Math.PI*i/k),b.at[1]+mid*Math.sin(2*Math.PI*i/k)],rb,'ball')).join('')}</g>`;});
+ const motorBodies=p.motors.map(m=>{const q=p.shafts.find(x=>x.id===m.on)?.at??m.at,w=m.part.size[0];return `<rect class="motor-body" x="${X(q[0]-w/2)}" y="${Y(q[1]+w/2)}" width="${R(w)}" height="${R(w)}" rx="${R(3)}"><title>${esc(m.label)}</title></rect>`;});
+ const wheels=p.wheels.map(w=>`<g class="wheel${w.free?' free':''}${w.pulley?' pulley':''}${away(w.z0,w.z1)?' away':''}" data-wheel="${esc(w.key)}">${circle(w.at,w.outer,'tip',`${w.label}`)}${teeth(w)}${circle(w.at,w.pitch,'pitch')}</g>`);
  const bolts=p.bolts.map((bo,i)=>`<g class="bolt-grip${bo.hit?' hit':''}${bo.auto?' auto':''}${selected===`bolzen:${i}`?' selected':''}" data-bolt="${i}"><title>Bolzen M${(2*bo.hole-.4).toFixed(0)} bei ${bo.at[0].toFixed(1)} / ${bo.at[1].toFixed(1)} mm: ziehen verschiebt</title>${circle(bo.at,bo.eye,'grip')}${circle(bo.at,bo.hole,'bolt')}</g>`);
  const shafts=p.shafts.map(x=>`<g class="shaft${x.id===selected?' selected':''}${p.groups.some(g=>g.shafts.includes(x.id))?' on-swing':''}${group&&p.groups.find(g=>g.id===group)?.shafts.includes(x.id)?' of-group':''}" data-shaft="${esc(x.id)}">${circle(x.at,Math.max(1.5,Math.max(...x.pieces.map(q=>q.r))),'axle',x.label)}<text x="${X(x.at[0])+6}" y="${Y(x.at[1])-6}">${esc(x.label)}</text></g>`);
  const meshes=p.meshes.map(m=>{const a=p.wheels.find(w=>w.key===m.a)!,b=p.wheels.find(w=>w.key===m.b)!;return `<line class="mesh" x1="${X(a.at[0])}" y1="${Y(a.at[1])}" x2="${X(b.at[0])}" y2="${Y(b.at[1])}"/>`;});
- return `<svg xmlns="http://www.w3.org/2000/svg" class="topview" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${ghosts.join('')}<g class="plate ${tone(s?.body??'')}${s?.body?' swing-plate':''}">${plate.join('')}</g>${swings.join('')}${fans.join('')}${wheels.join('')}${belts.join('')}${meshes.join('')}${armShapes.join('')}${bolts.join('')}${shafts.join('')}</svg>`;
+ return `<svg xmlns="http://www.w3.org/2000/svg" class="topview" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${motorBodies.join('')}${ghosts.join('')}<g class="plate ${tone(s?.body??'')}${s?.body?' swing-plate':''}">${plate.join('')}</g>${balls.join('')}${swings.join('')}${fans.join('')}${wheels.join('')}${belts.join('')}${meshes.join('')}${armShapes.join('')}${bolts.join('')}${shafts.join('')}</svg>`;
 }
