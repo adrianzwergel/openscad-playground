@@ -40,28 +40,22 @@ export const gearExamples:Example[]=[
    {key:'e',name:'Abtrieb',doc:shaft([{id:'l',part:'lager-608',x:2}],20)}],
   make:ids=>({...newGear(),shafts:[{id:'j1',shaft:ids.j1,at:[0,0],z:0},{id:'m1',shaft:ids.m1,at:[30,0],z:5.5},{id:'m2',shaft:ids.m2,at:[-30,0],z:5.5},{id:'j2',shaft:ids.j2,at:[30,0],z:47},{id:'e',shaft:ids.e,at:[55,0],z:85}],input:'m1',
    groups:[{id:'g1',name:'Hebel 1',pivot:'j1',shafts:['j2'],from:-90,to:90,fixed:true},{id:'g2',name:'Hebel 2',pivot:'j2',shafts:['e'],from:-90,to:90,fixed:true}]})},
- // One side of a rocker-bogie: the motor up in the body, all three wheels driven through both joints. LEGO gears go on
- // the cross from one end only, so every shaft has its bearings on one side of its gear; that makes two gear planes
- // (outside the rocker's plates at the rocker's pivot, inside them at the bogie's) and one shaft with a gear in each.
- // Between a pivot's z40 and a wheel's z40 always an odd number of z16: the wheels turn alike and swinging does not turn them.
- (()=>{const L=(id:string,x:number)=>({id,part:'lager-685',x}),Z40=(x:number)=>({id:'g',part:'lego-3649',x}),Z16=(x:number,id='g')=>({id,part:'lego-4019',x});
+ // One side of a rocker-bogie: the motor up in the body, all three wheels driven by belts 1 : 1 through both joints,
+ // every belt between the two plates of its body. Stock belts of 200 mm make every arm 80 mm long. The bogie's plates
+ // lie outside the rocker's (one at the height of the frame's upper plate, far from it), its belts between the rocker's.
+ (()=>{const L=(id:string,x:number)=>({id,part:'lager-685',x}),S=(id:string,x:number)=>({id,part:'gt2-z20-schmal',x}),K={kind:'kreuz' as const};
   const pol=(c:[number,number],r:number,deg:number):[number,number]=>[+(c[0]+r*Math.cos(deg*Math.PI/180)).toFixed(3),+(c[1]+r*Math.sin(deg*Math.PI/180)).toFixed(3)];
-  // Rear wheel 88 mm from the pivot, the bogie's pivot 88 mm ahead of it, the bogie's wheels 56 mm from theirs: all three axles 60 mm below the pivot.
-  const P:[number,number]=[0,0],rear=223,front=-22,B=pol(P,88,front),drop=Math.asin((60+B[1])/56)*180/Math.PI;
-  return {key:'rocker',title:'Rocker-Bogie, eine Seite',text:'Motor oben im Körper, LEGO z16 und z40, Lager 685 (5 × 11 × 5). Der Antrieb läuft über die Rocker-Achse und die Bogie-Achse auf alle drei Räder; Rocker und Bogie schwenken frei. Die Radwellen enden als LEGO-Kreuz für die Reifen.',
-   shafts:[{key:'m',name:'Motor z16',doc:{...shaft([Z16(30.5)],40),inserts:[{id:'m',part:'motor-nema17-40',end:'links' as const,depth:15}],works:[{id:'s',kind:'madenschraube' as const,x:7,m:3}]}},
-    {key:'p',name:'Rocker-Achse z40',doc:shaft([L('l1',0),L('l2',9),L('l3',18),L('l4',27),Z40(34)],42)},
-    {key:'h',name:'Zwischenrad außen z16',doc:shaft([L('l1',0),L('l2',9),Z16(16)],24)},
-    {key:'w1',name:'Rad hinten z40',doc:shaft([L('l1',0),L('l2',9),Z40(16)],64)},
-    {key:'v',name:'Doppelrad z16/z16',doc:shaft([Z16(0),L('l1',11),L('l2',20),Z16(27,'g2')],35)},
-    {key:'i',name:'Zwischenrad innen z16',doc:shaft([Z16(0),L('l1',11),L('l2',20)],26)},
-    {key:'b',name:'Bogie-Achse z40',doc:shaft([Z40(0),L('l1',11),L('l2',20),L('l3',29),L('l4',38)],44)},
-    {key:'j',name:'Bogie-Zwischenrad z16',doc:shaft([Z16(0),L('l1',29),L('l2',38)],44)},
-    {key:'w',name:'Bogie-Rad z40',doc:{...shaft([Z40(0),L('l1',29),L('l2',38)],75),sections:[{x0:45,x1:75,profile:{kind:'kreuz' as const}}]}}],
+  // All three axles 45 mm below the rocker's pivot.
+  const P:[number,number]=[0,0],drop=45,B=pol(P,80,-5),rear=180+Math.asin(drop/80)*180/Math.PI,bogie=Math.asin((drop+B[1])/80)*180/Math.PI;
+  return {key:'rocker',title:'Rocker-Bogie, eine Seite',text:'Motor oben im Körper, Riemen GT2 1 : 1 über Rocker-Achse und Bogie-Achse auf alle drei Räder, jeder Riemen zwischen den beiden Platten seines Körpers. Normriemen 200 mm, Lager 685 (5 × 11 × 5), Wellen Ø5; Rocker und Bogie schwenken frei. Die Radwellen enden als LEGO-Kreuz für die Reifen.',
+   shafts:[{key:'m',name:'Motor z16',doc:{...shaft([{id:'r',part:'gt2-z16',x:4.5,bore:rund(9)}],30),inserts:[{id:'m',part:'motor-nema17-40',end:'links' as const,depth:15}]}},
+    {key:'p',name:'Rocker-Achse',doc:shaft([L('l1',0),{id:'r',part:'gt2-z40',x:8},L('l2',27),L('l3',36),S('a',44),S('b',53),L('l4',74)],80)},
+    {key:'w1',name:'Rad hinten',doc:{...shaft([L('l1',0),S('r',8),L('l2',38)],76),sections:[{x0:44,x1:76,profile:K}]}},
+    {key:'b',name:'Bogie-Achse',doc:shaft([L('l1',0),L('l2',9),S('c',17),S('r',26),S('d',35),L('l3',47),L('l4',56)],62)},
+    {key:'w2',name:'Bogie-Rad hinten',doc:{...shaft([L('l1',0),S('r',17),L('l2',56)],85),sections:[{x0:62,x1:85,profile:K}]}},
+    {key:'w3',name:'Bogie-Rad vorn',doc:{...shaft([L('l1',0),S('r',35),L('l2',56)],85),sections:[{x0:62,x1:85,profile:K}]}}],
    make:(ids:Record<string,string>):GearDoc=>{const g=newGear();return {...g,settings:{...g.settings,lipIn:.7},input:'m',
-    shafts:[{id:'m',shaft:ids.m,at:[0,28],z:3.5},{id:'p',shaft:ids.p,at:P,z:0},
-     ...[28,44,60].map((d,k)=>({id:`h${k+1}`,shaft:ids.h,at:pol(P,d,rear),z:18})),{id:'w1',shaft:ids.w1,at:pol(P,88,rear),z:18},
-     {id:'v1',shaft:ids.v,at:pol(P,28,front),z:7},{id:'v2',shaft:ids.i,at:pol(P,44,front),z:7},{id:'v3',shaft:ids.i,at:pol(P,60,front),z:7},{id:'b',shaft:ids.b,at:B,z:7},
-     {id:'j2',shaft:ids.j,at:pol(B,28,180+drop),z:7},{id:'w2',shaft:ids.w,at:pol(B,56,180+drop),z:7},{id:'j3',shaft:ids.j,at:pol(B,28,-drop),z:7},{id:'w3',shaft:ids.w,at:pol(B,56,-drop),z:7}],
-    groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['h1','h2','h3','w1','v1','v2','v3','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['j2','w2','j3','w3'],from:-10,to:20}]};}};})(),
+    shafts:[{id:'m',shaft:ids.m,at:[0,72],z:3.5},{id:'p',shaft:ids.p,at:P,z:0},{id:'w1',shaft:ids.w1,at:pol(P,80,rear),z:36},{id:'b',shaft:ids.b,at:B,z:27},{id:'w2',shaft:ids.w2,at:pol(B,80,180+bogie),z:27},{id:'w3',shaft:ids.w3,at:pol(B,80,-bogie),z:27}],
+    belts:([['m','r','p','r'],['p','a','w1','r'],['p','b','b','r'],['b','c','w2','r'],['b','d','w3','r']] as const).map(([a,i,b,j],k)=>({id:`r${k+1}`,a:{on:a,item:i},b:{on:b,item:j}})),
+    groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['w1','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['w2','w3'],from:-12,to:12}]};}};})(),
 ];

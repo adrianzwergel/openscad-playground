@@ -65,14 +65,16 @@ Prüfung: `scripts/gear/check-links.mjs`, `check-links-browser.mjs`.
 
 ## Beispiel Rocker-Bogie, eine Seite (2026-11-15)
 
-Motor oben im Gestell, LEGO z16 und z40, Lager 685. Der Antrieb läuft über die Rocker-Achse und die Bogie-Achse auf alle drei Räder; Rocker und Bogie sind freie Schwingen.
+Motor oben im Gestell, Riemen GT2 über Rocker-Achse und Bogie-Achse auf alle drei Räder, Lager 685, Wellen Ø5; Rocker und Bogie sind freie Schwingen. Erst mit LEGO z16/z40 gebaut (Räder außen vor den Platten, weil ein LEGO-Rad nur von einem Wellenende aufs Kreuz geht), dann auf Wunsch durch Riemen ersetzt.
 
-- **Ungerade Zahl Zwischenräder** zwischen dem z40 einer Drehachse und dem z40 eines Rads: alle Räder drehen gleich (−0,4 × Motor), und Schwenken dreht sie nicht mit.
-- **LEGO-Räder gehen nur von einem Wellenende aufs Kreuz**, also liegen alle Lager einer Welle auf einer Seite ihres Rads. Daraus folgen zwei Radebenen (außen vor den Rocker-Platten an der Rocker-Achse, innen an der Bogie-Achse) und eine Welle mit einem z16 in jeder Ebene.
+- **Riemen 1 : 1 an den Armen:** alle Räder drehen gleich (0,4 × Motor, Motor z16 auf z40), und Schwenken dreht sie nicht mit.
+- **Normriemen 200 mm** mit z20 geben 80 mm Achsabstand: so lang ist jeder Arm.
+- **Im Gehäuse:** jede Scheibe liegt zwischen den beiden Platten ihres Körpers. Die Bogie-Platten liegen außen um die Rocker-Platten (eine in der Höhe der oberen Gestellplatte, weit weg von ihr), seine Riemen zwischen den Rocker-Platten. Die Seiten sind offen: Wände macht der Generator nicht.
+- **Schmale Scheibe** `gt2-z20-schmal` (9 mm, ohne Nabe) im Wellen-Katalog, damit drei Scheiben nebeneinander auf eine Achse passen.
 - **Regel gelockert:** eine Welle, die zwei Schwingen entfernt ist, darf in der Höhe einer Platte liegen, solange ihr Weg (beide Schwenkbereiche) die Platte nie erreicht. Vorher war das immer ein Fehler.
 - **Stege in einer Linie:** wo das 2D-Verschmelzen der Hülle scheitert (Ringe in einer Linie oder überlappend), kommen die Ringe einzeln und dazwischen ein Balken, 0,05 mm schmaler als die Tangenten (`join` in `cad.ts`).
 
-Prüfung: `scripts/gear/check-rocker.mjs`, `scripts/gear/check-rocker-browser.mjs`. Offen: Ausgleich links/rechts, Anschläge, Rad-Teil mit Reifen.
+Prüfung: `scripts/gear/check-rocker.mjs`, `scripts/gear/check-rocker-browser.mjs`. Offen: Ausgleich links/rechts, Anschläge, Rad-Teil mit Reifen, geschlossene Wände, kürzere Normriemen im Katalog.
 
 ## Ansichten (2026-11-15)
 
