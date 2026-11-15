@@ -133,7 +133,8 @@ export class GearboxEditor{
    e=>{const x=this.meshes.get(id)!;x.busy=undefined;x.key=want;x.error=String(e?.message??e);this.host.refresh();this.host.leave();});
   return m.pieces;}
  private make(meshes:MeshData[]):Piece[]{const out:Piece[]=[];
-  for(const m of meshes){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(m.vertices,3));g.setAttribute('normal',new THREE.BufferAttribute(m.normals,3));g.setIndex(new THREE.BufferAttribute(m.triangles,1));
+  for(const m of meshes){if(m.spring)continue;// A spring stretches between two bodies: not here.
+   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(m.vertices,3));g.setAttribute('normal',new THREE.BufferAttribute(m.normals,3));g.setIndex(new THREE.BufferAttribute(m.triangles,1));
    const bought=m.kind==='kauf',material=new THREE.MeshStandardMaterial({color:m.color,metalness:bought?.55:.3,roughness:bought?.4:.6,side:THREE.DoubleSide}),piece:Piece={geometry:g,material,body:m.body??''};
    if(m.edges.length&&!m.asset){const e=new THREE.BufferGeometry();e.setAttribute('position',new THREE.BufferAttribute(m.edges,3));piece.edges=e;}
    // A bought part with its original model: that replaces the stand-in once it is loaded.

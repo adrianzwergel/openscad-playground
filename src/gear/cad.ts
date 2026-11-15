@@ -110,11 +110,18 @@ function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,Shaf
 /** Everything of a gearbox. `keep` registers what must be freed. */
 export function buildGearParts(doc:GearDoc,plan:GearPlan,files:Record<string,ShaftFile|undefined>,keep:Keep,pose?:Pose):CadPart[]{
  const parts:CadPart[]=[];plan.layers.forEach((l,i)=>parts.push(...plates(keep,doc,plan,l,i)));
- plan.columns.forEach((c,i)=>{for(const bo of plan.bolts){if(bo.body!==c.body)continue;const tube=drawCircle(bo.eye-.5).cut(drawCircle(bo.hole)).translate(bo.at[0],bo.at[1]);parts.push({name:`Distanzsäule ${c.from} – ${c.to}`,file:`saeule-${i+1}`,kind:'saeule',shape:keep(tube.sketchOnPlane('XY',c.z0).extrude(c.z1-c.z0) as Shape3D),color:'#c58a4a',made:true});}});
+ // Columns; where a spring hooks onto the bare bolt, in two pieces with the gap between them.
+ plan.columns.forEach((c,i)=>{plan.bolts.forEach((bo,k)=>{if(bo.body!==c.body)return;const tube=()=>drawCircle(bo.eye-.5).cut(drawCircle(bo.hole)).translate(bo.at[0],bo.at[1]),cut=plan.splits.find(x=>x.bolt===k&&x.column===i);
+  const piece=(z0:number,z1:number,file:string)=>{if(z1-z0>.2)parts.push({name:`Distanzsäule ${c.from} – ${c.to}`,file,kind:'saeule',shape:keep(tube().sketchOnPlane('XY',z0).extrude(z1-z0) as Shape3D),color:'#c58a4a',made:true});};
+  if(cut){piece(c.z0,cut.z-cut.gap/2,`saeule-${i+1}-${k+1}-unten`);piece(cut.z+cut.gap/2,c.z1,`saeule-${i+1}-${k+1}-oben`);}else piece(c.z0,c.z1,`saeule-${i+1}`);});});
  // A swing arm's plates and columns stand where the pose swings them.
  const body=(p:CadPart):string=>p.kind==='platte'?plan.layers[Number(/^schicht-(\d+)/.exec(p.file)![1])-1].body:plan.columns[Number(/^saeule-(\d+)/.exec(p.file)![1])-1].body;
- for(const p of parts)p.body=body(p);
+ for(const p of parts)if(p.kind==='platte'||p.kind==='saeule')p.body=body(p);
  if(pose)for(const p of parts)for(const g of links(plan.groups,p.body!,pose.groups))if(g.angle)p.shape=keep(p.shape.rotate(g.angle,[g.at[0],g.at[1],0],[0,0,1]) as Shape3D);
+ // Springs: a coil as a tube between its two bolts, where the pose puts them, a little short of each bolt (the hooks).
+ for(const sp of plan.springs){if(!sp.part)continue;const [a0,b0]=sp.bolts.map(k=>plan.bolts[k]),a=carried(a0.at,links(plan.groups,a0.body,pose?.groups??{})),b=carried(b0.at,links(plan.groups,b0.body,pose?.groups??{})),c=Math.hypot(b[0]-a[0],b[1]-a[1]);if(c<2*sp.part.D)continue;
+  const u=[(b[0]-a[0])/c,(b[1]-a[1])/c],hook=sp.part.D,len=c-2*hook,r=sp.part.D/2,start:[number,number,number]=[a[0]+u[0]*hook,a[1]+u[1]*hook,sp.z],dir:[number,number,number]=[u[0],u[1],0];
+  try{parts.push({name:sp.label,file:`feder-${sp.id}`,kind:'kauf',shape:keep(keep(makeCylinder(r,len,start,dir)).cut(keep(makeCylinder(r-sp.part.d,len+.02,[start[0]-u[0]*.01,start[1]-u[1]*.01,sp.z],dir))) as Shape3D),color:'#9aa6b0',made:false,spring:true});}catch{/* too short to show */}}
  // The motors' bodies come with their shafts' parts.
  parts.push(...shaftParts(keep,plan,doc,files,pose));
  return parts;}

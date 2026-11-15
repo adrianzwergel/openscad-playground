@@ -25,10 +25,14 @@ export type WebKey=[string,string];
 /** `fit`: play per side of a bearing pocket; `bolt`: thread of the bolts (M3); `bolts`: how many, 0: as the plate needs;
  * `slot`: how far a motor with a belt can be moved to tension it (its slots); `clamp`: every layer a plate pair that clamps
  * its bearings (else one plate per layer, stops only on the outside of the outermost layers). */
+/** A tension spring hooked onto two bolts of different bodies (the frame and a swing arm, or two arms): each end the
+ * `bolt`-th bolt of its `body` ('' the frame), `part` from the spring catalogue (src/shaft/springs.ts), at height `z`
+ * (else in the middle of the room both bolts share). */
+export type GearSpring={id:string;part:string;a:{body:string;bolt:number};b:{body:string;bolt:number};z?:number};
 export type GearSettings={rim:number;web:number;lip:number;lipIn:number;clearance:number;hole:number;angle:number;grid:number;bolt:number;fit:number;bolts:number;slot:number;clamp:boolean;/** Thickness of a motor's own plate. */motorPlate:number;
  /** A prototype: the plates have plain holes where the bearings go, the shafts run in them (as LEGO Technic does); the
   * plan, the parts list and the gearbox stay with their bearings. `protoPlay`: the hole over the shaft's Ø. */proto:boolean;protoPlay:number};
-export type GearDoc={shafts:PlacedShaft[];belts:Belt[];layers?:Layer[];/** Bolt places set by hand (x, y); else the plan finds them. */bolts?:[number,number][];webs?:{add:WebKey[];remove:WebKey[];/** How a web gets past a part in its way, by `a|b`: round it, or lower/higher than it. */route?:Record<string,'aussen'|'tiefe'>};/** The shaft driven (placed id). */input?:string;/** Swing arms. */groups?:Group[];/** How far the gearbox turns: the shaft `on` from `from` to `to` degrees from where it is drawn; the others follow
+export type GearDoc={shafts:PlacedShaft[];belts:Belt[];layers?:Layer[];/** Bolt places set by hand (x, y); else the plan finds them. */bolts?:[number,number][];webs?:{add:WebKey[];remove:WebKey[];/** How a web gets past a part in its way, by `a|b`: round it, or lower/higher than it. */route?:Record<string,'aussen'|'tiefe'>};/** The shaft driven (placed id). */input?:string;/** Swing arms. */groups?:Group[];/** Springs between bodies. */springs?:GearSpring[];/** How far the gearbox turns: the shaft `on` from `from` to `to` degrees from where it is drawn; the others follow
  * by their ratios. Without it everything turns endlessly. */turn?:{on:string;from:number;to:number};settings:GearSettings};
 
 export const defaultGearSettings:GearSettings={rim:3,web:4,lip:1.5,lipIn:1,clearance:1,hole:.5,angle:15,grid:1,bolt:3,fit:.1,bolts:0,slot:6,clamp:false,motorPlate:5,proto:false,protoPlay:.2};
@@ -55,4 +59,7 @@ export function parseGear(raw:unknown):GearDoc{
  const groups=d.groups?.map(g=>{if(!str(g?.id)||typeof g.name!=='string'||g.name.length>80||!str(g.pivot)||!Array.isArray(g.shafts)||g.shafts.length>40||g.shafts.some(x=>!str(x))||!num(g.from,-360,360)||!num(g.to,-360,360)||g.to<g.from||g.fixed!==undefined&&typeof g.fixed!=='boolean')throw Error('Getriebe: Schwinge ungültig');return {...(g.fixed?{fixed:true}:{}),id:g.id,name:g.name,pivot:g.pivot,shafts:[...g.shafts],from:g.from,to:g.to,...(g.bolts?{bolts:boltList(g.bolts)}:{})};});
  if(groups&&new Set(groups.map(g=>g.id)).size!==groups.length)throw Error('Getriebe: Schwingen doppelt');
  const turn=d.turn;if(turn!==undefined&&(!str(turn?.on)||!num(turn.from,-36000,36000)||!num(turn.to,-36000,36000)||turn.to<turn.from))throw Error('Getriebe: Drehbereich ungültig');
- return {shafts,belts,...(layers?{layers}:{}),...(bolts?{bolts}:{}),...(webs?{webs}:{}),...(d.input?{input:d.input}:{}),...(groups?.length?{groups}:{}),...(turn&&shafts.some(s=>s.id===turn.on)?{turn:{on:turn.on,from:turn.from,to:turn.to}}:{}),settings};}
+ if(d.springs!==undefined&&(!Array.isArray(d.springs)||d.springs.length>20))throw Error('Getriebe: Federn ungültig');
+ const end=(e:unknown)=>{const x=e as {body:string;bolt:number};if(!x||typeof x.body!=='string'||x.body.length>120||!Number.isInteger(x.bolt)||x.bolt<0||x.bolt>40)throw Error('Getriebe: Feder ungültig');return {body:x.body,bolt:x.bolt};};
+ const springs=d.springs?.map(x=>{if(!str(x?.id)||!str(x.part)||x.z!==undefined&&!num(x.z))throw Error('Getriebe: Feder ungültig');return {id:x.id,part:x.part,a:end(x.a),b:end(x.b),...(x.z!==undefined?{z:x.z}:{})};});
+ return {...(springs?.length?{springs}:{}),shafts,belts,...(layers?{layers}:{}),...(bolts?{bolts}:{}),...(webs?{webs}:{}),...(d.input?{input:d.input}:{}),...(groups?.length?{groups}:{}),...(turn&&shafts.some(s=>s.id===turn.on)?{turn:{on:turn.on,from:turn.from,to:turn.to}}:{}),settings};}

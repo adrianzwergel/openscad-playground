@@ -13,6 +13,8 @@ import {CadClient} from '../shaft/cad-client.ts';
 import {ShaftPreview} from '../shaft/preview.ts';
 import {gearCsv,gearNotes} from './notes.ts';
 import JSZip from 'jszip';
+import {springCatalog,springParts,parseMeasures} from '../shaft/springs.ts';
+import type {SpringMeasure} from '../shaft/springs.ts';
 import {renameInPlace,confirmByClick} from '../mechanics/inline-edit.ts';
 
 const FORMAT='gear-1',SHAFT='shaft-1';
@@ -21,6 +23,11 @@ const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unkno
 const n=(x:number)=>String(+x.toFixed(3)).replace('.',',');
 
 const store=await ProjectStore.open('getriebe',FORMAT),shaftStore=await ProjectStore.open('wellen',SHAFT);
+// ---------- springs: what was measured of the assortment, for every gearbox (folder `federn`, one file) ----------
+const springStore=await ProjectStore.open('federn','spring-1');
+let measures:Record<string,SpringMeasure>={};try{measures=parseMeasures((await springStore.read('messungen')).doc);}catch{/* nothing measured yet */}
+let catalog=springCatalog(measures);
+function saveMeasures(){catalog=springCatalog(measures);springStore.write('messungen',{format:'spring-1',name:'Messungen',updated:new Date().toISOString(),doc:measures});}
 let open:{id:string;name:string;doc:GearDoc;readOnly:boolean}|undefined,files:Record<string,ShaftFile>={},names:{id:string;name:string}[]=[],plan:GearPlan|undefined;
 let saveTimer:ReturnType<typeof setTimeout>|undefined,past:string[]=[],future:string[]=[],before:string|undefined;
 const status=(m:string)=>{$('status').textContent=m;};
@@ -31,13 +38,13 @@ const tell=(type:string,id:string,name:string)=>{if(embedded)window.parent.postM
 const cad=new CadClient();let preview:ShaftPreview|undefined,meshed='',meshTimer:ReturnType<typeof setTimeout>|undefined,filesFor='',made:Promise<{name:string;data:ArrayBuffer}[]>|undefined;
 const previewState=(text:string,state:string)=>{const e=$('preview-state');e.textContent=text;e.dataset.state=state;};
 /** The gearbox and the files of the shafts it uses, as one key and one message. */
-const payload=()=>{const used=Object.fromEntries(open!.doc.shafts.map(s=>s.shaft).filter(id=>files[id]).map(id=>[id,files[id]])),z=editor.pose,pose=z.turn||Object.values(z.groups).some(Boolean)?{turn:z.turn,groups:{...z.groups}}:undefined,made=JSON.stringify([open!.doc,used]);return {doc:open!.doc,files:used,pose,made,key:made+JSON.stringify(pose??0)};};
+const payload=()=>{const used=Object.fromEntries(open!.doc.shafts.map(s=>s.shaft).filter(id=>files[id]).map(id=>[id,files[id]])),z=editor.pose,pose=z.turn||Object.values(z.groups).some(Boolean)?{turn:z.turn,groups:{...z.groups}}:undefined,made=JSON.stringify([open!.doc,used,measures]);return {doc:open!.doc,files:used,pose,made,key:made+JSON.stringify(pose??0)};};
 /** The plan of what is open: made once per state, the editor asks for it often. */
 let memo:{key:string;files:Record<string,ShaftFile>;plan:GearPlan}|undefined;
-function planNow(){const key=JSON.stringify(open!.doc);if(!memo||memo.key!==key||memo.files!==files)memo={key,files,plan:planGear(open!.doc,files)};return memo.plan;}
+function planNow(){const key=JSON.stringify([open!.doc,measures]);if(!memo||memo.key!==key||memo.files!==files)memo={key,files,plan:planGear(open!.doc,files,catalog)};return memo.plan;}
 function schedulePreview(){if(!open)return;const p=payload();if(p.key===meshed)return;meshed=p.key;clearTimeout(meshTimer);previewState('3D-Modell rechnet …','busy');
- meshTimer=setTimeout(()=>{void cad.request('mesh',p.doc,{files:p.files,...(p.pose?{pose:p.pose}:{})}).then(r=>{if(meshed!==p.key)return;if(r.kind==='error'){previewState(`Kein 3D-Modell: ${r.message}`,'error');return;}if(r.kind!=='mesh')return;preview??=new ShaftPreview($('preview'));(window as unknown as {preview?:ShaftPreview}).preview=preview;preview.show(r.meshes);previewState('Ziehen dreht, Rad zoomt, rechte Taste verschiebt.','ready');},e=>{if(meshed===p.key){meshed='';previewState(`Kein 3D-Modell: ${e.message}`,'error');}});},300);}
-function gearFiles(){const p=payload();if(p.made!==filesFor||!made){filesFor=p.made;made=cad.request('files',p.doc,{files:p.files}).then(r=>{if(r.kind==='error')throw Error(r.message);if(r.kind!=='files')throw Error('Unerwartete Antwort');return r.files;});made.catch(()=>{if(filesFor===p.made)made=undefined;});}return made;}
+ meshTimer=setTimeout(()=>{void cad.request('mesh',p.doc,{files:p.files,springs:measures,...(p.pose?{pose:p.pose}:{})}).then(r=>{if(meshed!==p.key)return;if(r.kind==='error'){previewState(`Kein 3D-Modell: ${r.message}`,'error');return;}if(r.kind!=='mesh')return;preview??=new ShaftPreview($('preview'));(window as unknown as {preview?:ShaftPreview}).preview=preview;preview.show(r.meshes);previewState('Ziehen dreht, Rad zoomt, rechte Taste verschiebt.','ready');},e=>{if(meshed===p.key){meshed='';previewState(`Kein 3D-Modell: ${e.message}`,'error');}});},300);}
+function gearFiles(){const p=payload();if(p.made!==filesFor||!made){filesFor=p.made;made=cad.request('files',p.doc,{files:p.files,springs:measures}).then(r=>{if(r.kind==='error')throw Error(r.message);if(r.kind!=='files')throw Error('Unerwartete Antwort');return r.files;});made.catch(()=>{if(filesFor===p.made)made=undefined;});}return made;}
 const base=()=>open!.name.replace(/[^wäöüÄÖÜß-]+/g,'_');
 function save_(blob:Blob,name:string){const url=URL.createObjectURL(blob),a=el('a',{href:url,download:name});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status(`${name} gespeichert.`);}
 function download(name:string){status('Datei wird erzeugt …');void gearFiles().then(all=>{const f=all.find(x=>x.name===name);if(!f)throw Error(`${name} fehlt`);save_(new Blob([f.data]),`${base()}-${name}`);},e=>status(`Datei nicht erzeugt: ${e.message}`));}
@@ -51,6 +58,7 @@ const editor=new GearEditor({
  begin:()=>{before??=JSON.stringify(open!.doc);},
  commit:m=>{if(before!==undefined&&before!==JSON.stringify(open!.doc)){past.push(before);if(past.length>200)past.shift();future=[];save();}before=undefined;if(m)status(m);draw();},
  live:()=>draw(),
+ catalog:()=>catalog,springs:part=>openSprings(part),
 },status);
 
 /** The shaft generator's files, read fresh: a gearbox follows its shafts. */
@@ -84,6 +92,7 @@ $('gear-close').onclick=()=>void flush().then(()=>{open=undefined;draw();void li
 const rename=()=>{if(!open||open.readOnly)return;const o=open;renameInPlace($('gear-name'),o.name,name=>{o.name=name;save();draw();void list();status(`Umbenannt in „${name}“.`);});};
 $('gear-rename').onclick=rename;$('gear-name').ondblclick=rename;$('gear-name').title='Doppelklick benennt um';
 $('gear-delete').onclick=()=>{if(!open)return;confirmByClick($('gear-delete'),'Wirklich löschen?',()=>{if(!open)return;const id=open.id;clearTimeout(saveTimer);saveTimer=undefined;open=undefined;void store.remove(id).then(()=>{draw();void list();});});};
+$('springs-open').onclick=()=>openSprings();
 $('undo').onclick=()=>undo(true);$('redo').onclick=()=>undo(false);
 addEventListener('keydown',e=>{if(!open)return;const typing=(e.target as HTMLElement).closest('input,select,textarea');
  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!typing){e.preventDefault();undo(!e.shiftKey);}
@@ -116,3 +125,22 @@ if(embedded)document.body.classList.add('embedded');
 if(hash.has('new')){await create(hash.get('name')||'Neues Getriebe',newGear());if(open)tell('created',open.id,open.name);}
 const last=hash.has('new')?open?.id:hash.get('open')??await store.active();if(last&&(await store.list()).some(f=>f.id===last)){if(open?.id!==last)await openGear(last);}else{draw();await list();}
 document.body.dataset.ready='true';
+
+// ---------- the spring catalogue: the assortment, what is estimated, what was measured ----------
+// Per spring: wire Ø and active coils (from a caliper and counting), or two lengths under two masses (a tension spring
+// hung up, a compression spring loaded on top). Measured numbers beat estimates; every gearbox uses them at once.
+function openSprings(focus?:string){let d=document.getElementById('springs-dialog');
+ if(!d){d=el('div',{id:'springs-dialog',hidden:true});document.body.append(d);addEventListener('keydown',e=>{if(e.key==='Escape'&&!d!.hidden){d!.hidden=true;draw();}});}
+ const f=(x:number,k=2)=>String(+x.toFixed(k)).replace('.',',');
+ const render=()=>{const close=el('button',{className:'primary',id:'springs-close',textContent:'Fertig'});close.onclick=()=>{d!.hidden=true;draw();};
+  const table=el('table',{className:'springs'},el('tr',{},...['Feder','Stück','Draht Ø [mm]','Windungen','Masse 1 [g]','Länge 1 [mm]','Masse 2 [g]','Länge 2 [mm]','Rate','Vorspannung','hält'].map(t=>el('th',{textContent:t}))));
+  for(const part of springParts){const c=catalog[part.id],m=measures[part.id]??{},row=el('tr',{});row.dataset.spring=part.id;if(part.id===focus)row.classList.add('focus');
+   const input=(value:number|undefined,placeholder:string,write:(v:number|undefined)=>void,key:string)=>{const i=el('input',{type:'number',step:'0.01',value:value===undefined?'':String(value),placeholder});i.dataset.measure=key;i.onchange=()=>{const v=i.value===''?undefined:Number(i.value);write(v!==undefined&&Number.isFinite(v)&&v>0?v:undefined);const x=measures[part.id];if(x&&!x.d&&!x.n&&!x.points?.length)delete measures[part.id];saveMeasures();render();draw();};return el('td',{},i);};
+   const mm=(k:'d'|'n')=>(v:number|undefined)=>{const x=measures[part.id]??={};if(v===undefined)delete x[k];else x[k]=v;};
+   const pt=(i:number,k:'g'|'L')=>(v:number|undefined)=>{const x=measures[part.id]??={},pts=x.points??=[];pts[i]??={g:0,L:0};pts[i][k]=v??0;x.points=pts.filter(q=>q&&(q.g||q.L));if(!x.points.length)delete x.points;};
+   const p0=m.points?.[0],p1=m.points?.[1];
+   row.append(el('td',{textContent:c.label}),el('td',{textContent:String(part.count)}),input(m.d,f(c.d),mm('d'),'d'),input(m.n,f(c.n,1),mm('n'),'n'),input(p0?.g||undefined,'',pt(0,'g'),'g1'),input(p0?.L||undefined,'',pt(0,'L'),'L1'),input(p1?.g||undefined,'',pt(1,'g'),'g2'),input(p1?.L||undefined,'',pt(1,'L'),'L2'),
+    el('td',{className:c.estimated.R?'muted':'measured',textContent:`${f(c.R,3)} N/mm${c.estimated.R?' (geschätzt)':''}`}),el('td',{textContent:part.kind==='zug'?`${f(c.F0)} N`:'–'}),el('td',{textContent:`${f(c.smax,1)} mm · ${f(c.Fmax,1)} N${c.sBuckle!==undefined?` · knickt ab ${f(c.sBuckle,1)} mm`:''}`}));table.append(row);}
+  d!.replaceChildren(el('div',{className:'dialog-bar'},el('b',{textContent:'Federn: Work-it 49100'}),el('span',{className:'muted',textContent:'Grau: geschätzt. Draht mit dem Messschieber, Windungen zählen, oder die Länge unter zwei Gewichten messen (Zugfeder hängend, Druckfeder belastet). Gilt für alle Getriebe.'}),el('span',{className:'spacer'}),close),el('div',{className:'springs-body'},table));
+  d!.querySelector('tr.focus')?.scrollIntoView({block:'center'});};
+ render();d.hidden=false;}

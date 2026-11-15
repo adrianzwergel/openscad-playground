@@ -5,6 +5,10 @@
 // World: x/y the plane, z up. A placed shaft's item from x0 to x1 (shaft generator) stands from z+x0 to z+x1, or, flipped,
 // from z+L−x1 to z+L−x0. A layer holds the bearings whose middle lies in it; its plates reach `lip` beyond its bearings'
 // faces (the rim holding the outer ring), so that band is what must stay clear of wheels.
+import {planSprings} from './springs.ts';
+import type {SpringPlan,ColumnSplit} from './springs.ts';
+import {springCatalog} from '../shaft/springs.ts';
+import type {SpringCatalog} from '../shaft/springs.ts';
 import {planShaft} from '../shaft/plan.ts';
 import type {Plan as ShaftPlan} from '../shaft/plan.ts';
 import type {ShaftDoc} from '../shaft/model.ts';
@@ -69,7 +73,7 @@ export type Bolt={/** Through the plates of this body ('' the frame). */body:str
 /** Printed columns between two layers, one per bolt. */
 export type Columns={from:string;to:string;z0:number;z1:number;body:string};
 export type BomLine={what:string;count:number;note?:string};
-export type GearPlan={drive:Drive;arms:Arm[];groups:GroupPlan[];/** Degrees every shaft turns per degree of the shaft the range is set at, where that is known. */turnRate:Record<string,number>;motors:Motor[];shafts:ShaftInWorld[];wheels:Wheel[];bearings:Bearing[];obstacles:Obstacle[];meshes:Mesh[];belts:BeltPlan[];rates:Record<string,number>;layers:LayerPlan[];bolts:Bolt[];columns:Columns[];screw?:{length:number;what:string};bom:BomLine[];issues:Issue[]};
+export type GearPlan={drive:Drive;arms:Arm[];groups:GroupPlan[];/** Degrees every shaft turns per degree of the shaft the range is set at, where that is known. */turnRate:Record<string,number>;motors:Motor[];shafts:ShaftInWorld[];wheels:Wheel[];bearings:Bearing[];obstacles:Obstacle[];meshes:Mesh[];belts:BeltPlan[];rates:Record<string,number>;layers:LayerPlan[];bolts:Bolt[];columns:Columns[];screw?:{length:number;what:string};bom:BomLine[];issues:Issue[];/** Tension springs between bodies, and where their hooks split a column. */springs:SpringPlan[];splits:ColumnSplit[]};
 
 const n=(x:number)=>String(+x.toFixed(2)).replace('.',',');
 const mm=(x:number)=>`${n(x)} mm`;
@@ -93,7 +97,8 @@ function sweepPrims(g:Capsule,rel:Sweep[]):Prim[]{if(!rel.length)return [g];if(r
  for(const w of rel.slice(0,-1)){const next:Capsule[]=[];for(const h of shapes){const far=Math.max(dist(h.a,w.c)+h.ra,dist(h.b,w.c)+h.rb),k=Math.max(1,Math.min(most,Math.ceil((w.to-w.from)*Math.PI/180*far/1.5)));for(let i=0;i<=k;i++)next.push(turned(h,w.c,w.from+(w.to-w.from)*i/k));}shapes=next;}
  return shapes.map(h=>({...h,sweep:rel.at(-1)!}));}
 
-export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):GearPlan{
+/** `catalog`: the springs as known (measured where measured, else estimated). */
+export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,catalog:SpringCatalog=springCatalog()):GearPlan{
  const issues:Issue[]=[],shafts:ShaftInWorld[]=[],wheels:Wheel[]=[],bearings:Bearing[]=[],obstacles:Obstacle[]=[],motors:Motor[]=[],s=doc.settings,arms:Arm[]=[],groups:GroupPlan[]=[];
  // Swing arms: shafts that move together about a pivot shaft's axis.
  const taken=new Set<string>();
@@ -293,15 +298,20 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
   else if(!mine.length)issues.push({level:'warnung',message:`${g.name}: keine Platte, denn keine ihrer Wellen hat ein Lager`,ref});
   else if(!mine.some(on))issues.push({level:'warnung',message:`${g.name} hängt nicht an ihrer Drehachse: auf ${pivot} fehlt ein Lager in der Höhe ihrer Platten`,ref});
   if(g.shafts.length&&!layers.some(l=>l.body!==g.id&&on(l))&&!(bodyOf(g.pivot)!==g.id&&motors.some(m=>m.on===g.pivot)))issues.push({level:'warnung',message:`${g.name}: ihre Drehachse ${pivot} ist im Gestell nicht gelagert`,ref});}
+ // Springs between bodies: over every pose of the arms they hang between.
+ const sp=planSprings(doc,{groups,bolts,columns,obstacles},catalog);issues.push(...sp.issues);
  const bom:BomLine[]=[];const add=(what:string,count=1,note?:string)=>{const b=bom.find(x=>x.what===what);if(b)b.count+=count;else bom.push({what,count,...(note?{note}:{})});};
  layers.forEach((l,i)=>{if(l.body){const of=groups.find(g=>g.id===l.body)!.name;if(l.pair){add(`Platte Schicht ${i+1} unten, ${of} (gedruckt)`,1,`${n(l.split-l.band[0])} mm dick`);add(`Platte Schicht ${i+1} oben, ${of} (gedruckt)`,1,`${n(l.band[1]-l.split)} mm dick`);}else add(`Platte Schicht ${i+1}, ${of} (gedruckt)`,1,`${n(l.band[1]-l.band[0])} mm dick`);return;}
   if(l.pair){add(`Platte Schicht ${i+1} unten (gedruckt)`,1,`${n(l.split-l.band[0])} mm dick`);add(`Platte Schicht ${i+1} oben (gedruckt)`,1,`${n(l.band[1]-l.split)} mm dick`);}else add(`Platte Schicht ${i+1} (gedruckt)`,1,`${n(l.band[1]-l.band[0])} mm dick${l.lips[0]?', Anschlag unten':l.lips[1]?', Anschlag oben':', ohne Anschlag'}`);});
- for(const c of columns)add(`Distanzsäule ${n(c.z1-c.z0)} mm (gedruckt)`,bolts.filter(b=>b.body===c.body).length,`zwischen ${c.from} und ${c.to}`);
+ columns.forEach((c,i)=>{const split=sp.splits.filter(x=>x.column===i),whole=bolts.filter(b=>b.body===c.body).length-split.length;if(whole)add(`Distanzsäule ${n(c.z1-c.z0)} mm (gedruckt)`,whole,`zwischen ${c.from} und ${c.to}`);
+  // A hook on the bare bolt: that column in two pieces, the gap between them.
+  for(const x of split)add(`Distanzsäule ${n(x.z-x.gap/2-c.z0)} mm + ${n(c.z1-x.z-x.gap/2)} mm (gedruckt)`,1,`zwischen ${c.from} und ${c.to}, geteilt für den Haken einer Feder`);});
+ for(const x of sp.springs)if(x.part)add(x.part.label,1,x.part.source);
  for(const st of sets)if(st.screw&&st.count){add(st.screw.what,st.count);add(`Mutter M${n(s.bolt)} DIN 934`,st.count);add(`Scheibe M${n(s.bolt)} DIN 125`,2*st.count);}
  for(const bp of belts)add(`Zahnriemen GT2 6 mm, ${bp.stock?`${bp.stock} mm geschlossen`:`${n(bp.length)} mm`}`);
  for(const x of shafts)add(`${x.label} (Wellen-Generator, Teile dort in der Stückliste)`);
  for(const m of motors)add(m.part.label,1,m.layer?'mit 4 Schrauben M3 am Flansch':'noch an keiner Platte');
- return {drive,arms,groups,turnRate,motors,shafts,wheels,bearings,obstacles,meshes,belts,rates,layers,bolts,columns,...(screw?{screw}:{}),bom,issues};
+ return {drive,arms,groups,turnRate,motors,shafts,wheels,bearings,obstacles,meshes,belts,rates,layers,bolts,columns,...(screw?{screw}:{}),bom,issues,springs:sp.springs,splits:sp.splits};
 }
 
 /** Layers: proposed from the bearings' heights (bearings whose spans touch share one), or the ones set by hand. Then

@@ -2,6 +2,8 @@
 // in the middle (drag shafts: they snap into mesh round a partner in angle steps, else onto the mm grid; Alt: free), the
 // layers from the side below (bands to move and stretch), properties on the right (exact values, angle round a
 // partner, belts, webs, layer rules).
+import type {SpringCatalog} from '../shaft/springs.ts';
+import {springFits} from './springs.ts';
 import type {GearDoc,Layer,GearSettings,Group} from './model.ts';
 import type {Pose} from './sweep.ts';
 import {webKey} from './model.ts';
@@ -10,8 +12,8 @@ import {topView,bounds} from './draw.ts';
 import type {View} from './draw.ts';
 import {snapShaft,snapHeight,around} from './snap.ts';
 
-export type Selection={kind:'shaft';id:string}|{kind:'web';a:string;b:string}|{kind:'layer';index:number}|{kind:'bolt';index:number}|{kind:'group';id:string}|undefined;
-export type Host={/** Opens the shaft editor over the page; without id: a new shaft. */editShaft(id?:string):void;doc():GearDoc;plan():GearPlan;files():Record<string,ShaftFile>;fileNames():{id:string;name:string}[];begin():void;commit(message?:string):void;live():void;readOnly():boolean};
+export type Selection={kind:'spring';id:string}|{kind:'shaft';id:string}|{kind:'web';a:string;b:string}|{kind:'layer';index:number}|{kind:'bolt';index:number}|{kind:'group';id:string}|undefined;
+export type Host={/** Opens the shaft editor over the page; without id: a new shaft. */editShaft(id?:string):void;doc():GearDoc;plan():GearPlan;files():Record<string,ShaftFile>;fileNames():{id:string;name:string}[];begin():void;commit(message?:string):void;live():void;readOnly():boolean;/** The springs as known (measured where measured). */catalog():SpringCatalog;/** Opens the spring catalogue, at one spring. */springs(part?:string):void};
 type Drag={kind:'shaft';id:string;from:[number,number];start:[number,number];plan:GearPlan;moved:boolean}|{kind:'band';index:number;mode:'move'|'l'|'r';start:number;orig:{z0:number;z1:number};moved:boolean}|{kind:'bolt';index:number;from:[number,number];start:[number,number];moved:boolean}|{kind:'height';id:string;start:number;orig:number;plan:GearPlan;moved:boolean};
 
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,props:Record<string,unknown>={},...children:(Node|string)[]):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...children);return e;};
@@ -39,6 +41,19 @@ export class GearEditor{
   root.querySelectorAll<HTMLInputElement>('input[type=range]').forEach((i,k)=>{if(document.activeElement===i||!rows[k])return;i.value=String(rows[k].get());(i.nextElementSibling as HTMLElement).textContent=`${n(rows[k].get())}°`;});}
  /** The bolts of the body the plan's bolt `index` belongs to, set by hand (the first change by hand makes the proposed
   * places set ones, in the same order): the list, the bolt's place in it, and where the body's bolts start in the plan. */
+ /** A bolt of a body removed: springs on it go, springs on later bolts of that body keep theirs; `all`: every bolt of it. */
+ private boltGone(body:string,k:number|'all'){const d=this.doc;if(!d.springs)return;const on=(e:{body:string;bolt:number})=>e.body===body&&(k==='all'||e.bolt===k);d.springs=d.springs.filter(x=>!on(x.a)&&!on(x.b));
+  if(k!=='all')for(const x of d.springs)for(const e of [x.a,x.b])if(e.body===body&&e.bolt>k)e.bolt--;if(!d.springs.length)delete d.springs;}
+ /** A tension spring between two bolts of different bodies: both bodies' bolts are pinned (set by hand) so they keep their
+  * places, and of the springs in the catalogue the one that fits best is hooked in. */
+ addSpring(from:number,to:number){const d=this.doc,all=this.host.plan().bolts,A=all[from],B=all[to];if(!A||!B||A.body===B.body)return;
+  const ka=this.manualBolts(from).k,kb=this.manualBolts(to).k;let i=1;while(d.springs?.some(x=>x.id===`f${i}`))i++;const id=`f${i}`;
+  (d.springs??=[]).push({id,part:'zug-7x36',a:{body:A.body,bolt:ka},b:{body:B.body,bolt:kb}});
+  // Of those that stretch right, the first that touches nothing; else the one that stretches right.
+  const sp=this.host.plan().springs.find(x=>x.id===id),fits=sp?springFits(sp,this.host.catalog()):[],mine=d.springs.find(x=>x.id===id)!;let best=fits[0];
+  for(const f of fits.filter(x=>x.ok)){mine.part=f.part.id;if(!this.host.plan().issues.some(v=>v.ref===`feder:${id}`&&v.level==='fehler')){best=f;break;}}
+  if(best)mine.part=best.part.id;
+  this.sel={kind:'spring',id};return best;}
  private manualBolts(index:number){const d=this.doc,all=this.host.plan().bolts,body=all[index]?.body??'',of=all.filter(b=>b.body===body),k=Math.max(0,of.indexOf(all[index])),g=body?d.groups?.find(v=>v.id===body):undefined,fresh=()=>of.map(b=>[...b.at] as [number,number]);
   const list=g?g.bolts??=fresh():d.bolts??=fresh();return {list,k,start:index-k,clear:()=>{if(g)delete g.bolts;else delete d.bolts;}};}
  private addGroup(pivot:string,fixed:boolean):Group{const d=this.doc;d.groups??=[];let i=1;while(d.groups.some(g=>g.id===`g${i}`))i++;const word=fixed?'Hebel':'Schwinge';let k=1;while(d.groups.some(g=>g.name===`${word} ${k}`))k++;
@@ -80,12 +95,13 @@ export class GearEditor{
   if(!this.drag||this.drag.kind==='band'||!this.view){// The view fills its box (the room beside the side view), the gearbox fitted in and centred; the sliders lie along its bottom.
    const b=bounds(p,L)??{x0:-50,x1:50,y0:-30,y1:30},box=root.closest('#views'),w=Math.max(260,(box?.clientWidth||900)-this.sideWidth(p)-26),h=Math.max(200,(box?.clientHeight||480)-18),pose=document.querySelector('#pose input')?22:0,scale=Math.max(.5,Math.min(12,w/(b.x1-b.x0+2*MARGIN),(h-pose)/(b.y1-b.y0+2*MARGIN))),cx=(b.x0+b.x1)/2,cy=(b.y0+b.y1)/2;
    this.view={x0:cx-w/2/scale,y1:cy+(h-pose)/2/scale,scale,W:w,H:h};}
-  const sel=this.sel?.kind==='shaft'?this.sel.id:this.sel?.kind==='bolt'?`bolzen:${this.sel.index}`:undefined;root.innerHTML=topView(p,L,{view:this.view,selected:sel,pose:this.posed(),...(this.sel?.kind==='group'?{group:this.sel.id}:{})});
+  const sel=this.sel?.kind==='shaft'?this.sel.id:this.sel?.kind==='bolt'?`bolzen:${this.sel.index}`:this.sel?.kind==='spring'?`feder:${this.sel.id}`:undefined;root.innerHTML=topView(p,L,{view:this.view,selected:sel,pose:this.posed(),...(this.sel?.kind==='group'?{group:this.sel.id}:{})});
   const svg=root.querySelector('svg')!;svg.dataset.scale=String(this.view.scale);svg.querySelectorAll<SVGGElement>('[data-shaft]').forEach(g=>{g.onpointerdown=e=>this.startShaft(e,g.dataset.shaft!);});
   svg.querySelectorAll<SVGPolygonElement>('[data-web]').forEach(w=>{const [a,b]=w.dataset.web!.split('|');if(this.sel?.kind==='web'&&this.sel.a===a&&this.sel.b===b)w.classList.add('selected');w.onpointerdown=e=>{e.stopPropagation();this.sel={kind:'web',a,b};this.host.live();};});
   // A see-through plate clicked becomes the active one.
   svg.querySelectorAll<SVGGElement>('[data-ghost]').forEach(g=>{g.onpointerdown=ev=>{if(ev.button!==0)return;ev.stopPropagation();this.layer=Number(g.dataset.ghost);this.sel={kind:'layer',index:this.layer};this.host.live();};});
   svg.querySelectorAll<SVGGElement>('[data-bolt]').forEach(g=>{g.onpointerdown=e=>this.startBolt(e,Number(g.dataset.bolt));});
+  svg.querySelectorAll<SVGGElement>('[data-spring]').forEach(g=>{g.onpointerdown=e=>{if(e.button!==0)return;e.stopPropagation();this.sel={kind:'spring',id:g.dataset.spring!};this.host.live();};});
   svg.onpointerdown=e=>{if(e.target===svg){this.sel=undefined;this.host.live();}};}
  private startBolt(e:PointerEvent,index:number){if(e.button!==0)return;e.preventDefault();e.stopPropagation();this.rest();const at=this.mm(e)!,from=this.host.plan().bolts[index].at;this.drag={kind:'bolt',index,from:[...from],start:at,moved:false};if(!this.host.readOnly())this.host.begin();}
  private mm(e:{clientX:number;clientY:number}):[number,number]|undefined{const svg=document.querySelector('#top svg');if(!svg||!this.view)return undefined;const r=svg.getBoundingClientRect();return [this.view.x0+(e.clientX-r.left)/this.view.scale,this.view.y1-(e.clientY-r.top)/this.view.scale];}
@@ -183,8 +199,29 @@ export class GearEditor{
    root.replaceChildren(...head(`Bolzen ${s.index+1}${of}`,bo.auto?'Vom Generator gesetzt; Ziehen oder ein Wert macht alle Bolzen fest.':'Von Hand gesetzt.'),
     field('x [mm]',bo.at[0],v=>set((b,k)=>{b[k]=[v!,b[k][1]];})),field('y [mm]',bo.at[1],v=>set((b,k)=>{b[k]=[b[k][0],v!];})),
     el('p',{className:'prop-info',textContent:`M${n(d.settings.bolt)}, Auge Ø${n(2*bo.eye)}; angebunden an ${Object.values(bo.attach).map(k=>p.bearings.find(b=>b.key===k)?.label??k).join(', ')}.`}),issues(r=>r===`bolzen:${s.index}`),
-    el('div',{className:'prop-row'},button('＋ Bolzen',()=>set((b,_k,start)=>{b.push([bo.at[0]+2*bo.eye+2,bo.at[1]]);this.sel={kind:'bolt',index:start+b.length-1};}),'ghost'),...(!bo.auto?[button('Bolzen automatisch',()=>{this.manualBolts(s.index).clear();this.sel=undefined;},'ghost')]:[])),
-    button('Bolzen entfernen',()=>set((b,k)=>{b.splice(k,1);this.sel=undefined;}),'danger'));return;}
+    el('div',{className:'prop-row'},button('＋ Bolzen',()=>set((b,_k,start)=>{b.push([bo.at[0]+2*bo.eye+2,bo.at[1]]);this.sel={kind:'bolt',index:start+b.length-1};}),'ghost'),...(!bo.auto?[button('Bolzen automatisch',()=>{this.manualBolts(s.index).clear();this.boltGone(bo.body,'all');this.sel=undefined;},'ghost')]:[])),
+    ...(()=>{const others=p.bolts.map((b,i)=>({b,i})).filter(v=>v.b.body!==bo.body);if(!others.length)return [];const pick=el('select',{disabled:ro});pick.dataset.springTo=String(s.index);pick.add(new Option('＋ Feder zu Bolzen …',''));
+     for(const v of others)pick.add(new Option(`Bolzen ${v.i+1}${v.b.body?` · ${p.groups.find(g=>g.id===v.b.body)?.name??'Schwinge'}`:' · Gestell'}`,String(v.i)));
+     pick.onchange=()=>{if(!pick.value)return;this.host.begin();const best=this.addSpring(s.index,Number(pick.value));this.host.commit(best?`${best.part.label} eingehängt: ${best.why}.`:'Feder eingehängt.');};
+     return [el('label',{className:'prop'},el('span',{textContent:'Zugfeder zu einem Bolzen eines anderen Körpers'}),pick)];})(),
+    button('Bolzen entfernen',()=>set((b,k)=>{b.splice(k,1);this.boltGone(bo.body,k);this.sel=undefined;}),'danger'));return;}
+  if(s?.kind==='spring'){const ds=d.springs?.find(x=>x.id===s.id),sp=p.springs.find(x=>x.id===s.id);if(!ds){this.sel=undefined;return this.renderProperties(root);}
+   const cat=this.host.catalog(),part=cat[ds.part],body=(b:string)=>b?p.groups.find(g=>g.id===b)?.name??'Schwinge':'Gestell',f=(x:number,k=1)=>n(+x.toFixed(k));
+   const pick=el('select',{disabled:ro});pick.dataset.springPart=ds.id;for(const x of sp?springFits(sp,cat):[])pick.add(new Option(`${x.ok?'✓':'✗'} ${x.part.label} · ${x.why}`,x.part.id));if(!sp)pick.add(new Option(part?.label??ds.part,ds.part));pick.value=ds.part;
+   pick.onchange=()=>{this.host.begin();ds.part=pick.value;this.host.commit(`${cat[pick.value]?.label??'Feder'} eingehängt.`);};
+   const est=part&&(part.estimated.R?'geschätzt':'gemessen'),out:(HTMLElement|string)[]=[];
+   if(sp&&part){out.push(el('p',{className:'prop-info',textContent:`Zwischen Bolzen ${sp.bolts[0]+1} (${body(sp.bodies[0])}) und Bolzen ${sp.bolts[1]+1} (${body(sp.bodies[1])}), in ${f(sp.z)} mm Höhe; Platz zwischen den Platten ${f(sp.room[0])} bis ${f(sp.room[1])} mm. Die Säulen sind dort geteilt, der Haken sitzt auf dem Bolzen.`}),
+     el('p',{className:'prop-info',textContent:`Draht Ø ${f(part.d,2)} mm${part.estimated.d?' (geschätzt)':''}, ${f(part.n)} Windungen${part.estimated.n?' (geschätzt)':''}, Rate ${String(+part.R.toFixed(3)).replace('.',',')} N/mm (${est}), Vorspannung ${f(part.F0,2)} N, der Draht hält ${f(part.smax)} mm Dehnung.`}));
+    // A few poses: as drawn, shortest and longest; what it pulls and the moment on each arm.
+    const rows=[{t:'wie gezeichnet',q:sp.rest},{t:'am kürzesten',q:sp.poses.reduce((a,b)=>b.L<a.L?b:a)},{t:'am längsten',q:sp.poses.reduce((a,b)=>b.L>a.L?b:a)}];
+    const tab=el('table',{className:'spring-table'},el('tr',{},...['Stellung','Länge','Dehnung','Kraft',...Object.keys(sp.rest.M).map(g=>`Moment ${body(g)}`)].map(t=>el('th',{textContent:t}))),
+     ...rows.map(r=>el('tr',{},el('td',{textContent:r.t==='wie gezeichnet'?r.t:`${r.t}${Object.keys(r.q.angles).length?': '+Object.entries(r.q.angles).map(([g,v])=>`${body(g)} ${f(v)}°`).join(', '):''}`}),el('td',{textContent:`${f(r.q.L)} mm`}),el('td',{textContent:`${f(r.q.s)} mm`}),el('td',{textContent:`${f(r.q.F,2)} N`}),...Object.keys(sp.rest.M).map(g=>el('td',{textContent:`${f((r.q.M[g]??0)/10,1)} N·cm`})))));
+    out.push(tab);}
+   root.replaceChildren(...head(sp?.label??'Feder','Eine Zugfeder zwischen zwei Körpern: Sie zieht die Bolzen zueinander, über den ganzen Weg der Schwingen gerechnet.'),
+    el('label',{className:'prop'},el('span',{textContent:'Feder aus dem Sortiment'}),pick),...out,
+    field('Höhe [mm]',ds.z,v=>{if(v===undefined)delete ds.z;else ds.z=v;},{optional:true,placeholder:sp?`Mitte: ${f(sp.z)}`:''}),
+    issues(r=>r===`feder:${ds.id}`),
+    el('div',{className:'prop-row'},(()=>{const b=el('button',{className:'ghost',textContent:'Federn messen …'});b.dataset.springsOpen=ds.part;b.onclick=()=>this.host.springs(ds.part);return b;})(),button('Feder entfernen',()=>{d.springs=d.springs!.filter(x=>x.id!==ds.id);if(!d.springs.length)delete d.springs;this.sel=undefined;},'danger')));return;}
   if(s?.kind==='web'){const L=p.layers.find(l=>l.webs.some(w=>w.a===s.a&&w.b===s.b)),w=L?.webs.find(v=>v.a===s.a&&v.b===s.b);if(!w){this.sel=undefined;return this.renderProperties(root);}const name=(k:string)=>p.bearings.find(b=>b.key===k)?.label??k;
    const key=`${w.a}|${w.b}`,setRoute=(r?:'aussen'|'tiefe')=>{d.webs??={add:[],remove:[]};const route={...(d.webs.route??{})};if(r)route[key]=r;else delete route[key];if(Object.keys(route).length)d.webs.route=route;else delete d.webs.route;};
    const how=w.route==='aussen'?(w.path?`Außen herum über ${w.path.length} Punkt${w.path.length>1?'e':''}, Streben ${n(2*w.width!)} mm breit.`:'Außen herum: kein freier Weg gefunden.'):w.route==='tiefe'?(w.z?`In der Tiefe: nur von ${n(w.z[0])} bis ${n(w.z[1])} mm hoch.`:'In der Tiefe: kein Platz.'):'';
@@ -212,7 +249,8 @@ export class GearEditor{
  removeSelected(){const s=this.sel,d=this.doc;if(!s||this.host.readOnly())return;this.host.begin();
   if(s.kind==='shaft')this.dropShaft(s.id);else if(s.kind==='group')this.dropGroup(s.id);
   else if(s.kind==='web'){const w=this.host.plan().layers.flatMap(l=>l.webs).find(v=>v.a===s.a&&v.b===s.b);d.webs??={add:[],remove:[]};if(w?.auto)d.webs.remove.push(webKey(s.a,s.b));else d.webs.add=d.webs.add.filter(k=>!(k[0]===s.a&&k[1]===s.b));}
-  else if(s.kind==='bolt'){const m=this.manualBolts(s.index);m.list.splice(m.k,1);}
+  else if(s.kind==='bolt'){const body=this.host.plan().bolts[s.index]?.body??'',m=this.manualBolts(s.index);m.list.splice(m.k,1);this.boltGone(body,m.k);}
+  else if(s.kind==='spring'){d.springs=d.springs?.filter(x=>x.id!==s.id);if(!d.springs?.length)delete d.springs;}
   else{this.manualLayers();d.layers!.splice(s.index,1);}
   this.sel=undefined;this.host.commit('Entfernt');}
 }

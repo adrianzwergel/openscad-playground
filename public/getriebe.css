@@ -94,3 +94,14 @@ body[data-view=gear] #generator>#workspace{display:grid;grid-template-rows:minma
 
 /* In the Studio's window: no way out of the open gearbox. */
 body.embedded header a.button,body.embedded #gear-close,body.embedded #gear-delete{display:none}
+/* Springs between bodies: a zigzag between their bolts; a wide invisible line makes them easy to click. */
+.topview .spring .coil{fill:none;stroke:#c9d1d8;stroke-width:1.6;stroke-linejoin:round}.topview .spring .hit{stroke:transparent;stroke-width:12;cursor:pointer}
+.topview .spring.selected .coil{stroke:#72dac1;stroke-width:2.4}
+
+/* The spring catalogue over the page. */
+#springs-dialog{position:fixed;inset:24px;z-index:45;display:flex;flex-direction:column;background:var(--panel);border:1px solid #52626e;border-radius:10px;box-shadow:0 12px 48px #000a;overflow:hidden}
+#springs-dialog[hidden]{display:none}#springs-dialog .dialog-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);background:#202a34}
+#springs-dialog .springs-body{overflow:auto;padding:8px 12px}table.springs{border-collapse:collapse;font-size:13px}table.springs th,table.springs td{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+table.springs input{width:70px}table.springs tr.focus td{background:#244b48}table.springs td.measured{color:var(--accent)}
+.spring-table{border-collapse:collapse;font-size:12px;margin:6px 0}.spring-table th,.spring-table td{padding:2px 5px;border-bottom:1px solid var(--line);text-align:left}
+#properties label.prop:has(select[data-spring-part]){display:block}#properties select[data-spring-part]{width:100%;margin-top:4px}
