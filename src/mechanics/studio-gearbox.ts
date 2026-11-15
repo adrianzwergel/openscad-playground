@@ -15,8 +15,12 @@ import {links} from '../gear/sweep.ts';
 import {CadClient} from '../shaft/cad-client.ts';
 import type {MeshData} from '../shaft/cad.ts';
 import type {Build,GearLink} from './parts/build';
+import {newPlateNode,newItem} from './parts/build';
+import {partById} from './parts/catalog';
+import {linkBody} from './parts/linkage';
+import {gearExamples} from '../gear/examples.ts';
 import {gearBody,armBody} from './parts/links';
-import {compose,axisAngle} from './kinematics/math';
+import {compose,axisAngle,rotate,dot} from './kinematics/math';
 import type {Frame,V} from './kinematics/math';
 
 export type GearboxHost={build:()=>Build|undefined;ensure:()=>Build;change:(edit:()=>void,message:string)=>void;status:(text:string)=>void;
@@ -38,6 +42,38 @@ export function armFrame(plan:GearPlan,group:string,angles:Record<string,number>
 const originals=new Map<string,Promise<THREE.BufferGeometry|undefined>>();
 const original=(url:string)=>{let g=originals.get(url);if(!g){g=new STLLoader().loadAsync(url).then(x=>{x.computeVertexNormals();return x;},()=>undefined);originals.set(url,g);}return g;};
 const n=(x:number)=>String(+x.toFixed(1)).replace('.',',');
+/** The generator's folders, opened once for the whole page. */
+let shared:Promise<{gear:ProjectStore;shaft:ProjectStore}>|undefined;
+const stores=()=>shared??=Promise.all([ProjectStore.open('getriebe','gear-1'),ProjectStore.open('wellen','shaft-1')]).then(([gear,shaft])=>({gear,shaft}));
+/** New files were written: the library lists the gearboxes again. */
+let listed=0;
+/** The middle of a gearbox's height: what it is mirrored across. */
+export function middle(plan:GearPlan){const zs=[...plan.shafts.flatMap(x=>[x.z0,x.z1]),...plan.layers.flatMap(l=>l.band)];return zs.length?(Math.min(...zs)+Math.max(...zs))/2:0;}
+/** A gearbox example of the generator written into its folders, its shafts first, as the generator's start page does;
+ * `tweak` changes it before. Its id and plan. */
+export async function saveGearExample(key:string,tweak?:(d:GearDoc)=>void){const x=gearExamples.find(e=>e.key===key)!,{gear,shaft}=await stores(),ids:Record<string,string>={},files:Record<string,ShaftFile>={},now=new Date().toISOString();
+ for(const s of x.shafts){const id=crypto.randomUUID().slice(0,12),doc=parseShaft(s.doc);ids[s.key]=id;files[id]={name:s.name,doc};await shaft.write(id,{format:'shaft-1',name:s.name,updated:now,doc});}
+ await shaft.settled();const doc=x.make(ids);tweak?.(doc);const id=crypto.randomUUID().slice(0,12);await gear.write(id,{format:'gear-1',name:x.title,updated:now,doc:parseGear(doc)});await gear.settled();listed++;
+ return {id,plan:planGear(parseGear(doc),files)};}
+/** The Studio's example of a whole rover: one rocker-bogie gearbox linked twice (the left side as drawn, the right side
+ * mirrored), a deck between them with an Arduino, and the differential bar: a printed bar on the deck, turning about
+ * the length of the rover, and two turnbuckles down to a ball stud on each rocker (a bolt of the rocker set by hand, level
+ * with its pivot and in front of it). The right rocker is balanced against the left: it turns the other way round. */
+export const roverExample={key:'rover',title:'Rocker-Bogie-Rover mit Ausgleichsbalken',text:'Beide Seiten aus einem Getriebe (rechts gespiegelt), Deck mit Arduino, Ausgleichsbalken mit zwei Stangen zu den Rockern.',
+ make:async(b:Build)=>{const {id,plan}=await saveGearExample('rocker-lego',d=>{const g=d.groups?.find(x=>x.id==='g1');if(g)g.bolts=[[-88.2,-73.8],[107.4,-23.6],[-14.5,39.9],[-17,-38.8],[36,0]];});
+  // The sides: plates standing (the gearbox's z across the rover), the wheels' side outwards, 60 mm from the middle.
+  const W=60,H=90,m=middle(plan),up=axisAngle([1,0,0],90);
+  b.gears=[{id:'links',gear:id,label:'Seite links',free:{frame:{position:[0,-W,H],rotation:up}}},{id:'rechts',gear:id,label:'Seite rechts',mirror:true,free:{frame:{position:[0,W+2*m,H],rotation:up}}}];
+  b.balances=[{a:armBody('links','g1'),b:armBody('rechts','g1')}];
+  const deck=newPlateNode('deck',{position:[35,0,80],rotation:[0,0,0,1]});deck.mode='fixed';deck.size=[150,90];b.plates=[deck];
+  b.items.push({...newItem('uno',partById('arduinouno3')!,[-25,0]),plate:'deck'});
+  // The bar over the deck, about x; the studs 6 mm inside the rockers' plates (gearbox z −6), 36 mm in front of the pivot
+  // and level with it: they move up and down, the same on both sides.
+  const x=36,stud=H,bar=stud+30,y=W-6;
+  b.linkage={floor:80,links:[
+   {id:'balken',label:'Ausgleichsbalken',kind:'lenker',d:6,points:[{id:'achse',kind:'dreh',at:[x-8,0,bar],to:[x+8,0,bar],body:''}]},
+   {id:'stange-l',label:'Stange links',kind:'stab',points:[{id:'balken',kind:'kugel',at:[x,-y,bar],body:linkBody('balken'),part:'kugel-5.8'},{id:'rocker',kind:'kugel',at:[x,-y,stud],body:armBody('links','g1'),part:'kugel-5.8'}]},
+   {id:'stange-r',label:'Stange rechts',kind:'stab',points:[{id:'balken',kind:'kugel',at:[x,y,bar],body:linkBody('balken'),part:'kugel-5.8'},{id:'rocker',kind:'kugel',at:[x,y,stud],body:armBody('rechts','g1'),part:'kugel-5.8'}]}]};}};
 
 export class GearboxEditor{
  /** The selected gearbox link. */
@@ -50,7 +86,8 @@ export class GearboxEditor{
  /** What is drawn now, to follow the sliders without drawing again. */
  private shown:{link:GearLink;object:THREE.Object3D;arms:Map<string,THREE.Object3D>;plan:GearPlan}[]=[];
  constructor(private host:GearboxHost){addEventListener('focus',()=>{if(this.dialog?.hidden!==false)this.reload();});}
- private open(){return this.stores??=Promise.all([ProjectStore.open('getriebe','gear-1'),ProjectStore.open('wellen','shaft-1')]).then(([gear,shaft])=>({gear,shaft}));}
+ private open(){return stores();}
+ private listedAt=0;
  /** Reads the gearboxes again (back from the generator): what changed is meshed anew, the rest stays. */
  reload(){for(const k of this.docs.keys())this.stale.add(k);this.names=undefined;this.host.refresh();this.host.leave();}
  /** What is read of a gearbox; read again when stale, the old state meanwhile. */
@@ -65,7 +102,9 @@ export class GearboxEditor{
  nameOf(id:string){const d=this.docs.get(id);return d&&typeof d!=='string'?d.name:this.names?.find(x=>x.id===id)?.name??'Getriebe';}
  private linkOf(id:string){return this.host.build()?.gears?.find(g=>g.id===id);}
  /** A body's name for people: the gearbox, or one of its swing arms. */
- bodyName(key:string){const [id,group]=key.slice('getriebe:'.length).split('/'),l=this.linkOf(id);if(!l)return 'Getriebe';const name=this.nameOf(l.gear);return group?`${name}: ${this.planOf(l.gear)?.groups.find(g=>g.id===group)?.name??'Schwinge'}`:name;}
+ /** A link's name: its own, or its file's. */
+ title(l:GearLink){return l.label??this.nameOf(l.gear);}
+ bodyName(key:string){const [id,group]=key.slice('getriebe:'.length).split('/'),l=this.linkOf(id);if(!l)return 'Getriebe';const name=this.title(l);return group?`${name}: ${this.planOf(l.gear)?.groups.find(g=>g.id===group)?.name??'Schwinge'}`:name;}
  /** The solids of a gearbox as the view shows them, asked from the CAD worker when its state is new. */
  private pieces(id:string):Piece[]|undefined{const d=this.loaded(id);if(!d)return undefined;let m=this.meshes.get(id);
   if(m?.key===d.key&&(m.pieces||m.error))return m.pieces;
@@ -87,26 +126,37 @@ export class GearboxEditor{
  // ---------- in the room ----------
  /** The frames of every swing arm: on the gearbox's frame, each turned by its slider; mirrored, the other way round. */
  armFrames(b:Build,frames:Record<string,Frame>,values:Record<string,number>){const out:Record<string,Frame>={};
-  for(const l of b.gears??[]){const plan=this.planOf(l.gear);if(!plan?.groups.length)continue;const at=frames[gearBody(l.id)]??l.free.frame,angles=this.angles(l,plan,values);
+  for(const l of b.gears??[]){const plan=this.planOf(l.gear);if(!plan?.groups.length)continue;const at=frames[gearBody(l.id)]??l.free.frame,angles=this.angles(l,plan,values,frames);
    for(const g of plan.groups)out[armBody(l.id,g.id)]=compose(at,armFrame(plan,g.id,angles,l.mirror?-1:1));}
   return out;}
- /** The middle of a gearbox's height: what it is mirrored across. */
- middle(plan:GearPlan){const zs=[...plan.shafts.flatMap(x=>[x.z0,x.z1]),...plan.layers.flatMap(l=>l.band)];return zs.length?(Math.min(...zs)+Math.max(...zs))/2:0;}
- private angles(l:GearLink,plan:GearPlan,values:Record<string,number>){return Object.fromEntries(plan.groups.map(g=>[g.id,Math.min(g.to,Math.max(g.from,values[armBody(l.id,g.id)]??0))]));}
+ /** The axis a gearbox's swing arms turn about, in the room (its z; mirrored, the other way). */
+ private axis(l:GearLink,frames:Record<string,Frame>={}){return rotate((frames[gearBody(l.id)]??l.free.frame).rotation,[0,0,l.mirror?-1:1]);}
+ /** Each swing arm's angle: its slider, or, balanced against another arm, that one's turn the other way round in the
+  * room (the differential bar of a rocker-bogie). */
+ private angles(l:GearLink,plan:GearPlan,values:Record<string,number>,frames:Record<string,Frame>={}){const b=this.host.build();
+  return Object.fromEntries(plan.groups.map(g=>{const key=armBody(l.id,g.id),bal=b?.balances?.find(x=>x.b===key),clamp=(v:number)=>Math.min(g.to,Math.max(g.from,v));
+   if(bal){const [lid,gid]=bal.a.slice('getriebe:'.length).split('/'),o=b?.gears?.find(x=>x.id===lid),op=o&&this.planOf(o.gear),og=op?.groups.find(x=>x.id===gid);
+    if(o&&og){const lead=Math.min(og.to,Math.max(og.from,values[bal.a]??0)),ratio=-dot(this.axis(o,frames),this.axis(l,frames));return [g.id,clamp(ratio*lead)];}}
+   return [g.id,clamp(values[key]??0)];}));}
+ /** A swing arm's name for sliders and lists: with its gearbox when there are several (mirrored ones say so). */
+ armName(key:string){const [lid,gid]=key.slice('getriebe:'.length).split('/'),b=this.host.build(),l=b?.gears?.find(x=>x.id===lid),g=l&&this.planOf(l.gear)?.groups.find(x=>x.id===gid);if(!l)return 'Schwinge';
+  return ((b!.gears!.length>1)?`${this.title(l)}${l.mirror&&!l.label?' (gespiegelt)':''} · `:'')+(g?.name??'Schwinge');}
+ /** The arm this one follows by a balance, if any. */
+ leader(key:string){return this.host.build()?.balances?.find(x=>x.b===key)?.a;}
  /** Every linked gearbox into the view: its frame, mirrored inside if so, the swing arms' parts on their arms. */
  draw(root:THREE.Group,b:Build,frames:Record<string,Frame>,values:Record<string,number>){this.shown=[];
   for(const l of b.gears??[]){const outer=new THREE.Group();outer.userData.gearbox=l.id;place(outer,frames[gearBody(l.id)]??l.free.frame);root.add(outer);
    const inner=new THREE.Group();outer.add(inner);
    const plan=this.planOf(l.gear),pieces=this.pieces(l.gear),selected=l.id===this.selectedId;
    // Mirrored in place: across the middle of its height, so it stays where it stood.
-   if(l.mirror){inner.scale.set(1,1,-1);inner.position.z=plan?2*this.middle(plan):0;}
+   if(l.mirror){inner.scale.set(1,1,-1);inner.position.z=plan?2*middle(plan):0;}
    if(!plan||!pieces){const box=new THREE.Mesh(new THREE.BoxGeometry(40,40,20),new THREE.MeshBasicMaterial({color:0x7fb6ff,wireframe:true,transparent:true,opacity:.4}));box.position.z=10;inner.add(box);continue;}
-   const arms=new Map<string,THREE.Object3D>(),angles=this.angles(l,plan,values),bodyOf=(body:string)=>{if(!body)return inner;let a=arms.get(body);if(!a){a=new THREE.Group();place(a,armFrame(plan,body,angles));inner.add(a);arms.set(body,a);}return a;};
+   const arms=new Map<string,THREE.Object3D>(),angles=this.angles(l,plan,values,frames),bodyOf=(body:string)=>{if(!body)return inner;let a=arms.get(body);if(!a){a=new THREE.Group();place(a,armFrame(plan,body,angles));inner.add(a);arms.set(body,a);}return a;};
    for(const p of pieces){const m=new THREE.Mesh(p.geometry,p.material);m.userData.shared=true;if(p.matrix){m.matrixAutoUpdate=false;m.matrix.copy(p.matrix);}const into=bodyOf(plan.groups.some(g=>g.id===p.body)?p.body:'');into.add(m);
     if(p.edges){const e=new THREE.LineSegments(p.edges,new THREE.LineBasicMaterial({color:selected?0xffffff:0x1b2329}));e.userData.shared=true;into.add(e);}}
    this.shown.push({link:l,object:outer,arms,plan});}}
  /** The sliders moved: frames and swing arms follow, nothing is drawn again. */
- follow(frames:Record<string,Frame>,values:Record<string,number>){for(const s of this.shown){const f=frames[gearBody(s.link.id)];if(f)place(s.object,f);const angles=this.angles(s.link,s.plan,values);for(const [g,o] of s.arms)place(o,armFrame(s.plan,g,angles));}}
+ follow(frames:Record<string,Frame>,values:Record<string,number>){for(const s of this.shown){const f=frames[gearBody(s.link.id)];if(f)place(s.object,f);const angles=this.angles(s.link,s.plan,values,frames);for(const [g,o] of s.arms)place(o,armFrame(s.plan,g,angles));}}
  get moving(){return this.shown.some(s=>s.arms.size>0)||this.shown.some(s=>s.link.free.body);}
  /** The gearbox under the pointer. */
  at(ray:THREE.Raycaster,root:THREE.Group){root.updateWorldMatrix(true,true);let o:THREE.Object3D|null|undefined=ray.intersectObjects(root.children,true)[0]?.object;while(o&&!o.userData.gearbox&&!o.userData.item&&!o.userData.plate)o=o.parent;return o?.userData.gearbox as string|undefined;}
@@ -114,7 +164,9 @@ export class GearboxEditor{
  // ---------- sliders, library, tree, page ----------
  /** One slider per swing arm, under the view. */
  renderAxes(root:HTMLElement){const b=this.host.build(),values=this.host.values(),rows:HTMLElement[]=[];
-  for(const l of b?.gears??[]){const plan=this.planOf(l.gear);for(const g of plan?.groups??[]){const key=armBody(l.id,g.id),value=Math.min(g.to,Math.max(g.from,values[key]??0)),name=(b!.gears!.length>1?`${this.nameOf(l.gear)} · `:'')+g.name;
+  for(const l of b?.gears??[]){const plan=this.planOf(l.gear);for(const g of plan?.groups??[]){const key=armBody(l.id,g.id),value=Math.min(g.to,Math.max(g.from,values[key]??0)),name=this.armName(key);
+   // An arm balanced against another follows it: no slider of its own.
+   const lead=this.leader(key);if(lead){const o=el('output',{textContent:`folgt ${this.armName(lead)} gegenläufig (Ausgleich)`});o.dataset.follows=key;rows.push(el('label',{className:'axis-row'},el('span',{textContent:name}),o));continue;}
    const slider=el('input',{type:'range',min:String(g.from),max:String(g.to),step:'0.5',value:String(value)}),out=el('output',{textContent:`${n(value)}°`});slider.dataset.axis=name;slider.dataset.arm=key;slider.setAttribute('aria-label',`${name} schwenken`);
    slider.oninput=()=>{values[key]=Number(slider.value);out.textContent=`${n(Number(slider.value))}°`;};rows.push(el('label',{className:'axis-row'},el('span',{textContent:name}),slider,out));}}
   if(!rows.length)return false;root.append(el('h3',{textContent:'Getriebe schwenken'}),...rows);return true;}
@@ -122,6 +174,7 @@ export class GearboxEditor{
  renderStore(root:HTMLElement){const box=el('details',{className:'store-group',open:!!this.host.build()?.gears?.length},el('summary',{textContent:'Getriebe (Getriebe-Generator)'}));box.dataset.storeGearboxes='true';
   box.append(el('p',{className:'muted',textContent:'Verknüpft, nicht kopiert: Was du im Getriebe-Generator änderst, gilt hier sofort. Anklicken setzt es neben das, was schon da ist.'}));
   const list=el('div',{className:'part-store'});box.append(list);
+ if(this.listedAt!==listed){this.listedAt=listed;this.names=undefined;}
   if(!this.names){list.append(el('p',{className:'muted',textContent:'Liest die Getriebe …'}));if(!this.listing){this.listing=true;void this.open().then(s=>s.gear.list()).then(all=>{this.names=all.map(e=>({id:e.id,name:e.name}));},()=>{this.names=[];}).finally(()=>{this.listing=false;this.host.leave();});}}
   else if(!this.names.length)list.append(el('p',{className:'muted',textContent:'Noch keine Getriebe.'}));
   for(const g of this.names??[]){const card=el('button',{className:'part-card',title:'Ins Projekt holen'},el('strong',{textContent:g.name}),el('small',{textContent:'Getriebe'}));card.dataset.gearbox=g.id;card.onclick=()=>this.add(g.id,g.name);list.append(card);}
@@ -130,12 +183,14 @@ export class GearboxEditor{
  add(gear:string,name:string){const id='g-'+crypto.randomUUID().slice(0,8),at=this.host.beside();
   this.host.change(()=>{const b=this.host.ensure();(b.gears??=[]).push({id,gear,free:{frame:{position:at,rotation:[0,0,0,1]}}});},`${name} verknüpft: Ändern im Getriebe-Generator.`);this.host.picked();this.selectedId=id;this.host.refresh();this.host.leave();}
  /** The tree's rows: one per gearbox. */
- rows(){return (this.host.build()?.gears??[]).map(l=>({id:l.id,text:`⚙▣ ${this.nameOf(l.gear)}${l.mirror?' (gespiegelt)':''}`}));}
+ rows(){return (this.host.build()?.gears??[]).map(l=>({id:l.id,text:`⚙▣ ${this.title(l)}${l.mirror?' (gespiegelt)':''}`}));}
  select(id:string|undefined){this.selectedId=id;}
  /** The page of a gearbox: what it is, edit it, mirror it, turn it; its swing arms as bodies. Where it stands and on
   * what follows (the build's connection fields). */
  renderProperties(root:HTMLElement,l:GearLink){const d=this.loaded(l.gear),plan=this.planOf(l.gear),m=this.meshes.get(l.gear);
-  root.append(el('h2',{textContent:`⚙▣ ${this.nameOf(l.gear)}`}));
+  root.append(el('h2',{textContent:`⚙▣ ${this.title(l)}`}));
+  const name=el('input',{type:'text',value:l.label??'',placeholder:this.nameOf(l.gear)});name.dataset.field='Name im Projekt';name.onchange=()=>{const v=name.value.trim().slice(0,80);this.write(l.id,v?`Heißt im Projekt „${v}“.`:'Heißt wieder wie die Datei.',x=>{if(v)x.label=v;else delete x.label;});};
+  root.append(el('label',{},'Name im Projekt',name),el('p',{className:'muted',textContent:`Datei im Getriebe-Generator: ${this.nameOf(l.gear)}`}));
   const state=this.docs.get(l.gear)==='missing'?'Die Datei fehlt im Getriebe-Generator (gelöscht?).':!d?'Liest das Getriebe …':m?.error?`Kein 3D-Modell: ${m.error}`:m?.busy?'3D-Modell rechnet …':'Verknüpft mit dem Getriebe-Generator: Änderungen dort gelten hier sofort.';
   root.append(el('p',{id:'gearbox-state',className:m?.error||!d&&this.docs.get(l.gear)==='missing'?'state-fail':'muted',textContent:state}));
   const edit=el('button',{className:'primary',textContent:'✎ Im Getriebe-Generator bearbeiten'});edit.dataset.gearboxEdit=l.gear;edit.onclick=()=>this.edit(l.gear);
@@ -146,8 +201,14 @@ export class GearboxEditor{
   const turn=(axis:V,label:string)=>{const b=el('button',{className:'ghost',textContent:label});b.dataset.gearboxTurn=label;b.onclick=()=>this.write(l.id,'Getriebe gedreht.',x=>{x.free.frame=compose(x.free.frame,{position:[0,0,0],rotation:axisAngle(axis,90)});});return b;};
   root.append(el('div',{className:'button-row'},turn([1,0,0],'↻ 90° um X'),turn([0,1,0],'↻ 90° um Y'),turn([0,0,1],'↻ 90° um Z')));
   if(plan?.groups.length){root.append(el('h3',{textContent:'Schwingen'}),el('p',{className:'muted',textContent:'Jede Schwinge ist ein Körper: Teile, Platten und Gelenkpunkte lassen sich mit ihr verbinden („Verbunden mit“) und schwenken mit. Den Regler gibt es unter der Ansicht.'}));
-   for(const g of plan.groups)root.append(el('p',{className:'muted',textContent:`${g.name}: ${n(g.from)}° bis ${n(g.to)}°${g.fixed?', fest auf ihrer Welle':', frei'}`}));}
-  const remove=el('button',{className:'ghost danger',textContent:'Aus dem Projekt nehmen'});remove.dataset.gearboxRemove=l.id;remove.onclick=()=>{this.selectedId=undefined;this.host.change(()=>{const b=this.host.build()!;b.gears=(b.gears??[]).filter(x=>x.id!==l.id);if(!b.gears.length)delete b.gears;for(const i of b.items)if(i.free?.body?.startsWith(gearBody(l.id)))delete i.free.body;for(const p of b.plates)if(p.free.body?.startsWith(gearBody(l.id)))delete p.free.body;},'Getriebe aus dem Projekt genommen (die Datei bleibt im Getriebe-Generator).');};
+   const b=this.host.build()!,others=(b.gears??[]).filter(x=>x.id!==l.id).flatMap(x=>(this.planOf(x.gear)?.groups??[]).map(g=>armBody(x.id,g.id)));
+   for(const g of plan.groups){const key=armBody(l.id,g.id);root.append(el('p',{className:'muted',textContent:`${g.name}: ${n(g.from)}° bis ${n(g.to)}°${g.fixed?', fest auf ihrer Welle':', frei'}`}));
+    // A balance: this arm turns against another one in the room, as a differential bar makes the two rockers of a rover do.
+    if(!others.length)continue;const s=el('select');s.dataset.balance=key;s.add(new Option('keinem (eigener Regler)',''));for(const o of others)s.add(new Option(this.armName(o),o));s.value=b.balances?.find(x=>x.b===key)?.a??'';
+    s.onchange=()=>this.host.change(()=>{const x=this.host.build()!;x.balances=(x.balances??[]).filter(y=>y.b!==key&&!(y.a===key&&y.b===s.value));if(s.value)x.balances.push({a:s.value,b:key});if(!x.balances.length)delete x.balances;},s.value?`${g.name} folgt ${this.armName(s.value)} gegenläufig: Ausgleich.`:`${g.name} hat wieder einen eigenen Regler.`);
+    root.append(el('label',{},`${g.name}: Ausgleich mit`,s));}
+   if(others.length)root.append(el('p',{className:'muted',textContent:'Ausgleich: Die Schwinge dreht im Raum gegenläufig zur gewählten, so wie ein Ausgleichsbalken die beiden Rocker eines Rovers koppelt. Den Balken selbst baust du als Gestänge (Bibliothek „Fahrwerk“) oder nimmst das Beispiel „Rocker-Bogie-Rover“.'}));}
+  const remove=el('button',{className:'ghost danger',textContent:'Aus dem Projekt nehmen'});remove.dataset.gearboxRemove=l.id;remove.onclick=()=>{this.selectedId=undefined;this.host.change(()=>{const b=this.host.build()!;b.gears=(b.gears??[]).filter(x=>x.id!==l.id);if(!b.gears.length)delete b.gears;if(b.balances){b.balances=b.balances.filter(x=>!x.a.startsWith(gearBody(l.id)+'/')&&!x.b.startsWith(gearBody(l.id)+'/'));if(!b.balances.length)delete b.balances;}for(const i of b.items)if(i.free?.body?.startsWith(gearBody(l.id)))delete i.free.body;for(const p of b.plates)if(p.free.body?.startsWith(gearBody(l.id)))delete p.free.body;},'Getriebe aus dem Projekt genommen (die Datei bleibt im Getriebe-Generator).');};
   root.append(remove);}
  private write(id:string,message:string,fn:(l:GearLink)=>void){this.host.change(()=>{const l=this.linkOf(id);if(l)fn(l);},message);}
 

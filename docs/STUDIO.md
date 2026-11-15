@@ -105,7 +105,23 @@ Daten: `GearLink` in `parts/build.ts`; geprüft von `scripts/check-studio-gearbo
   Platten und Gelenkpunkte lassen sich mit ihnen verbinden („Verbunden mit“) und fahren mit. Unter der Ansicht steht je
   Schwinge ein Regler „Getriebe schwenken“ in ihrem Bereich. Gespiegelt schwenkt sie andersherum, der Körper bleibt starr.
 - Das Getriebe selbst hat Lage und Verbindung wie ein freies Teil: Griff in der Ansicht, X/Y/Z, „↻ 90° um X/Y/Z“,
-  verbunden mit der Welt, einer Platte oder einem anderen Körper.
+  verbunden mit der Welt, einer Platte oder einem anderen Körper. „Name im Projekt“ unterscheidet zweimal dieselbe Datei
+  (Seite links, Seite rechts).
+- **Ausgleich** (`Build.balances`): Auf der Seite eines Getriebes kann jede Schwinge „Ausgleich mit“ einer Schwinge eines
+  anderen Getriebes bekommen. Sie hat dann keinen Regler mehr und dreht im Raum gegenläufig zu ihr (das Verhältnis folgt
+  aus den Drehachsen beider Getriebe, gespiegelt oder nicht). So koppelt ein Ausgleichsbalken die beiden Rocker eines
+  Rovers: Der Körper hängt frei auf den Rocker-Achsen und bleibt im Mittel beider Rocker, ganz ohne Feder. Den Balken
+  selbst baut man als Gestänge: ein gedruckter Lenker mit Drehachse auf dem Deck, zwei Stäbe zu Punkten auf den Schwingen.
+  Er wird gelöst, wie die Schwingen gerade stehen; ein Rest unter 0,05 mm (weniger als das Spiel eines Kugelkopfs) gilt als
+  geschlossen.
+- **Beispiel „Rocker-Bogie-Rover mit Ausgleichsbalken“** (`roverExample`): Es schreibt das Getriebe „Rocker-Bogie mit LEGO
+  z40 und z16“ samt Wellen in den Getriebe- und Wellen-Generator, mit einem von Hand gesetzten Bolzen am Rocker 36 mm vor
+  seinem Drehpunkt und auf seiner Höhe. Im Projekt steht es zweimal: links wie gezeichnet, rechts gespiegelt, die Platten
+  stehend, 60 mm von der Mitte. Dazu ein Deck mit Arduino und der Balken 30 mm über den Kugelbolzen (die sitzen 6 mm
+  innerhalb der Rocker-Platten: ein längerer M3-Bolzen mit Kugelkopf). Der rechte Rocker folgt dem linken gegenläufig; bei
+  12° heben und senken sich die Kugelbolzen um je 7,5 mm, die Stangen bleiben 30 mm lang
+  (`scripts/check-studio-rover-browser.mjs`). Offen: Das Deck ist noch nicht an die Gestelle geschraubt, beide stehen
+  fest in der Welt.
 
 ### Gestänge aus Gelenkpunkten (Fahrwerk)
 

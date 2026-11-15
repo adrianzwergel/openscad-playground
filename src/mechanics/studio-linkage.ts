@@ -102,7 +102,9 @@ export class LinkageEditor{
  private readingText(g:Linkage,pose:LinkPose){const r=read(g,pose),parts:string[]=[];
   if(r.lift!==undefined)parts.push(`Radhub ${signed(r.lift)} mm`,`Sturz ${signed(r.camber!,2)}°`,`Spur ${signed(r.toe!,2)}°`);
   for(const d of r.dampers)parts.push(`${d.label} ${de(d.length)} mm (${d.travel>=0?'eingefedert':'ausgefedert'} ${de(Math.abs(d.travel))} mm)${d.fits?'':' ⚠ außerhalb des Hubs'}`);
-  if(pose.error>1e-3)parts.push(`⚠ schließt nicht (${de(pose.error,3)} mm)`);
+  // Below the play of a ball joint (some hundredths of a mm) the loop closes for every purpose: a balanced swing arm that
+  // only nearly mirrors the other one leaves such a rest.
+  if(pose.error>.05)parts.push(`⚠ schließt nicht (${de(pose.error,3)} mm)`);
   return parts.join(' · ');}
 
  // ---------- pointer ----------

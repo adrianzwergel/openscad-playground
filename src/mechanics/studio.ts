@@ -14,6 +14,7 @@ import {BuildEditor} from './studio-build';
 import {partSeats,newBuild,newItem} from './parts/build';
 import {deriveMechanism} from './parts/derive';
 import {buildExamples} from './parts/examples';
+import {roverExample} from './studio-gearbox';
 import {placeMotor} from './kinematics/drive';
 import {partById} from './parts/catalog';
 import type {Seat} from './kinematics/bearings';
@@ -209,6 +210,7 @@ function renderStart(){
   el('h2',{textContent:'Beispiele'}),el('p',{className:'muted',textContent:'Fertige Projekte zum Ansehen und Ändern: Jedes wird ein eigenes Projekt.'}),el('div',{className:'start-grid'},
    ...([['robot','Roboterarm','Drei Drehachsen mit NEMA-Motoren.'],['cnc','CNC-Portal','Drei Linearachsen mit Spindeln.'],['sled','Schlitten auf Wellenbahn','Ein Wagen auf einer gebogenen Bahn.'],['hand','Handgetriebe (LEGO)','z16 → z40 in Gleitlagern, von Hand gedreht.'],['planet','Planetengetriebe (LEGO)','Sonne z16, drei z40, Hohlrad gedruckt, 1 : 7.'],['planet16','Planetengetriebe 4 × LEGO z16','Hohlrad z48, 1 : 4.']] as const).map(([key,title,text])=>card(title,text,{demo:key},()=>void startWith(title,async()=>{followMechanism=true;await mech.addDemo(demos[key]());followMechanism=false;return scenes().find(x=>x.kind==='mechanism'&&x.id===mech.activeId);}))),
    ...buildExamples.map(x=>card(x.title,x.text,{example:x.key},()=>void startWith(x.title,d=>{const s=partsOf(d);x.make(d.builds!.find(y=>y.id===s.id)!);return s;},1))),
+   card(roverExample.title,roverExample.text,{example:roverExample.key},()=>void startWith(roverExample.title,async d=>{const s=partsOf(d);await roverExample.make(d.builds!.find(y=>y.id===s.id)!);return s;},1)),
    card('Arduino Uno im Gehäuse','Eine Platine auf einer Platte, das Gehäuse folgt aus ihren Steckern.',{example:'case'},()=>void startWith('Arduino Uno im Gehäuse',d=>{const s=partsOf(d),b=d.builds!.find(x=>x.id===s.id)!,plate=newBuild('','').plates[0];b.plates.push(plate);b.items.push({...newItem('uno',partById('arduinouno3')!,[0,0]),plate:plate.id});return s;},3)),
    ...Object.entries(templates).map(([key,t])=>card(t.label.replace(' (Vorlage)',''),'Kinematik-Beispiel: Körper, Gelenke und Kontakte.',{mechanismTemplate:key},()=>void startWith(t.label.replace(' (Vorlage)',''),d=>{const id='mech-'+crypto.randomUUID().slice(0,8),label=t.label.replace(' (Vorlage)','');d.mechanisms=[...(d.mechanisms??[]),{id,label,mechanism:t.build()}];return {kind:'mechanism',id,label};})))),
   el('h2',{textContent:'Deine Projekte'}));

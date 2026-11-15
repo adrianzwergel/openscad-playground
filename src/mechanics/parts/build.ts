@@ -36,9 +36,9 @@ export type PlateNode=Plate&{id:string;free:Free;/** The group it sits in. */gro
 /** A gearbox of the gearbox generator, linked, not copied: its file `gear` (folder `getriebe`), where it stands and on what,
  * `mirror`: mirrored across its plates (z), as the other side of a vehicle. Its frame and each swing arm are bodies
  * others can be connected to (parts/links.ts `gearBody`, `armBody`). */
-export type GearLink={id:string;gear:string;free:Free;mirror?:boolean};
+export type GearLink={id:string;gear:string;free:Free;mirror?:boolean;/** Its name in the project (the same gearbox twice: left and right side); else the file's. */label?:string};
 /** `mechanism`: the mechanism it belongs to; without one it stands alone. */
-export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];parts:Part[];grid:number;mechanism?:string;/** The wheels and shafts of the build. */train?:Train;/** Links from hardpoints: wishbones, stabs, dampers (parts/linkage.ts). */linkage?:Linkage;/** Groups of plates, parts and wheels (parts/groups.ts). */groups?:Group[];/** Order of the scene tree, as member keys (parts/groups.ts). */order?:string[];/** Linked gearboxes. */gears?:GearLink[]};
+export type Build={id:string;label:string;plates:PlateNode[];items:BuildItem[];parts:Part[];grid:number;mechanism?:string;/** The wheels and shafts of the build. */train?:Train;/** Links from hardpoints: wishbones, stabs, dampers (parts/linkage.ts). */linkage?:Linkage;/** Groups of plates, parts and wheels (parts/groups.ts). */groups?:Group[];/** Order of the scene tree, as member keys (parts/groups.ts). */order?:string[];/** Linked gearboxes. */gears?:GearLink[];/** Swing arms balanced against each other (`getriebe:<id>/<group>`): `b` turns against `a` in the room. */balances?:{a:string;b:string}[]};
 /** One plate with what sits on it: all the planar logic below works on this. */
 export type Sheet={plate:Plate;items:BuildItem[];parts:Part[];grid:number};
 export type Rect={corners:P2[]};
@@ -70,8 +70,10 @@ export function parseBuild(value:unknown):Build{
  // A member whose group is gone stands alone.
  for(const x of [...items,...plates,...(train?.wheels??[])])if(x.group!==undefined&&!known.has(x.group))delete x.group;
  if(b.gears!==undefined&&(!Array.isArray(b.gears)||b.gears.length>40))throw Error('Aufbau: Getriebe ungültig');
- const gears=(b.gears??[]).map(g=>({id:text(g?.id,'Getriebe'),gear:text(g.gear,'Getriebe'),free:parseFree(g.free),...(g.mirror?{mirror:true}:{})}));
- return {...(gears.length?{gears}:{}),id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(train?{train}:{}),...(linkage?.links.length?{linkage}:{}),...(groups?.length?{groups}:{}),...(Array.isArray(b.order)&&b.order.length<=2000?{order:b.order.filter((k:unknown)=>typeof k==='string')}:{})};
+ const gears=(b.gears??[]).map(g=>({id:text(g?.id,'Getriebe'),gear:text(g.gear,'Getriebe'),free:parseFree(g.free),...(g.mirror?{mirror:true}:{}),...(g.label?{label:text(g.label,'Name')}:{})}));
+ if(b.balances!==undefined&&(!Array.isArray(b.balances)||b.balances.length>40))throw Error('Aufbau: Ausgleich ungültig');
+ const balances=(b.balances??[]).map(x=>({a:text(x?.a,'Ausgleich'),b:text(x?.b,'Ausgleich')}));
+ return {...(gears.length?{gears}:{}),...(balances.length?{balances}:{}),id:text(b.id,'Aufbau'),label:text(b.label,'Name'),plates,items,parts:own,grid:num(b.grid,0,50,'Raster'),...(b.mechanism?{mechanism:text(b.mechanism,'Mechanismus')}:{}),...(train?{train}:{}),...(linkage?.links.length?{linkage}:{}),...(groups?.length?{groups}:{}),...(Array.isArray(b.order)&&b.order.length<=2000?{order:b.order.filter((k:unknown)=>typeof k==='string')}:{})};
 }
 export const partOf=(b:{parts:Part[]},i:BuildItem)=>partById(i.part,b.parts)!;
 export const newItem=(id:string,part:Part,at:P2):BuildItem=>({id,part:part.id,at,angle:0,side:part.body>0?'top':'bottom',clearance:2,holder:defaultHolder(part)});
