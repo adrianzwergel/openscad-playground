@@ -63,6 +63,17 @@ Damit es am Hebel weitergeht, ist er ein Körper im Getriebe wie die Schwinge, n
 
 Prüfung: `scripts/gear/check-links.mjs`, `check-links-browser.mjs`.
 
+## Beispiel Rocker-Bogie, eine Seite (2026-11-15)
+
+Motor oben im Gestell, LEGO z16 und z40, Lager 685. Der Antrieb läuft über die Rocker-Achse und die Bogie-Achse auf alle drei Räder; Rocker und Bogie sind freie Schwingen.
+
+- **Ungerade Zahl Zwischenräder** zwischen dem z40 einer Drehachse und dem z40 eines Rads: alle Räder drehen gleich (−0,4 × Motor), und Schwenken dreht sie nicht mit.
+- **LEGO-Räder gehen nur von einem Wellenende aufs Kreuz**, also liegen alle Lager einer Welle auf einer Seite ihres Rads. Daraus folgen zwei Radebenen (außen vor den Rocker-Platten an der Rocker-Achse, innen an der Bogie-Achse) und eine Welle mit einem z16 in jeder Ebene.
+- **Regel gelockert:** eine Welle, die zwei Schwingen entfernt ist, darf in der Höhe einer Platte liegen, solange ihr Weg (beide Schwenkbereiche) die Platte nie erreicht. Vorher war das immer ein Fehler.
+- **Stege in einer Linie:** wo das 2D-Verschmelzen der Hülle scheitert (Ringe in einer Linie oder überlappend), kommen die Ringe einzeln und dazwischen ein Balken, 0,05 mm schmaler als die Tangenten (`join` in `cad.ts`).
+
+Prüfung: `scripts/gear/check-rocker.mjs`, `scripts/gear/check-rocker-browser.mjs`. Offen: Ausgleich links/rechts, Anschläge, Rad-Teil mit Reifen.
+
 ## Ansichten (2026-11-15)
 
 - **Draufsicht:** alle Platten; die aktive deckend, die anderen durchsichtig darunter, jeder Körper in seiner Farbe (Gestell, dann jedes Glied; die Reiter tragen denselben Punkt). Ein Klick auf eine durchsichtige Platte macht sie aktiv.

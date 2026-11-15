@@ -352,7 +352,9 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   const comp=new Map(list.map(b=>[b.key,b.key])),f2=(k:string):string=>{const p=comp.get(k)!;if(p===k)return k;const r=f2(p);comp.set(k,r);return r;};for(const w of webs){const x=f2(w.a),y=f2(w.b);if(x!==y)comp.set(x,y);}
   const parts=new Set(list.map(b=>f2(b.key))).size;if(parts>1)issues.push({level:'warnung',message:`${name} zerfällt in ${parts} Teile: Stege fehlen`});
   // Shafts passing through without a bearing here: a hole.
-  const holes:Hole[]=shafts.filter(x=>!list.some(b=>b.on===x.id)&&overlap(x.z0,x.z1,band[0],band[1])>0).map(x=>{const arc=B.arc(x.id,body);if(arc==='x')issues.push({level:'fehler',message:`${name}: ${x.label} gehört zu einer anderen Schwinge und geht durch diese Platte; zwei Schwingen in derselben Höhe gehen nicht`,ref:x.id});return {on:x.id,r:Math.max(...x.pieces.filter(p=>overlap(p.z0,p.z1,band[0],band[1])>0).map(p=>p.r),...seen.filter(o=>o.clip&&o.on[0]===x.id&&overlap(o.z0,o.z1,band[0],band[1])>eps).map(o=>o.ra),0)+s.hole,...(arc&&arc!=='x'?{arc}:{})};});
+  // A shaft two swing arms away has no single arc: it may share the plate's height only where it never comes near the plate.
+  const twice=new Set<string>();
+  let holes:Hole[]=shafts.filter(x=>!list.some(b=>b.on===x.id)&&overlap(x.z0,x.z1,band[0],band[1])>0).map(x=>{const arc=B.arc(x.id,body);if(arc==='x')twice.add(x.id);return {on:x.id,r:Math.max(...x.pieces.filter(p=>overlap(p.z0,p.z1,band[0],band[1])>0).map(p=>p.r),...seen.filter(o=>o.clip&&o.on[0]===x.id&&overlap(o.z0,o.z1,band[0],band[1])>eps).map(o=>o.ra),0)+s.hole,...(arc&&arc!=='x'?{arc}:{})};});
   // What the plate hits: rings and webs against wheels, pulleys, sleeves and belts in the band's heights.
   const at=(k:string)=>list.find(b=>b.key===k)!,openings:Record<string,number>={};
   for(const o of seen){if(overlap(o.z0,o.z1,band[0],band[1])<=eps)continue;
@@ -388,6 +390,8 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   // A hole that cuts into the plate gets a ring of the layer's rim round it before it is cut out: the plate stays one
   // piece round a shaft that passes through a web or along its edge.
   const shapes=[...list.map(b=>({a:b.at,ra:ring(b),b:b.at,rb:ring(b)})),...webs.filter(w=>!w.z).flatMap(w=>{const a=at(w.a),b=at(w.b);if(!w.path)return [{a:a.at,ra:ring(a),b:b.at,rb:ring(b)}];const pts=[a.at,...w.path,b.at];return pts.slice(1).map((q,k)=>({a:pts[k],ra:w.width!,b:q,rb:w.width!}));})];
+  holes=holes.filter(h=>{if(!twice.has(h.on))return true;const x=shafts.find(v=>v.id===h.on)!,way=sweepPrims({a:x.at,ra:h.r,b:x.at,rb:h.r},B.relative(B.bodyOf(x.id),body));
+   if(way.some(q=>shapes.some(g=>primsApart(q,g)<s.clearance-eps)))issues.push({level:'fehler',message:`${name}: ${x.label} gehört zu einer anderen Schwinge und geht durch diese Platte; zwei Schwingen in derselben Höhe gehen nicht`,ref:x.id});else return false;return true;});
   for(const h of holes){const x=shafts.find(v=>v.id===h.on)!,hp=(r:number):Prim=>({a:x.at,ra:r,b:x.at,rb:r,...(h.arc?{sweep:h.arc}:{})});
    // A shaft that swings through the plate must not swing through one of its bearings.
    if(h.arc)for(const b of list)if(primDistance(b.at,hp(h.r))<(b.motor?b.motor.pad:b.D/2)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: ${x.label} schwenkt durch ${b.label}`,ref:x.id});

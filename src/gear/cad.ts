@@ -40,6 +40,12 @@ function band(at:P,r:number,w:Sweep):Drawing{const d=Math.hypot(at[0]-w.c[0],at[
  const on=(rad:number,deg:number):P=>{const u:P=[(at[0]-w.c[0])/d,(at[1]-w.c[1])/d],q=rot([w.c[0]+u[0]*rad,w.c[1]+u[1]*rad],w.c,deg);return q;},mid=(w.from+w.to)/2,s=rot(at,w.c,w.from),e=rot(at,w.c,w.to),cap=(c:P,deg:number,sign:number):P=>{const t=(deg+90*sign)*Math.PI/180+Math.atan2(at[1]-w.c[1],at[0]-w.c[0]);return [c[0]+r*Math.cos(t),c[1]+r*Math.sin(t)];};
  return draw(on(d+r,w.from)).threePointsArcTo(on(d+r,w.to),on(d+r,mid)).threePointsArcTo(on(d-r,w.to),cap(e,w.to,1)).threePointsArcTo(on(d-r,w.from),on(d-r,mid)).threePointsArcTo(on(d+r,w.from),cap(s,w.from,-1)).close();}
 /** A web's shape: the hull of both rings, or bars of one width through the points round a part. */
+/** The hull of two discs fused onto a drawing. Where the 2D boolean fails (rings in one line or lapping: the hull's
+ * discs lie on discs the drawing has already), the discs go on alone and between them a bar a hair narrower than the
+ * tangents, which crosses the circles squarely. */
+function join(d:Drawing,a:P,ra:number,b:P,rb:number):Drawing{try{return d.fuse(hull(a,ra,b,rb));}catch{/* piece by piece */}
+ for(const [c,r] of [[a,ra],[b,rb]] as [P,number][])try{d=d.fuse(disc(c,r));}catch{/* it is in already */}
+ const t=tangents(a,ra-.05,b,rb-.05);return t?d.fuse(draw(t[0]).lineTo(t[1]).lineTo(t[2]).lineTo(t[3]).close()):d;}
 function webShape(plan:GearPlan,l:LayerPlan,w:LayerPlan['webs'][number]):Drawing{const bearing=(k:string)=>plan.bearings.find(x=>x.key===k)!,ring=(k:string)=>bearing(k).D/2+l.rim;
  if(!w.path)return hull(bearing(w.a).at,ring(w.a),bearing(w.b).at,ring(w.b));const pts:P[]=[bearing(w.a).at,...w.path,bearing(w.b).at];let d=hull(pts[0],w.width!,pts[1],w.width!);for(let i=2;i<pts.length;i++)d=d.fuse(hull(pts[i-1],w.width!,pts[i],w.width!));return d;}
 /** What goes through a layer's plates: the lip's opening over each bearing, holes for shafts passing, bolt holes. */
@@ -59,8 +65,8 @@ export function plateOutline(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|unde
  const bearing=(k:string)=>plan.bearings.find(b=>b.key===k)!,ring=(k:string)=>bearing(k).D/2+l.rim;if(!l.bearings.length)return undefined;
  let d:Drawing=disc(bearing(l.bearings[0]).at,ring(l.bearings[0]));
  for(const k of l.bearings.slice(1))d=d.fuse(disc(bearing(k).at,ring(k)));
- for(const w of l.webs)if(!w.z)d=d.fuse(webShape(plan,l,w));
- for(const bo of plan.bolts){const k=bo.attach[l.id];if(k)d=d.fuse(hull(bearing(k).at,ring(k),bo.at,bo.eye));}
+ for(const w of l.webs)if(!w.z)d=w.path?d.fuse(webShape(plan,l,w)):join(d,bearing(w.a).at,ring(w.a),bearing(w.b).at,ring(w.b));
+ for(const bo of plan.bolts){const k=bo.attach[l.id];if(k)d=join(d,bearing(k).at,ring(k),bo.at,bo.eye);}
  // Material round a hole that cuts into the plate, before the hole goes out.
  for(const h of l.holes)if(h.ring){const c=plan.shafts.find(x=>x.id===h.on)!.at;d=d.fuse(h.arc?band(c,h.ring,h.arc):disc(c,h.ring));}
  const holes=throughHoles(doc,plan,l);return holes?d.cut(holes):d;}
