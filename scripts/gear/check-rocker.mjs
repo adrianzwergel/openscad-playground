@@ -28,3 +28,14 @@ const oc=await opencascade({print:()=>{},printErr:()=>{},wasmBinary:fs.readFileS
 {const [keep,gc]=localGC(),parts=buildGearParts(doc,p,files,keep);assert.ok(parts.filter(x=>x.kind==='platte').length>=6);gc();}
 {const [keep,gc]=localGC(),parts=buildGearParts(doc,p,files,keep,{turn:0,groups:{g1:10,g2:-8}});assert.ok(parts.length>20,String(parts.length));gc();}
 console.log('Rocker-Bogie: alle drei Räder 0,4 × Motor über Riemen, Gelenke drehen sie nicht mit, vier Normriemen 200, Scheiben zwischen den Platten, Bogie-Wellen in Gestellhöhe frei, als Volumen und in einer Stellung.');
+// ---- The same with LEGO z40 between the plates ----
+{const ex=gearExamples.find(e=>e.key==='rocker-lego'),files=Object.fromEntries(ex.shafts.map(s=>[s.key,{name:s.name,doc:s.doc}])),ids=Object.fromEntries(ex.shafts.map(s=>[s.key,s.key]));
+ const doc=parseGear(ex.make(ids)),p=planGear(doc,files);assert.deepEqual(p.issues.filter(i=>i.level!=='hinweis').map(i=>i.message),[]);assert.equal(p.meshes.length,9);
+ for(const w of ['w1','w2','w3']){const v=p.drive.shafts[w];assert.ok(Math.abs(v[0]+.4)<1e-9&&Math.abs(v[1])<1e-9&&Math.abs(v[2])<1e-9,`${w}: ${v}`);}
+ assert.equal(p.wheels.filter(w=>w.teeth===40).length,9);assert.equal(p.wheels.filter(w=>w.teeth===16).length,1);
+ // Every gear between two plates of a body that carries its shaft.
+ for(const w of p.wheels.filter(x=>x.on!=='m')){const c=p.layers.filter(l=>l.bearings.some(k=>k.startsWith(w.on+'/')));assert.ok(c.some(l=>l.band[1]<=w.z0+1e-6)&&c.some(l=>l.band[0]>=w.z1-1e-6),`${w.label} zwischen den Platten`);}
+ // A 685 straight on the cross: no adapter, said as a hint.
+ const {planShaft}=await import('../../src/shaft/plan.ts'),sp=planShaft(files.p.doc);assert.equal(sp.sleeves.filter(s=>s.kind==='adapter').length,0);assert.equal(sp.issues.filter(i=>/sitzt direkt auf dem LEGO-Kreuz: 0,2 mm Spiel/.test(i.message)).length,2);assert.ok(!sp.issues.some(i=>i.level!=='hinweis'));
+ const [keep,gc]=localGC(),parts=buildGearParts(doc,p,files,keep,{turn:0,groups:{g1:10,g2:-8}});assert.ok(parts.filter(x=>x.kind==='platte').length>=6);gc();
+ console.log('Rocker-Bogie mit LEGO z40: neun z40 zwischen den Platten, z16 am Motor, Räder −0,4 × Motor, Lager direkt auf dem Kreuz, als Volumen in einer Stellung.');}

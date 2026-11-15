@@ -19,7 +19,7 @@ export type Role='sitz'|'frei'|'bund'|'eigen';
 export type Section={x0:number;x1:number;profile:Profile;role:Role};
 /** A part on the shaft as planned: its seat, its bore, the end it goes on from. */
 /** `arm`: an arm's measures and its hub's Ø (the part's `outer` is that hub). */
-export type Placed={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;side:Side;adapter?:string;/** A wheel turning freely on the shaft. */free?:boolean;arm?:ArmSpec&{hub:number;/** A round bore: a set screw M3 in the hub, opposite the arm, holds it. */screw?:boolean}};
+export type Placed={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;side:Side;adapter?:string;/** What it sits on where that is not its bore: a round bore straight on the LEGO cross. */seat?:Profile;/** A wheel turning freely on the shaft. */free?:boolean;arm?:ArmSpec&{hub:number;/** A round bore: a set screw M3 in the hub, opposite the arm, holds it. */screw?:boolean}};
 /** Wall of an arm's hub round its bore. */
 export const ARM_WALL=3;
 /** A printed or turned sleeve: an adapter under a part, or a spacer. `steps`: its outside along x. */
@@ -85,7 +85,10 @@ function build(doc:ShaftDoc,refs:Ref[],k:number,inserts:Insert[],given:Issue[]):
    const follow=()=>hand??(free?(free.kind==='rund'&&!nextOut?{kind:'d',d:free.d,flat:+Math.max(.5,free.d/10).toFixed(2)} as Profile:free):nextOut?(nextOut.kind==='rund'?{kind:'d',d:nextOut.d+2,flat:1} as Profile:nextOut):beside?(beside.kind==='rund'?{kind:'d',d:beside.d,flat:+Math.max(.5,beside.d/10).toFixed(2)} as Profile:beside):r.bore);
    const bore=r.spacer?free??list.slice(i+1).find(x=>!x.spacer)?.bore??r.bore:r.follow?follow():r.bore;
    let seat=bore,adapter:Sleeve|undefined;
-   if(!C.every(c=>passes(bore,c))){seat=free!;adapter={id:`adapter-${r.id}`,kind:'adapter',label:`Adapter ${label(seat)} → ${label(bore)}`,for:r.id,auto:true,x0:r.x0,x1:r.x1,side,inner:seat,steps:[{x0:r.x0,x1:r.x1,outer:bore}]};
+   // A round bore a hair over the LEGO cross (a 5 mm bearing on the 4,8 mm axle): it sits on the cross itself, with that play.
+   const onCross=!r.spacer&&!r.arm&&bore.kind==='rund'&&free?.kind==='kreuz'&&!C.every(c=>passes(bore,c))&&inner(bore)-outer(free)>eps&&inner(bore)-outer(free)<=.3+eps;
+   if(onCross){seat=free!;issues.push({level:'hinweis',message:`${r.label} sitzt direkt auf dem LEGO-Kreuz: ${mm(inner(bore)-outer(free!))} Spiel im Ø`,ref:r.id});}
+   else if(!C.every(c=>passes(bore,c))){seat=free!;adapter={id:`adapter-${r.id}`,kind:'adapter',label:`Adapter ${label(seat)} → ${label(bore)}`,for:r.id,auto:true,x0:r.x0,x1:r.x1,side,inner:seat,steps:[{x0:r.x0,x1:r.x1,outer:bore}]};
     const wall=(inner(bore)-outer(seat))/2;if(wall<=eps)issues.push({level:'fehler',message:`${r.label}: ${label(seat)} passt nicht in die Bohrung ${label(bore)}, kein Adapter möglich. Ein Teil von der anderen Seite aufschieben?`,ref:r.id});else if(wall<s.minWall-eps)issues.push({level:'warnung',message:`${adapter.label} unter ${r.label}: Wand nur ${mm(wall)} (mindestens ${mm(s.minWall)})`,ref:adapter.id});}
    // Nothing between this part and the next one in stops it: a spacer, or the adapter gets a collar.
    if(gap[1]>gap[0]+eps){const stopBore=adapter?seat:bore,stopped=r.clamp||free===undefined||!passes(free,stopBore);
@@ -97,7 +100,7 @@ function build(doc:ShaftDoc,refs:Ref[],k:number,inserts:Insert[],given:Issue[]):
    if(adapter){sleeves.push(adapter);C.push(seat);}
    if(r.spacer){const d=+(outer(bore)+2*s.spacerWall).toFixed(2);sleeves.push({id:r.id,kind:'huelse',label:`Distanzhülse ${label(bore)} × Ø${n(d)}`,auto:false,x0:r.x0,x1:r.x1,side,inner:bore,steps:[{x0:r.x0,x1:r.x1,outer:rund(d)}]});}
    else if(r.arm){const hub=+Math.max(outer(bore)+2*ARM_WALL,r.arm.width).toFixed(2);placed.push({id:r.id,part:{...r.part,outer:hub},label:r.label,x0:r.x0,x1:r.x1,bore,side,arm:{...r.arm,hub,...((adapter?seat:bore).kind==='rund'?{screw:true}:{})},...(adapter?{adapter:adapter.id}:{})});}
-   else placed.push({id:r.id,part:r.part,label:r.free?`${r.label} (Losrad)`:r.label,x0:r.x0,x1:r.x1,bore,side,...(r.free?{free:true}:{}),...(adapter?{adapter:adapter.id}:{})});
+   else placed.push({id:r.id,part:r.part,label:r.free?`${r.label} (Losrad)`:r.label,x0:r.x0,x1:r.x1,bore,side,...(r.free?{free:true}:{}),...(adapter?{adapter:adapter.id}:{}),...(onCross?{seat}:{})});
    C.push(bore);edge=outward;});
   const end=side==='links'?0:L,free=largestPassing(C);if(Math.abs(edge-end)>eps)secs.push({x0:Math.min(edge,end),x1:Math.max(edge,end),role:free?'frei':'bund',...(free?{profile:free}:{})});};
  walk(refs.slice(0,k).reverse(),'links');walk(refs.slice(k),'rechts');
@@ -123,7 +126,7 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
  const L=doc.length,s=doc.settings,issues=p.issues,at=(x:number)=>p.sections.find(c=>x>=c.x0-eps&&x<=c.x1+eps),within=(a:number,b:number)=>p.sections.filter(c=>overlaps(c.x0,c.x1,a,b));
  const sleeveOf=(id?:string)=>p.sleeves.find(x=>x.id===id);
  // Seats.
- for(const t of p.placed){const want=sleeveOf(t.adapter)?.inner??t.bore,wrong=within(t.x0,t.x1).filter(c=>!same(c.profile,want));if(wrong.length)issues.push({level:'fehler',message:`${t.label} braucht ${label(want)}, dort ist ${wrong.map(c=>label(c.profile)).join(', ')}`,ref:t.id});}
+ for(const t of p.placed){const want=sleeveOf(t.adapter)?.inner??t.seat??t.bore,wrong=within(t.x0,t.x1).filter(c=>!same(c.profile,want));if(wrong.length)issues.push({level:'fehler',message:`${t.label} braucht ${label(want)}, dort ist ${wrong.map(c=>label(c.profile)).join(', ')}`,ref:t.id});}
  // Passing: every part and sleeve over everything between its end and its seat.
  const movers=[...p.placed.map(t=>({id:t.id,label:t.label,x0:t.x0,x1:t.x1,side:t.side,bore:t.bore})),...p.sleeves.map(x=>({id:x.id,label:x.label,x0:x.x0,x1:x.x1,side:x.side,bore:x.inner}))];
  for(const m of movers){const way=m.side==='links'?within(0,m.x0):within(m.x1,L),stuck=way.find(c=>!passes(c.profile,m.bore));if(stuck)issues.push({level:'fehler',message:`${m.label} geht von ${m.side} nicht über ${label(stuck.profile)} bei ${mm(stuck.x0)} bis ${mm(stuck.x1)}`,ref:m.id});}

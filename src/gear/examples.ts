@@ -58,4 +58,25 @@ export const gearExamples:Example[]=[
     shafts:[{id:'m',shaft:ids.m,at:[0,72],z:3.5},{id:'p',shaft:ids.p,at:P,z:0},{id:'w1',shaft:ids.w1,at:pol(P,80,rear),z:36},{id:'b',shaft:ids.b,at:B,z:27},{id:'w2',shaft:ids.w2,at:pol(B,80,180+bogie),z:27},{id:'w3',shaft:ids.w3,at:pol(B,80,-bogie),z:27}],
     belts:([['m','r','p','r'],['p','a','w1','r'],['p','b','b','r'],['b','c','w2','r'],['b','d','w3','r']] as const).map(([a,i,b,j],k)=>({id:`r${k+1}`,a:{on:a,item:i},b:{on:b,item:j}})),
     groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['w1','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['w2','w3'],from:-12,to:12}]};}};})(),
+ // The same with LEGO gears, all between the plates: a z40 on every axle and one z40 between each two (an odd number:
+ // the wheels turn alike, swinging does not turn them), the z16 on the motor's shaft. The 685 bearings sit straight on
+ // the LEGO cross where the gear had to pass. Frame and bogie plates share the outer heights (far apart), the rocker's
+ // lie inside them, the gears in the middle.
+ (()=>{const L=(id:string,x:number)=>({id,part:'lager-685',x}),Z=(x:number)=>({id:'g',part:'lego-3649',x}),K={kind:'kreuz' as const};
+  const pol=(c:[number,number],r:number,deg:number):[number,number]=>[+(c[0]+r*Math.cos(deg*Math.PI/180)).toFixed(3),+(c[1]+r*Math.sin(deg*Math.PI/180)).toFixed(3)];
+  // The idler between two axles: 40 mm from each, on the given side of the line from a to b.
+  const between=(a:[number,number],b:[number,number],side:number):[number,number]=>{const d=Math.hypot(b[0]-a[0],b[1]-a[1]),h=Math.sqrt(1600-d*d/4),u=[(b[0]-a[0])/d,(b[1]-a[1])/d];return [+((a[0]+b[0])/2-u[1]*h*side).toFixed(3),+((a[1]+b[1])/2+u[0]*h*side).toFixed(3)];};
+  // All three axles 70 mm below the rocker's pivot.
+  const P:[number,number]=[0,0],W1=pol(P,80,241),B:[number,number]=[70,-25],W2:[number,number]=[30,-70],W3:[number,number]=[115,-70];
+  return {key:'rocker-lego',title:'Rocker-Bogie mit LEGO z40',text:'Wie das Riemen-Beispiel, aber mit LEGO-Zahnrädern zwischen den Platten: z40 auf jeder Achse und je ein z40 dazwischen, das z16 auf der Motorwelle. Die Lager 685 sitzen dort, wo das Rad vorbei muss, direkt auf dem LEGO-Kreuz. Die Radwellen enden als LEGO-Kreuz für die Reifen.',
+   shafts:[{key:'m',name:'Motor z16',doc:{...shaft([{id:'g',part:'lego-4019',x:15.5}],24),inserts:[{id:'m',part:'motor-nema17-40',end:'links' as const,depth:15}],works:[{id:'s',kind:'madenschraube' as const,x:7,m:3}]}},
+    {key:'p',name:'Achse z40',doc:shaft([L('l1',0),L('l2',9),Z(19),L('l3',31),L('l4',41)],46)},
+    {key:'i',name:'Zwischenrad z40',doc:shaft([L('l1',0),Z(10),L('l2',22)],27)},
+    {key:'w1',name:'Rad hinten z40',doc:{...shaft([L('l1',0),Z(10),L('l2',22)],70),sections:[{x0:28,x1:70,profile:K}]}},
+    {key:'j',name:'Bogie-Zwischenrad z40',doc:shaft([L('l1',0),Z(19),L('l2',41)],46)},
+    {key:'w',name:'Bogie-Rad z40',doc:{...shaft([L('l1',0),Z(19),L('l2',41)],79),sections:[{x0:47,x1:79,profile:K}]}}],
+   make:(ids:Record<string,string>):GearDoc=>{const g=newGear();return {...g,settings:{...g.settings,lipIn:.7},input:'m',
+    shafts:[{id:'m',shaft:ids.m,at:[0,28],z:3.5},{id:'p',shaft:ids.p,at:P,z:0},{id:'i1',shaft:ids.i,at:pol(P,40,241),z:9},{id:'w1',shaft:ids.w1,at:W1,z:9},{id:'i2',shaft:ids.i,at:between(P,B,1),z:9},{id:'b',shaft:ids.p,at:B,z:0},
+     {id:'j2',shaft:ids.j,at:between(B,W2,1),z:0},{id:'w2',shaft:ids.w,at:W2,z:0},{id:'j3',shaft:ids.j,at:between(B,W3,1),z:0},{id:'w3',shaft:ids.w,at:W3,z:0}],
+    groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['i1','w1','i2','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['j2','w2','j3','w3'],from:-12,to:12}]};}};})(),
 ];
