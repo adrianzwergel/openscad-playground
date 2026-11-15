@@ -61,6 +61,11 @@ Damit es am Hebel weitergeht, ist er ein Körper im Getriebe wie die Schwinge, n
 
 Prüfung: `scripts/gear/check-links.mjs`, `check-links-browser.mjs`.
 
+## Ansichten (2026-11-15)
+
+- **Draufsicht:** alle Platten; die aktive deckend, die anderen durchsichtig darunter, jeder Körper in seiner Farbe (Gestell, dann jedes Glied; die Reiter tragen denselben Punkt). Ein Klick auf eine durchsichtige Platte macht sie aktiv.
+- **Höhen von der Seite, wie die Zeitleiste des Wellen-Editors:** jede Welle ist eine Spur, seitlich gezogen verschiebt sie sich in der Höhe (`snapHeight` in `snap.ts`). Sie rastet ein, wo eines ihrer Räder auf der Höhe eines Rads liegt, mit dem es laufen kann (Mitte auf Mitte, dann Kante auf Kante; gleiches Modul oder zwei Scheiben), sonst Lager auf Lager, sonst im 0,5-mm-Raster; Alt: frei. Was kämmt oder am Riemen läuft, verbindet eine Linie zwischen den Spuren; unten die Skala. So entsteht eine Verbindung durch Ziehen: in der Höhe hier, im Abstand in der Draufsicht.
+
 **Offen:** die Einstellung „Dicke der Stege“ wirkt noch nicht (Stege sind so dick wie ihre Platte); Probedrucke für Taschenspiel und Bord; Schnecke und Kegelräder.
 
 Der Katalog des Wellen-Generators kennt jetzt Zähne und Modul der Räder und Scheiben (`teeth`, `module`, `pulley`).

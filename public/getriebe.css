@@ -54,3 +54,7 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 .topview .plate .ring,.topview .plate .web{fill:var(--tone,#3d5566)}.topview .plate .ring-arc{stroke:var(--tone,#3d5566)}.topview .plate .web.own{filter:brightness(1.18)}
 .topview .ghost{opacity:.3}.topview .ghost polygon,.topview .ghost circle{fill:var(--tone,#3d5566);stroke:none}#top .ghost{cursor:pointer}#top .ghost:hover{opacity:.55}.topview .ghost.same{opacity:.45}
 #layer-tabs button[data-tone]::before{content:'';display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--dot)}
+.sideview .grab{fill:#ffffff08;stroke:#ffffff1c;rx:4;cursor:grab}.sideview .row:hover .grab{fill:#ffffff14;stroke:#ffffff44}.sideview .row.selected .grab{stroke:#f0d36e;fill:#f0d36e14}.sideview .row.dragging .grab{cursor:grabbing;fill:#72dac11f;stroke:#72dac1}
+.sideview .row{cursor:grab}.sideview .row rect.bearing,.sideview .row rect.wheel,.sideview .row rect.pulley,.sideview .row rect.arm,.sideview .row .axle{pointer-events:none}
+.sideview .link{stroke:#72dac1;stroke-width:1.5;fill:#72dac1;pointer-events:none}.sideview .link.belt{stroke:#e0c56c;fill:#e0c56c;stroke-dasharray:4 3}
+.sideview line.zmark{stroke:#56656f}.sideview text.zmark{fill:#8fa1ad;font-size:10px;text-anchor:middle}
