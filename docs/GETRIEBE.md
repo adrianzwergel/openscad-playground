@@ -18,6 +18,8 @@ Ziel wie dort: **einfach**. Nichts wird gezeichnet, was sich ableiten lässt.
 | 5 | fertig: Ein Motor ist eine Motorwelle aus dem Katalog in einer verknüpften Welle; der Flansch liegt Steckungstiefe minus Motorwellenlänge vom Wellenende. Liegt er an der Außenseite einer Schicht (Körper nach außen), wird er Knoten dieser Platte: rundes Flanschfeld (Bohrbild + Rand), Zentrierloch und vier Schraublöcher aus NopSCADlib, keine Tasche. Sonst eine Warnung mit dem Versatz und der Knopf „Motor an die Platte setzen“. Treibt er einen Riemen, werden Zentrierung und Schraublöcher Langlöcher in Riemenrichtung (`slot`, Vorgabe 6 mm); die Riemenlänge wird über den Spannweg geprüft, `centerFor` gibt den Achsabstand für den Normriemen, Knopf „Auf Normriemen stellen“. Riemen ohne Spannweg müssen genau passen. Motorkörper in der Baugruppe. Beispiel „Motor mit Riemen“. Prüfung: `scripts/gear/check-motor.mjs` |
 | 6 | fertig: „Welle bearbeiten“ und „＋ Neue Welle anlegen“ öffnen den Wellen-Generator als Fenster über dem Getriebe (`welle.html#open=<id>&embed=1` bzw. `#new=1&embed=1` im iframe; eingebettet ohne Studio-Link, „Alle Wellen“ und „Löschen“). Die Wellen-Seite meldet jedes Speichern und das Anlegen per `postMessage` (gleicher Ursprung); das Getriebe liest die Wellen dann neu und zieht mit. Eine neue Welle steht beim Schließen im Getriebe (wie ein Klick in der Liste). „In neuem Tab ↗“ bleibt. Prüfung: `scripts/gear/check-page-browser.mjs` |
 
+**Platten (geändert 2026-11-15):** Vorgabe ist eine Platte je Schicht. Die Welle ist mit Rädern, Hülsen und Lagern für sich axial fest, also reichen Anschläge ganz außen: die unterste Schicht hat den Bord unten (Taschen von oben eingesetzt), die oberste oben, mittlere Schichten haben durchgehende Bohrungen ohne Anschlag. Bei nur einer Schicht hält sonst nichts die andere Richtung: sie wird das Plattenpaar, das die Lager einklemmt. „Lager einklemmen“ in den Regeln macht jede Schicht zum Plattenpaar. Prüfung in `check-plan.mjs` und `check-cad.mjs`.
+
 **Offen:** Bolzen in der Draufsicht verschieben (das Dokument kann `bolts` schon); die Einstellung „Dicke der Stege“ wirkt noch nicht (Stege sind so dick wie ihre Platte); Probedrucke für Taschenspiel und Bord; Schnecke und Kegelräder.
 
 Der Katalog des Wellen-Generators kennt jetzt Zähne und Modul der Räder und Scheiben (`teeth`, `module`, `pulley`).
@@ -72,7 +74,7 @@ Der Katalog des Wellen-Generators kennt jetzt Zähne und Modul der Räder und Sc
     \___________________ /
 ```
 
-**Lager eingeklemmt:** Jede Lagerschicht ist ein Plattenpaar. Jede Platte hat eine Tasche über die halbe Lagerbreite und
+**Lager eingeklemmt (nur noch auf Wunsch und bei einer einzigen Schicht):** Jede Lagerschicht ist ein Plattenpaar. Jede Platte hat eine Tasche über die halbe Lagerbreite und
 darunter einen Bord, der den Außenring hält (Bord-Ø kleiner als der Außenring, größer als der Innenring-Bund). Die
 Schrauben der Distanzbolzen ziehen das Paar zusammen und klemmen das Lager.
 

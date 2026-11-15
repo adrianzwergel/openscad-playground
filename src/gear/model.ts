@@ -15,11 +15,12 @@ export type WebKey=[string,string];
 /** `rim`: material round a bearing's outer ring; `web`: thickness of webs; `lip`: the rim holding the outer ring, how
  * thick and how far in; `clearance`: kept to wheels, belts and shafts passing through; `angle`/`grid`: snapping. */
 /** `fit`: play per side of a bearing pocket; `bolt`: thread of the bolts (M3); `bolts`: how many, 0: as the plate needs;
- * `slot`: how far a motor with a belt can be moved to tension it (its slots). */
-export type GearSettings={rim:number;web:number;lip:number;lipIn:number;clearance:number;hole:number;angle:number;grid:number;bolt:number;fit:number;bolts:number;slot:number};
+ * `slot`: how far a motor with a belt can be moved to tension it (its slots); `clamp`: every layer a plate pair that clamps
+ * its bearings (else one plate per layer, stops only on the outside of the outermost layers). */
+export type GearSettings={rim:number;web:number;lip:number;lipIn:number;clearance:number;hole:number;angle:number;grid:number;bolt:number;fit:number;bolts:number;slot:number;clamp:boolean};
 export type GearDoc={shafts:PlacedShaft[];belts:Belt[];layers?:Layer[];/** Bolt places set by hand (x, y); else the plan finds them. */bolts?:[number,number][];webs?:{add:WebKey[];remove:WebKey[];/** How a web gets past a part in its way, by `a|b`: round it, or lower/higher than it. */route?:Record<string,'aussen'|'tiefe'>};/** The shaft driven (placed id). */input?:string;settings:GearSettings};
 
-export const defaultGearSettings:GearSettings={rim:3,web:4,lip:1.5,lipIn:1,clearance:1,hole:.5,angle:15,grid:1,bolt:3,fit:.1,bolts:0,slot:6};
+export const defaultGearSettings:GearSettings={rim:3,web:4,lip:1.5,lipIn:1,clearance:1,hole:.5,angle:15,grid:1,bolt:3,fit:.1,bolts:0,slot:6,clamp:false};
 export const newGear=():GearDoc=>({shafts:[],belts:[],settings:{...defaultGearSettings}});
 export const itemKey=(r:ItemRef)=>`${r.on}/${r.item}`;
 export const webKey=(a:string,b:string):WebKey=>a<b?[a,b]:[b,a];
@@ -35,7 +36,7 @@ export function parseGear(raw:unknown):GearDoc{
  const keys=(v:unknown):WebKey[]=>{if(!Array.isArray(v)||v.length>200||v.some(k=>!Array.isArray(k)||!str(k[0])||!str(k[1])))throw Error('Getriebe: Stege ungültig');return v.map(k=>webKey(k[0],k[1]));};
  const route=d.webs?.route;if(route!==undefined&&(typeof route!=='object'||Object.entries(route).some(([k,v])=>!str(k)||v!=='aussen'&&v!=='tiefe')))throw Error('Getriebe: Steg-Führung ungültig');
  const webs=d.webs?{add:keys(d.webs.add),remove:keys(d.webs.remove),...(route&&Object.keys(route).length?{route:{...route}}:{})}:undefined;
- const settings={...defaultGearSettings};for(const k of Object.keys(defaultGearSettings) as (keyof GearSettings)[]){const v=d.settings?.[k];if(v!==undefined){if(!num(v,0,1000))throw Error(`Getriebe: Einstellung ${k} ungültig`);settings[k]=v;}}
+ const settings={...defaultGearSettings};for(const k of Object.keys(defaultGearSettings) as (keyof GearSettings)[]){const v=d.settings?.[k];if(v===undefined)continue;if(typeof defaultGearSettings[k]==='boolean'){if(typeof v!=='boolean')throw Error(`Getriebe: Einstellung ${k} ungültig`);(settings as Record<string,unknown>)[k]=v;continue;}if(!num(v,0,1000))throw Error(`Getriebe: Einstellung ${k} ungültig`);(settings as Record<string,unknown>)[k]=v;}
  if(d.input!==undefined&&!shafts.some(s=>s.id===d.input))throw Error('Getriebe: Eingang unbekannt');
  const bolts=d.bolts?.map(b=>{if(!Array.isArray(b)||!num(b[0])||!num(b[1]))throw Error('Getriebe: Bolzen ungültig');return [b[0],b[1]] as [number,number];});if(bolts&&bolts.length>12)throw Error('Getriebe: zu viele Bolzen');
  return {shafts,belts,...(layers?{layers}:{}),...(bolts?{bolts}:{}),...(webs?{webs}:{}),...(d.input?{input:d.input}:{}),settings};}

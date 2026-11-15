@@ -24,8 +24,8 @@ assert.ok(Math.abs(hullDistance([5,10],[0,0],3,[10,0],3)-7)<1e-9);assert.ok(hull
 // 1. Two shafts meshing.
 {const p=planGear(gearbox({shafts:[{id:'a',shaft:'A',at:[0,0],z:0},{id:'b',shaft:'B',at:[30,0],z:0}]}),files);
  assert.deepEqual(errors(p),[]);assert.equal(p.meshes.length,1);assert.equal(p.rates.b,-.5,'z20 → z40');
- assert.equal(p.layers.length,2,'zwei Schichten aus den Lagerhöhen');assert.deepEqual(p.layers.map(l=>[l.z0,l.z1]),[[2,9],[50,57]]);
- for(const l of p.layers){assert.equal(l.bearings.length,2);assert.equal(l.webs.length,1);assert.ok(l.webs[0].forced,'Steg zwischen kämmenden Wellen');assert.equal(l.parts,1);assert.deepEqual(l.band,[.5,10.5].map(v=>v+l.z0-2));}
+ assert.equal(p.layers.length,2,'zwei Schichten aus den Lagerhöhen');assert.deepEqual(p.layers.map(l=>l.band),[[.5,9],[50,58.5]],'Anschlag nur außen');assert.deepEqual(p.layers.map(l=>[l.pair,...l.lips]),[[false,true,false],[false,false,true]]);assert.deepEqual(p.layers.map(l=>[l.z0,l.z1]),[[2,9],[50,57]]);
+ for(const l of p.layers){assert.equal(l.bearings.length,2);assert.equal(l.webs.length,1);assert.ok(l.webs[0].forced,'Steg zwischen kämmenden Wellen');assert.equal(l.parts,1);void 0;}
  // Flipped, the same shaft stands upside down: its bearings stay at the same heights here, the gear moves to 30..40.
  const q=planGear(gearbox({shafts:[{id:'a',shaft:'A',at:[0,0],z:0,flip:true},{id:'b',shaft:'B',at:[30,0],z:0}]}),files);assert.equal(q.meshes.length,0,'umgedreht kämmt es nicht mehr');assert.deepEqual(q.wheels.find(w=>w.on==='a').z0,30);}
 // 2. A third shaft joins by the shortest web; a wheel on a fourth shaft in the web's way.
@@ -47,8 +47,11 @@ assert.ok(Math.abs(hullDistance([5,10],[0,0],3,[10,0],3)-7)<1e-9);assert.ok(hull
 {const P=shaft('P',[bearing('l1',2),{id:'r',part:'gt2-z20',x:20},bearing('l2',50)]),p=planGear(gearbox({shafts:[{id:'a',shaft:'P',at:[0,0],z:0},{id:'b',shaft:'P',at:[60,0],z:0}],belts:[{id:'r1',a:{on:'a',item:'r'},b:{on:'b',item:'r'}}]}),{P});
  assert.ok(Math.abs(p.belts[0].length-(120+2*Math.PI*20/Math.PI))<1e-9);assert.equal(p.belts[0].stock,200);assert.equal(p.rates.b,1);assert.ok(p.issues.some(i=>/Normriemen 200 mm und nichts zum Spannen: Achsabstand auf 80 mm stellen/.test(i.message)));assert.ok(Math.abs(p.belts[0].fit.center-80)<1e-9);
  const bad=planGear(gearbox({shafts:[{id:'a',shaft:'P',at:[0,0],z:0},{id:'b',shaft:'P',at:[60,0],z:20}],belts:[{id:'r1',a:{on:'a',item:'r'},b:{on:'b',item:'r'}}]}),{P});assert.ok(errors(bad).some(e=>/nicht auf gleicher Höhe/.test(e)));}
-// 5. A wheel right against its own bearing: the plate's rim reaches over the bearing and rubs it.
-{const N=shaft('N',[bearing('l1',2),gear('g',9,40),bearing('l2',50)]),p=planGear(gearbox({shafts:[{id:'a',shaft:'N',at:[0,0],z:0}]}),{N});assert.ok(errors(p).some(e=>/z40 m1 auf N sitzt zu nah am Lager/.test(e)));}
+// 5. A wheel right against its own bearing: without a stop on the inside it is fine; clamped, the plate's rim reaches
+// over the bearing and rubs it.
+{const N=shaft('N',[bearing('l1',2),gear('g',9,40),bearing('l2',50)]),p=planGear(gearbox({shafts:[{id:'a',shaft:'N',at:[0,0],z:0}]}),{N});assert.ok(!errors(p).some(e=>/zu nah am Lager/.test(e)),'ohne Bord innen stört es nicht');const q=planGear(gearbox({shafts:[{id:'a',shaft:'N',at:[0,0],z:0}],settings:{...newGear().settings,clamp:true}}),{N});assert.ok(errors(q).some(e=>/z40 m1 auf N sitzt zu nah am Lager/.test(e)),'eingeklemmt reicht der Bord übers Lager');}
+// A single layer clamps its bearings as a plate pair: nothing else holds the shafts the other way.
+{const p=planGear(gearbox({shafts:[{id:'a',shaft:'A',at:[0,0],z:0},{id:'b',shaft:'B',at:[30,0],z:0}],layers:[{id:'nur',z0:0,z1:12}]}),files);assert.ok(p.layers[0].pair);assert.deepEqual(p.layers[0].lips,[true,true]);assert.deepEqual(p.layers[0].band,[-1.5,13.5],'Bord auf beiden Seiten der Schicht');}
 // 6. Layers set by hand; bearings outside them are reported.
 {const p=planGear(gearbox({shafts:[{id:'a',shaft:'A',at:[0,0],z:0},{id:'b',shaft:'B',at:[30,0],z:0}],layers:[{id:'unten',z0:0,z1:12,rim:5}]}),files);assert.equal(p.layers.length,1);assert.equal(p.layers[0].rim,5);assert.ok(p.issues.some(i=>/608 auf A liegt in keiner Schicht/.test(i.message)));}
 // 7. A missing shaft file; the file refuses nonsense.

@@ -27,7 +27,7 @@ const base=ex.make(ids);
  shafts=shafts.map(s=>s.id==='b'?{...s,at:[b.fit.center,0]}:s);p=planGear(doc({shafts}),files);assert.ok(p.issues.some(i=>/Normriemen 280 mm passt/.test(i.message)));}
 // Solids: slots against round holes; the body below the flange.
 {const oc=await opencascade({print:()=>{},printErr:()=>{},wasmBinary:fs.readFileSync('node_modules/replicad-opencascadejs/dist/replicad_single.wasm')});setOC(oc);
- const lower=settings=>{const d=doc({settings:{...base.settings,...settings}}),p=planGear(d,files),[keep,gc]=localGC(),parts=buildGearParts(d,p,files,keep),v=measureVolume(parts.find(x=>x.file==='schicht-1-unten').shape),body=parts.find(x=>/NEMA 17/.test(x.name)).shape.boundingBox.bounds;gc();return {v,body};};
- const round=lower({slot:0}),slotted=lower({slot:6});const t=5,area=2*(11+.5)*6+4*2*1.7*6;near(round.v-slotted.v,area*t,area*t*.03,'Langlöcher nehmen mehr weg');
+ const lower=settings=>{const d=doc({settings:{...base.settings,...settings}}),p=planGear(d,files),[keep,gc]=localGC(),parts=buildGearParts(d,p,files,keep),v=measureVolume(parts.find(x=>x.file==='schicht-1').shape),body=parts.find(x=>/NEMA 17/.test(x.name)).shape.boundingBox.bounds;gc();return {v,body};};
+ const round=lower({slot:0}),slotted=lower({slot:6});const t=8.5,area=2*(11+.5)*6+4*2*1.7*6;near(round.v-slotted.v,area*t,area*t*.03,'Langlöcher nehmen mehr weg');
  near(slotted.body[1][2],.5,1e-6,'Motor bis zum Flansch');near(slotted.body[0][2],.5-40,1e-6,'Körper darunter');}
 console.log('Motor und Riemen: Flansch an der Schicht als Knoten der Platte, Langlöcher in Riemenrichtung, Normriemen im Spannweg, Versatz an die Platte, Achsabstand für den Normriemen, Langlöcher im Volumen, Motorkörper unter dem Flansch.');

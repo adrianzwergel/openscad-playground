@@ -46,8 +46,13 @@ function plates(keep:Keep,doc:GearDoc,plan:GearPlan,l:LayerPlan,index:number):Ca
   for(const st of steps){const a=Math.max(lo,st.z[0]),e=Math.min(hi,st.z[1]);if(e-a>1e-6)solid=keep(solid.fuse(keep(st.shape.clone().sketchOnPlane('XY',a).extrude(e-a) as Shape3D)) as Shape3D);}
   for(const b of bearings){const a=lower?Math.max(lo,b.z0):l.split,e=lower?l.split:Math.min(hi,b.z1);if(e-a<=1e-6)continue;solid=keep(solid.cut(keep(makeCylinder(b.D/2+s.fit,e-a+(lower?.01:0)+(lower?0:.01),[b.at[0],b.at[1],lower?a:a-.01],[0,0,1]))) as Shape3D);}
   return solid;};
- return [{name:`Schicht ${index+1} unten`,file:`schicht-${index+1}-unten`,kind:'platte',shape:half(z0,l.split,true),color:'#7a93a6',made:true},
-  {name:`Schicht ${index+1} oben`,file:`schicht-${index+1}-oben`,kind:'platte',shape:half(l.split,z1,false),color:'#8aa3b6',made:true}];}
+ if(l.pair)return [{name:`Schicht ${index+1} unten`,file:`schicht-${index+1}-unten`,kind:'platte',shape:half(z0,l.split,true),color:'#7a93a6',made:true},
+  {name:`Schicht ${index+1} oben`,file:`schicht-${index+1}-oben`,kind:'platte',shape:half(l.split,z1,false),color:'#8aa3b6',made:true}];
+ // One plate: each pocket open towards the inside, a stop (the lip's opening) only where the layer has one.
+ let one=keep(out.clone().sketchOnPlane('XY',z0).extrude(z1-z0) as Shape3D);
+ for(const st of steps){const a=Math.max(z0,st.z[0]),e=Math.min(z1,st.z[1]);if(e-a>1e-6)one=keep(one.fuse(keep(st.shape.clone().sketchOnPlane('XY',a).extrude(e-a) as Shape3D)) as Shape3D);}
+ for(const be of bearings){const a=l.lips[0]?be.z0:z0-.01,e=l.lips[1]?be.z1:z1+.01;one=keep(one.cut(keep(makeCylinder(be.D/2+s.fit,e-a,[be.at[0],be.at[1],a],[0,0,1]))) as Shape3D);}
+ return [{name:`Schicht ${index+1}`,file:`schicht-${index+1}`,kind:'platte',shape:one,color:'#7a93a6',made:true}];}
 /** A linked shaft's parts, turned upright (x of the shaft generator becomes z) and put where it stands. */
 function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,ShaftFile|undefined>):CadPart[]{
  const out:CadPart[]=[];

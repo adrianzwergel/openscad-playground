@@ -35,7 +35,9 @@ export type BeltPlan={id:string;a:string;b:string;center:number;length:number;st
 /** A web: straight (the hull of both rings), round a part (`path`: points it goes through, `width` its half width there),
  * or `z`: only that high, under or over a part. `route`: what the user chose; `hits`: what it still runs into. */
 export type WebPlan={a:string;b:string;auto:boolean;forced:boolean;route?:'aussen'|'tiefe';path?:[number,number][];width?:number;z?:[number,number];hits:string[]};
-export type LayerPlan={id:string;z0:number;z1:number;band:[number,number];split:number;auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];holes:{on:string;r:number}[];parts:number};
+/** `pair`: two plates clamping the bearings, split at `split`; else one plate. `lips`: a stop over the outer ring at the
+ * bottom / at the top (one plate: only on the outer side of the lowest and the highest layer). */
+export type LayerPlan={id:string;z0:number;z1:number;band:[number,number];split:number;pair:boolean;lips:[boolean,boolean];auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];holes:{on:string;r:number}[];parts:number};
 export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string};
 /** A bolt through all plates: where, the eye round it, which bearing of each layer its eye is joined to. */
 export type Bolt={at:[number,number];eye:number;hole:number;auto:boolean;attach:Record<string,string>};
@@ -107,7 +109,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
   else issues.push({level:'warnung',message:m?`${label}: Normriemen ${stock} mm braucht ${mm(bp.fit.center)} Achsabstand, die Langlöcher reichen von ${mm(bp.center-t)} bis ${mm(bp.center+t)}: auf Normriemen stellen`:`${label}: ${mm(bp.length)} lang, Normriemen ${stock} mm und nichts zum Spannen: Achsabstand auf ${mm(bp.fit.center)} stellen oder einen Motor mit Langlöchern daran`,ref:bp.id});}
  const {bolts,columns,screw}=planBolts(doc,layers,bearings,shafts,obstacles,issues);
  const bom:BomLine[]=[];const add=(what:string,count=1,note?:string)=>{const b=bom.find(x=>x.what===what);if(b)b.count+=count;else bom.push({what,count,...(note?{note}:{})});};
- layers.forEach((l,i)=>{add(`Platte Schicht ${i+1} unten (gedruckt)`,1,`${n(l.split-l.band[0])} mm dick`);add(`Platte Schicht ${i+1} oben (gedruckt)`,1,`${n(l.band[1]-l.split)} mm dick`);});
+ layers.forEach((l,i)=>{if(l.pair){add(`Platte Schicht ${i+1} unten (gedruckt)`,1,`${n(l.split-l.band[0])} mm dick`);add(`Platte Schicht ${i+1} oben (gedruckt)`,1,`${n(l.band[1]-l.split)} mm dick`);}else add(`Platte Schicht ${i+1} (gedruckt)`,1,`${n(l.band[1]-l.band[0])} mm dick${l.lips[0]?', Anschlag unten':l.lips[1]?', Anschlag oben':', ohne Anschlag'}`);});
  for(const c of columns)add(`Distanzsäule ${n(c.z1-c.z0)} mm (gedruckt)`,bolts.length,`zwischen ${c.from} und ${c.to}`);
  if(screw&&bolts.length){add(screw.what,bolts.length);add(`Mutter M${n(s.bolt)} DIN 934`,bolts.length);add(`Scheibe M${n(s.bolt)} DIN 125`,2*bolts.length);}
  for(const bp of belts)add(`Zahnriemen GT2 6 mm, ${bp.stock?`${bp.stock} mm geschlossen`:`${n(bp.length)} mm`}`);
@@ -126,9 +128,13 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
  else{given=undefined;for(const b of [...bearings].sort((a,c)=>mid(a)-mid(c))){const g=groups.at(-1);if(g&&b.z0<=g.z1+.5){g.z1=Math.max(g.z1,b.z1);g.z0=Math.min(g.z0,b.z0);g.list.push(b);}else groups.push({z0:b.z0,z1:b.z1,list:[b]});}}
  const meshPairs=new Set(meshes.map(m=>{const a=wheels.find(w=>w.key===m.a)!,b=wheels.find(w=>w.key===m.b)!;return [a.on,b.on].sort().join('|');}));
  const remove=new Set((doc.webs?.remove??[]).map(k=>k.join('|'))),add=(doc.webs?.add??[]);
+ // The outermost layers: their outer side gets the stops.
+ const lowest=groups.reduce((k,g,i)=>g.z0<groups[k].z0?i:k,0),highest=groups.reduce((k,g,i)=>g.z1>groups[k].z1?i:k,0);
+ // A single layer has no second outer plate to hold the shafts the other way: it clamps, as a plate pair.
+ const clampAll=s.clamp||groups.length===1;
  return groups.map((g,i):LayerPlan=>{const l=given?.[i],id=l?.id??`s${i+1}`,rim=l?.rim??s.rim,thickness=l?.thickness??s.web,list:Bearing[]=[...g.list],z0=Math.min(g.z0,...list.map(b=>b.z0)),z1=Math.max(g.z1,...list.map(b=>b.z1));
-  const band:[number,number]=[z0-s.lip,z1+s.lip],split=(z0+z1)/2,name=`Schicht ${i+1}`,ring=(b:Bearing)=>b.D/2+rim;
-  for(const b of list)if(Math.abs(mid(b)-split)>.5)issues.push({level:'hinweis',message:`${b.label}: Mitte ${mm(mid(b)-split)} neben der Trennfuge von ${name}, die Taschen werden ungleich tief`,ref:b.on});
+  const pair=clampAll,lips:[boolean,boolean]=pair?[true,true]:[i===lowest,i===highest&&groups.length>1],band:[number,number]=[z0-(lips[0]?s.lip:0),z1+(lips[1]?s.lip:0)],split=(z0+z1)/2,name=`Schicht ${i+1}`,ring=(b:Bearing)=>b.D/2+rim;
+  if(pair)for(const b of list)if(Math.abs(mid(b)-split)>.5)issues.push({level:'hinweis',message:`${b.label}: Mitte ${mm(mid(b)-split)} neben der Trennfuge von ${name}, die Taschen werden ungleich tief`,ref:b.on});
   for(const [a,b] of list.flatMap((a,k)=>list.slice(k+1).map(b=>[a,b] as const)))if(a.on===b.on)issues.push({level:'warnung',message:`${a.label} und ${b.label} liegen auf derselben Welle in ${name}`,ref:a.on});
   // Motors screwed to this layer: the flange on the plate's outer face, the body outside.
   for(const m of motors)if(!m.layer&&Math.abs((m.down?band[0]:band[1])-m.face)<.5){m.layer=id;const node:Bearing={key:m.key,on:m.on,item:'motor',label:m.label,at:m.at,z0:m.face,z1:m.face,D:2*(m.pad-rim),d:0,B:0,motor:m};list.push(node);bearings.push(node);}
@@ -146,7 +152,7 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   // What the plate hits: rings and webs against wheels, pulleys, sleeves and belts in the band's heights.
   const at=(k:string)=>list.find(b=>b.key===k)!;
   for(const o of obstacles){if(overlap(o.z0,o.z1,band[0],band[1])<=eps)continue;
-   for(const b of list){if(o.on.includes(b.on)&&!o.b){if(o.ra+s.clearance>(b.motor?(b.motor.part.pilot??0)/2:b.D/2-s.lipIn)+eps&&!(b.motor&&(b.motor.down?o.z0>=band[1]-eps:o.z1<=band[0]+eps)))issues.push({level:'fehler',message:`${name}: ${o.label} sitzt zu nah am Lager ${b.label}, die Platte reicht ${mm(s.lip)} über das Lager (Bord); Abstand oder Distanzhülse nötig`,ref:b.on});continue;}const c=o.b?hullDistance(b.at,o.a,o.ra,o.b,o.rb!):dist(b.at,o.a)-o.ra;if(c<ring(b)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um ${b.label} trifft ${o.label}`,ref:b.on});}}
+   for(const b of list){if(o.on.includes(b.on)&&!o.b){if(o.ra+s.clearance>(b.motor?(b.motor.part.pilot??0)/2:(o.z0+o.z1)/2<(b.z0+b.z1)/2?(lips[0]?b.D/2-s.lipIn:b.D/2):(lips[1]?b.D/2-s.lipIn:b.D/2))+eps&&!(b.motor&&(b.motor.down?o.z0>=band[1]-eps:o.z1<=band[0]+eps)))issues.push({level:'fehler',message:`${name}: ${o.label} sitzt zu nah am Lager ${b.label}, die Platte reicht ${mm(s.lip)} über das Lager (Bord); Abstand oder Distanzhülse nötig`,ref:b.on});continue;}const c=o.b?hullDistance(b.at,o.a,o.ra,o.b,o.rb!):dist(b.at,o.a)-o.ra;if(c<ring(b)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um ${b.label} trifft ${o.label}`,ref:b.on});}}
   // Webs against what is in the band's heights: straight, or as the user chose round or under/over it.
   const inBand=obstacles.filter(o=>overlap(o.z0,o.z1,band[0],band[1])>eps),route=doc.webs?.route??{};
   for(const w of webs){const a=at(w.a),b=at(w.b),mine=(o:Obstacle)=>o.on.includes(a.on)||o.on.includes(b.on),hits=(segs:{a:[number,number];ra:number;b:[number,number];rb:number}[],z?:[number,number])=>inBand.filter(o=>!mine(o)&&(!z||overlap(o.z0,o.z1,z[0],z[1])>eps)&&segs.some(g=>hullsApart(o,g)<s.clearance-eps));
@@ -167,7 +173,7 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
     if(!hits(segs).length&&(!best||len(pts)<len(best)))best=pts;}
    if(!best){issues.push({level:'fehler',message:`${name}: außen herum findet der Steg ${a.label} – ${b.label} keinen freien Weg. In die Tiefe oder weglassen`,ref:`steg:${w.a}|${w.b}`});continue;}
    w.path=best.slice(1,-1);w.width=width;w.hits=[];}
-  return {id,z0,z1,band,split,auto:!l,rim,thickness,bearings:list.map(b=>b.key),webs,holes,parts};});
+  return {id,z0,z1,band,split,pair,lips,auto:!l,rim,thickness,bearings:list.map(b=>b.key),webs,holes,parts};});
 }
 
 const screws=[10,12,16,20,25,30,35,40,45,50,55,60,65,70,80,90,100];
