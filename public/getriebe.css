@@ -81,3 +81,12 @@ body[data-view=gear] #generator{grid-template-columns:auto minmax(0,1fr) 330px}
 .sideview text.name{fill:#cdd8df;font-size:11px}.sideview .band text{fill:#eef3f6;font-size:11px;text-anchor:middle}.sideview text.zmark{text-anchor:end}
 .sideview .edge{cursor:ns-resize}.sideview .row,.sideview .row .grab{cursor:ns-resize}
 #pose{padding:4px 8px;gap:2px 12px;font-size:12px}#pose .pose{font-size:12px;gap:5px}#pose input[type=range]{width:120px}#pose button{padding:3px 8px;font-size:12px}
+
+/* Full height, no scrolling: the views on top, the 3D preview below, the sliders small along the top view's bottom. */
+body[data-view=gear] #generator>#workspace{display:grid;grid-template-rows:minmax(0,57fr) minmax(0,43fr);gap:8px;overflow:hidden;padding:10px}
+#views{min-height:0;height:100%}#top-box{height:100%}#top{height:100%;box-sizing:border-box;overflow:hidden}#side{height:100%;box-sizing:border-box;overflow:hidden;padding:4px 6px}
+#preview-box{margin:0;min-height:0;display:flex;flex-direction:column}#preview{flex:1;height:auto;min-height:0}
+#pose{left:14px;right:14px;top:auto;bottom:6px;padding:0;background:none;border:0;border-radius:0;gap:0 14px;font-size:11px;opacity:.85}#pose:hover{opacity:1}
+#pose .pose{font-size:11px;gap:4px;color:var(--soft)}#pose input[type=range]{width:90px;height:12px;margin:0}#pose output{min-width:2.6em;font-size:11px}
+#pose button{padding:0 4px;font-size:11px;background:none;border:0;color:var(--soft);text-decoration:underline}
+.sideview text.name{font-size:10px}.sideview text.zmark{font-size:9px}.sideview .band text{font-size:10px}.sideview text.what{font-size:8.5px}
