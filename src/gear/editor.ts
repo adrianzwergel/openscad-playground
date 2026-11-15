@@ -77,6 +77,8 @@ export class GearEditor{
   const sel=this.sel?.kind==='shaft'?this.sel.id:this.sel?.kind==='bolt'?`bolzen:${this.sel.index}`:undefined;root.innerHTML=topView(p,L,{view:this.view,selected:sel,pose:this.posed(),...(this.sel?.kind==='group'?{group:this.sel.id}:{})});
   const svg=root.querySelector('svg')!;svg.dataset.scale=String(this.view.scale);svg.querySelectorAll<SVGGElement>('[data-shaft]').forEach(g=>{g.onpointerdown=e=>this.startShaft(e,g.dataset.shaft!);});
   svg.querySelectorAll<SVGPolygonElement>('[data-web]').forEach(w=>{const [a,b]=w.dataset.web!.split('|');if(this.sel?.kind==='web'&&this.sel.a===a&&this.sel.b===b)w.classList.add('selected');w.onpointerdown=e=>{e.stopPropagation();this.sel={kind:'web',a,b};this.host.live();};});
+  // A see-through plate clicked becomes the active one.
+  svg.querySelectorAll<SVGGElement>('[data-ghost]').forEach(g=>{g.onpointerdown=ev=>{if(ev.button!==0)return;ev.stopPropagation();this.layer=Number(g.dataset.ghost);this.sel={kind:'layer',index:this.layer};this.host.live();};});
   svg.querySelectorAll<SVGGElement>('[data-bolt]').forEach(g=>{g.onpointerdown=e=>this.startBolt(e,Number(g.dataset.bolt));});
   svg.onpointerdown=e=>{if(e.target===svg){this.sel=undefined;this.host.live();}};}
  private startBolt(e:PointerEvent,index:number){if(e.button!==0)return;e.preventDefault();e.stopPropagation();this.rest();const at=this.mm(e)!,from=this.host.plan().bolts[index].at;this.drag={kind:'bolt',index,from:[...from],start:at,moved:false};if(!this.host.readOnly())this.host.begin();}
