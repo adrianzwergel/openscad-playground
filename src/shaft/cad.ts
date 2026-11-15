@@ -20,7 +20,7 @@ export type Mat=number[];
 /** The original model of a bought part, for the preview: its mesh file and where it goes in the part's frame. The solid
  * beside it stays the stand-in for STEP and the checks. */
 export type Asset={url:string;matrix:Mat};
-export type CadPart={name:string;file:string;kind:CadKind;shape:Shape3D;color:string;/** Made, not bought: gets files. */made:boolean;asset?:Asset};
+export type CadPart={name:string;file:string;kind:CadKind;shape:Shape3D;color:string;/** Made, not bought: gets files. */made:boolean;asset?:Asset;/** In a gearbox: the body it moves with (a swing arm's id, '' the frame). */body?:string};
 /** b·a: first a, then b. */
 export function matMul(b:Mat,a:Mat):Mat{const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=b[k*4+r]*a[c*4+k];return o;}
 export const matMove=(v:[number,number,number]):Mat=>[1,0,0,0,0,1,0,0,0,0,1,0,v[0],v[1],v[2],1];
@@ -130,10 +130,10 @@ export function buildParts(doc:ShaftDoc,plan:Plan,keep?:Keep):{parts:CadPart[];f
  for(const i of plan.inserts){const len=i.part.length??(i.x1-i.x0)+12,x0=i.end==='links'?i.x1-len:i.x0,x1=i.end==='links'?i.x1:i.x0+len;parts.push({name:`${i.label} (${label(i.profile)})`,file:i.id,kind:'kauf',shape:along(keep,i.profile,x0,x1),color:'#e0c56c',made:false});}
  return {parts,free};}
 
-export type MeshData={asset?:Asset;name:string;kind:CadKind;color:string;vertices:Float32Array;normals:Float32Array;triangles:Uint32Array;edges:Float32Array};
+export type MeshData={asset?:Asset;body?:string;name:string;kind:CadKind;color:string;vertices:Float32Array;normals:Float32Array;triangles:Uint32Array;edges:Float32Array};
 export function meshParts(parts:CadPart[]):MeshData[]{
  return parts.map(p=>{const m=p.shape.mesh({tolerance:.02,angularTolerance:8}),e=p.shape.meshEdges({tolerance:.02,angularTolerance:8});
-  return {...(p.asset?{asset:p.asset}:{}),name:p.name,kind:p.kind,color:p.color,vertices:new Float32Array(m.vertices),normals:new Float32Array(m.normals),triangles:new Uint32Array(m.triangles),edges:new Float32Array(e.lines)};});}
+  return {...(p.asset?{asset:p.asset}:{}),...(p.body!==undefined?{body:p.body}:{}),name:p.name,kind:p.kind,color:p.color,vertices:new Float32Array(m.vertices),normals:new Float32Array(m.normals),triangles:new Uint32Array(m.triangles),edges:new Float32Array(e.lines)};});}
 /** STEP and STL of every made part, and the assembly with the bought parts as one STEP. */
 export async function exportParts(parts:CadPart[]){
  const files:{name:string;data:ArrayBuffer}[]=[];

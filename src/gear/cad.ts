@@ -101,7 +101,7 @@ function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,Shaf
    if(Math.abs(spin)>1e-9){shape=keep(shape.rotate(spin,[0,0,0],[0,0,1]) as Shape3D);m=matMul(matTurn(spin,[0,0,0],[0,0,1]),m);}
    const at=carried(placed.at,chain);
    shape=keep(shape.translate([at[0],at[1],placed.z]) as Shape3D);m=matMul(matMove([at[0],at[1],placed.z]),m);
-   out.push({...part,...(part.asset?{asset:{url:part.asset.url,matrix:matMul(m,part.asset.matrix)}}:{}),shape,name:`${part.name} · ${x.label}`,file:`${slug(x.label)}-${part.file}`});}}
+   out.push({...part,...(part.asset?{asset:{url:part.asset.url,matrix:matMul(m,part.asset.matrix)}}:{}),shape,body:plan.groups.find(v=>v.shafts.includes(x.id))?.id??'',name:`${part.name} · ${x.label}`,file:`${slug(x.label)}-${part.file}`});}}
  return out;}
 /** Everything of a gearbox. `keep` registers what must be freed. */
 export function buildGearParts(doc:GearDoc,plan:GearPlan,files:Record<string,ShaftFile|undefined>,keep:Keep,pose?:Pose):CadPart[]{
@@ -109,7 +109,8 @@ export function buildGearParts(doc:GearDoc,plan:GearPlan,files:Record<string,Sha
  plan.columns.forEach((c,i)=>{for(const bo of plan.bolts){if(bo.body!==c.body)continue;const tube=drawCircle(bo.eye-.5).cut(drawCircle(bo.hole)).translate(bo.at[0],bo.at[1]);parts.push({name:`Distanzsäule ${c.from} – ${c.to}`,file:`saeule-${i+1}`,kind:'saeule',shape:keep(tube.sketchOnPlane('XY',c.z0).extrude(c.z1-c.z0) as Shape3D),color:'#c58a4a',made:true});}});
  // A swing arm's plates and columns stand where the pose swings them.
  const body=(p:CadPart):string=>p.kind==='platte'?plan.layers[Number(/^schicht-(\d+)/.exec(p.file)![1])-1].body:plan.columns[Number(/^saeule-(\d+)/.exec(p.file)![1])-1].body;
- if(pose)for(const p of parts)for(const g of links(plan.groups,body(p),pose.groups))if(g.angle)p.shape=keep(p.shape.rotate(g.angle,[g.at[0],g.at[1],0],[0,0,1]) as Shape3D);
+ for(const p of parts)p.body=body(p);
+ if(pose)for(const p of parts)for(const g of links(plan.groups,p.body!,pose.groups))if(g.angle)p.shape=keep(p.shape.rotate(g.angle,[g.at[0],g.at[1],0],[0,0,1]) as Shape3D);
  // The motors' bodies come with their shafts' parts.
  parts.push(...shaftParts(keep,plan,doc,files,pose));
  return parts;}

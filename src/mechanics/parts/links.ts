@@ -14,6 +14,11 @@ export type Axis='x'|'y'|'z';
 export type Joint={kind:'drehen'|'schieben'|'mutter';axis:Axis;lead?:number;/** Pivot of a turning joint in the frame of what it is connected to; without, where the part stands. */at?:V;min:number;max:number;/** Driven by this drive, with a slider. */input?:{drive:string}};
 export const itemBody=(id:string)=>`teil:${id}`;
 export const plateBody=(id:string)=>`platte:${id}`;
+/** A linked gearbox's frame, and one of its swing arms. */
+export const gearBody=(id:string)=>`getriebe:${id}`;
+export const armBody=(id:string,group:string)=>`getriebe:${id}/${group}`;
+/** What stands free in a build: parts off a plate, plates, gearboxes. */
+const frees=(b:Build)=>[...b.items.filter(i=>i.free).map(i=>[itemBody(i.id),i.free!] as const),...b.plates.map(p=>[plateBody(p.id),p.free] as const),...(b.gears??[]).map(g=>[gearBody(g.id),g.free] as const)];
 const unit:Record<Axis,V>={x:[1,0,0],y:[0,1,0],z:[0,0,1]};
 /** How far a joint has moved, in the frame of what it is connected to: turned about its pivot or shifted along its axis. */
 export function jointMove(j:Joint,value:number,pivot:V=[0,0,0]):Frame{const v=Math.min(j.max,Math.max(j.min,value));
@@ -22,7 +27,7 @@ export function jointMove(j:Joint,value:number,pivot:V=[0,0,0]):Frame{const v=Ma
 /** The frame of every part and plate in the room, joints moved by `values` (by body), each on the frame of what it is
  * connected to; `base` holds the frames of the world's bodies (links of the model, shafts, loose wheels). */
 export function bodyFrames(b:Build,base:Record<string,Frame>,values:Record<string,number>={}):Record<string,Frame>{
- const out:Record<string,Frame>={},free=new Map<string,Free>([...b.items.filter(i=>i.free).map(i=>[itemBody(i.id),i.free!] as const),...b.plates.map(p=>[plateBody(p.id),p.free] as const)]),busy=new Set<string>();
+ const out:Record<string,Frame>={},free=new Map<string,Free>(frees(b)),busy=new Set<string>();
  const frameOf=(key:string):Frame|undefined=>{if(out[key])return out[key];const f=free.get(key);if(!f)return base[key];if(busy.has(key))return undefined;busy.add(key);
   const parent=f.body?frameOf(f.body):undefined,j=f.joint;
   // A nut: where the shaft stands, without its turn, shifted along it by the turns times the lead.
@@ -30,5 +35,5 @@ export function bodyFrames(b:Build,base:Record<string,Frame>,values:Record<strin
   const local=j?compose(jointMove(j,values[key]??0,f.frame.position),f.frame):f.frame,moved=parent?compose(parent,local):local;busy.delete(key);out[key]=moved;return moved;};
  for(const key of free.keys())frameOf(key);return out;}
 /** Bodies a part may be connected to without a loop: everything but itself and what hangs on it. */
-export function hangsOn(b:Build,key:string){const below=new Set([key]);for(let grew=true;grew;){grew=false;for(const [k,f] of [...b.items.filter(i=>i.free).map(i=>[itemBody(i.id),i.free!] as const),...b.plates.map(p=>[plateBody(p.id),p.free] as const)])if(f.body&&below.has(f.body)&&!below.has(k)){below.add(k);grew=true;}}return below;}
+export function hangsOn(b:Build,key:string){const below=new Set([key]);for(let grew=true;grew;){grew=false;for(const [k,f] of frees(b))if((f.body&&below.has(f.body)||[...below].some(x=>f.body?.startsWith(x+'/')))&&!below.has(k)){below.add(k);grew=true;}}return below;}
 export function parseJoint(j:unknown):Joint|undefined{if(j===undefined)return undefined;const x=j as Joint;if(!x||x.kind!=='drehen'&&x.kind!=='schieben'&&x.kind!=='mutter'||x.lead!==undefined&&!(x.lead>0)||!(x.axis in unit)||!Number.isFinite(x.min)||!Number.isFinite(x.max)||x.min>x.max||x.at!==undefined&&(!Array.isArray(x.at)||x.at.length!==3||!x.at.every(Number.isFinite))||x.input!==undefined&&typeof x.input?.drive!=='string')throw Error('Aufbau: Verbindung ungültig');return structuredClone(x);}

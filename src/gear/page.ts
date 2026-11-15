@@ -24,6 +24,9 @@ const store=await ProjectStore.open('getriebe',FORMAT),shaftStore=await ProjectS
 let open:{id:string;name:string;doc:GearDoc;readOnly:boolean}|undefined,files:Record<string,ShaftFile>={},names:{id:string;name:string}[]=[],plan:GearPlan|undefined;
 let saveTimer:ReturnType<typeof setTimeout>|undefined,past:string[]=[],future:string[]=[],before:string|undefined;
 const status=(m:string)=>{$('status').textContent=m;};
+/** Embedded in the Studio (#open=<id>&embed or #new&embed): it hears of every save and of a new gearbox. */
+const hash=new URLSearchParams(location.hash.slice(1)),embedded=hash.has('embed')&&window.parent!==window;
+const tell=(type:string,id:string,name:string)=>{if(embedded)window.parent.postMessage({source:'getriebe',type,id,name},location.origin);};
 // ---------- CAD: the same worker as the shaft generator, with the gearbox and its shafts ----------
 const cad=new CadClient();let preview:ShaftPreview|undefined,meshed='',meshTimer:ReturnType<typeof setTimeout>|undefined,filesFor='',made:Promise<{name:string;data:ArrayBuffer}[]>|undefined;
 const previewState=(text:string,state:string)=>{const e=$('preview-state');e.textContent=text;e.dataset.state=state;};
@@ -62,7 +65,7 @@ async function fromExample(key:string){const x=gearExamples.find(e=>e.key===key)
  for(const s of x.shafts){const id=crypto.randomUUID().slice(0,12);ids[s.key]=id;await shaftStore.write(id,{format:SHAFT,name:s.name,updated:new Date().toISOString(),doc:parseShaft(s.doc)});}
  await shaftStore.settled();await create(x.title,x.make(ids));}
 function save(){if(!open||open.readOnly)return;clearTimeout(saveTimer);$('save-state').textContent='Speichert …';saveTimer=setTimeout(()=>void flush(),300);}
-async function flush(){if(saveTimer===undefined||!open)return;clearTimeout(saveTimer);saveTimer=undefined;const o=open;try{await store.write(o.id,{format:FORMAT,name:o.name,updated:new Date().toISOString(),doc:o.doc});$('save-state').textContent='Gespeichert';}catch(e){$('save-state').textContent=`Nicht gespeichert: ${e}`;}}
+async function flush(){if(saveTimer===undefined||!open)return;clearTimeout(saveTimer);saveTimer=undefined;const o=open;try{await store.write(o.id,{format:FORMAT,name:o.name,updated:new Date().toISOString(),doc:o.doc});$('save-state').textContent='Gespeichert';tell('saved',o.id,o.name);}catch(e){$('save-state').textContent=`Nicht gespeichert: ${e}`;}}
 function undo(back:boolean){if(!open||open.readOnly)return;const from=back?past:future,to=back?future:past,state=from.pop();if(state===undefined)return;to.push(JSON.stringify(open.doc));open.doc=parseGear(JSON.parse(state));editor.sel=undefined;save();draw();status(back?'Rückgängig':'Wiederholt');}
 
 function draw(){
@@ -109,5 +112,7 @@ addEventListener('focus',()=>{if(open)void loadShafts().then(draw);});
 addEventListener('resize',()=>{if(open)draw();});
 addEventListener('pagehide',()=>{void flush();});
 
-const last=await store.active();if(last&&(await store.list()).some(f=>f.id===last))await openGear(last);else{draw();await list();}
+if(embedded)document.body.classList.add('embedded');
+if(hash.has('new')){await create(hash.get('name')||'Neues Getriebe',newGear());if(open)tell('created',open.id,open.name);}
+const last=hash.has('new')?open?.id:hash.get('open')??await store.active();if(last&&(await store.list()).some(f=>f.id===last)){if(open?.id!==last)await openGear(last);}else{draw();await list();}
 document.body.dataset.ready='true';

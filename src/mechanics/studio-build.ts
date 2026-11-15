@@ -27,9 +27,10 @@ import {separation} from './graph/space';
 import type {GripOptions} from './studio-mechanism';
 import {TrainEditor} from './studio-train';
 import {LinkageEditor} from './studio-linkage';
+import {GearboxEditor} from './studio-gearbox';
 import {isBody,linkBody,linkageIssues} from './parts/linkage';
 import {newTrain,trainIssues,snapWheel,meshes,ratioOf,DEFAULT_ANGLE,inputsOf,outputsOf,shaftFrames,shaftOfBody,shaftBody,wheelBody,motion,rackBody,rackMeshes,carriedFrames} from './parts/train';
-import {bodyFrames,itemBody,plateBody,hangsOn} from './parts/links';
+import {bodyFrames,itemBody,plateBody,hangsOn,gearBody} from './parts/links';
 import type {Joint} from './parts/links';
 import {driveCatalog} from './kinematics/drive';
 import {makeGroup,dissolve,setKind,titleOf,moveMember,orderedChildren,parentOf,kindNames,rigidOf,unitOf,contents,childrenOf,moveGroup,centreOf,turnAxis,blockOf,insertBlock,removeGroup,keyOf,memberOf} from './parts/groups';
@@ -89,6 +90,8 @@ export class BuildEditor{
  private trains:TrainEditor;
  /** Wishbones, stabs and dampers from their joint points. */
  private links:LinkageEditor;
+ /** Gearboxes linked from the gearbox generator. */
+ private gearboxes:GearboxEditor;
  /** The page of the gear train (ratio, drive, into a mechanism) is open. */
  private trainOpen=false;
  /** Several things selected (Strg-click), as group keys; or one group. */
@@ -103,21 +106,22 @@ export class BuildEditor{
  private folded=new Set<string>();private layerDrag?:Member;
  /** The group whose gear housing shows in the view. */
  private caseOf?:string;
- constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;this.links.select(undefined);this.links.overview=false;},canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt,ensure:()=>{const b=this.ensure();return b.train??=newTrain();},mechanism:()=>this.attached,phase:()=>this.host.phase?.()??3,
+ constructor(private host:BuildHost){this.gizmo.userData.buildGizmo=true;this.group.add(this.gizmo);this.trains=new TrainEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;this.links.select(undefined);this.links.overview=false;this.gearboxes.select(undefined);},canvas:host.canvas,ray:host.ray,root:()=>this.group,orbit:host.orbit,adopt:host.adopt,ensure:()=>{const b=this.ensure();return b.train??=newTrain();},mechanism:()=>this.attached,phase:()=>this.host.phase?.()??3,
   bodies:s=>{const b=this.build();if(!b)return [];const own=new Set([shaftBody(s),...(b.train?.wheels??[]).filter(w=>w.shaft===s).map(w=>wheelBody(w.id))]),below=hangsOn(b,shaftBody(s));return Object.keys(this.frames()).filter(k=>!own.has(k)&&!below.has(k)&&!(b.train?.shafts.find(x=>shaftBody(x.id)===k)?.on?.body===shaftBody(s))).map(k=>[k,this.bodyName(k)] as [string,string]);},
   attachShaft:(s,body)=>{const frames=this.frames();this.host.change(()=>{const x=this.build()?.train?.shafts.find(y=>y.id===s);if(!x)return;if(!body){delete x.on;return;}const p=frames[body];if(!p)throw Error('Das gibt es nicht mehr.');x.on={body,frame:compose(inverse(p),{position:[x.at[0],0,x.at[1]],rotation:[0,0,0,1]})};},body?`Welle verbunden mit ${this.bodyName(body)}: sie fährt mit.`:'Welle steht wieder in der Welt.');},
   unit:w=>{const b=this.build(),id=b?unitOf(b,{kind:'wheel',id:w}):undefined;return b&&id?{id,label:this.groupLabel(id),wheels:new Set(contents(b,id).wheels.map(x=>x.id))}:undefined;},
   moveUnit:(unit,delta,message)=>{const frames=this.frames();this.host.change(()=>{moveGroup(this.build()!,unit,{delta},frames);},message);}});this.trains.onChange=()=>this.refresh();
-  this.links=new LinkageEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;this.trains.select(undefined);this.multi.clear();this.groupId=undefined;},ray:host.ray,canvas:host.canvas,root:()=>this.group,orbit:host.orbit,ensure:()=>this.ensure(),
-   bodies:()=>Object.keys(this.frames(true)).filter(k=>!k.startsWith('lenker:')).map(k=>[k,this.bodyName(k)] as [string,string]),name:k=>this.bodyName(k),phase:()=>this.host.phase?.()??3,exportSolid:(g,n)=>this.exportSolid(g,n)});}
+  this.links=new LinkageEditor({build:()=>this.build(),change:host.change,status:host.status,leave:host.leave,pick:()=>{this.selected=undefined;this.plateId=undefined;this.trainOpen=false;this.trains.select(undefined);this.multi.clear();this.groupId=undefined;this.gearboxes.select(undefined);},ray:host.ray,canvas:host.canvas,root:()=>this.group,orbit:host.orbit,ensure:()=>this.ensure(),
+   bodies:()=>Object.keys(this.frames(true)).filter(k=>!k.startsWith('lenker:')).map(k=>[k,this.bodyName(k)] as [string,string]),name:k=>this.bodyName(k),phase:()=>this.host.phase?.()??3,exportSolid:(g,n)=>this.exportSolid(g,n)});
+  this.gearboxes=new GearboxEditor({build:()=>this.build(),ensure:()=>this.ensure(),change:host.change,status:host.status,refresh:()=>this.refresh(),leave:host.leave,beside:()=>this.besideAll(),values:()=>this.values,picked:()=>{this.host.picked?.();this.deselect();}});}
  private get wheels(){return !!this.build()?.train?.wheels.length;}
  /** A build on its own is open (a mechanism's parts come along with the mechanism). */
  get active(){return !!this.activeId&&!!this.build();}
  get attached(){return !!this.attachedTo;}
  /** Something of the attached parts is selected: the properties are ours. */
- get holdsProperties(){return this.active||this.attached&&(!!this.selected||!!this.plateId||!!this.trains.selectedId||!!this.trains.shaftId||!!this.trains.rackId||this.trainOpen||!!this.groupId||this.multi.size>0||!!this.links.selectedId||this.links.overview);}
+ get holdsProperties(){return this.active||this.attached&&(!!this.selected||!!this.plateId||!!this.trains.selectedId||!!this.trains.shaftId||!!this.trains.rackId||this.trainOpen||!!this.groupId||this.multi.size>0||!!this.links.selectedId||this.links.overview||!!this.gearboxes.selectedId);}
  /** The wheels' slider under the view (any phase). */
- renderAxes(root:HTMLElement){const turning=this.trains.renderAxes(root),linked=this.links.renderAxes(root),any=turning||linked,b=this.build();if(!b)return any;
+ renderAxes(root:HTMLElement){const turning=this.trains.renderAxes(root),linked=this.links.renderAxes(root),swung=this.gearboxes.renderAxes(root),any=turning||linked||swung,b=this.build();if(!b)return any;
   const driven=[...b.items.filter(i=>i.free?.joint?.input).map(i=>({key:itemBody(i.id),name:partOf(b,i).label,j:i.free!.joint!})),...b.plates.filter(p=>p.free.joint?.input).map(p=>({key:plateBody(p.id),name:'Bodenplatte',j:p.free.joint!}))];
   if(!driven.length)return any;root.append(el('h3',{textContent:'Verbindungen bewegen'}));
   for(const d of driven){const unitText=d.j.kind==='drehen'?'°':' mm',value=Math.min(d.j.max,Math.max(d.j.min,this.values[d.key]??0)),slider=el('input',{type:'range',min:String(d.j.min),max:String(d.j.max),step:'0.5',value:String(value)}),out=el('output',{textContent:`${value}${unitText}`});
@@ -126,14 +130,17 @@ export class BuildEditor{
  /** A body's name for people: a shaft by its wheel, the mechanism's base, or the link. */
  private bodyName(id:string){const b=this.build(),s=shaftOfBody(id);if(s){const w=b?.train?.wheels.find(x=>x.shaft===s),sh=b?.train?.shafts.find(x=>x.id===s);return `${sh?.fixed?'Achse':'Welle'}${w?` von ${wheelLabel(w)}`:''}`;}
   if(id.startsWith('zahnstange:'))return 'Zahnstange';
+  if(id.startsWith('getriebe:'))return this.gearboxes.bodyName(id);
   if(id.startsWith('lenker:'))return b?.linkage?.links.find(x=>linkBody(x.id)===id)?.label??'Lenker';
   if(id==='')return 'der Welt';
   if(id.startsWith('rad:')){const w=b?.train?.wheels.find(x=>x.id===id.slice(4));return w?`${wheelLabel(w)} (lose)`:'Rad';}if(id.startsWith('teil:')){const i=b?.items.find(x=>x.id===id.slice(5));return i?partOf(b!,i).label:'Teil';}if(id.startsWith('platte:'))return 'Bodenplatte';return id==='ground'?'Basis':id;}
  /** Opens the page of the gear train. */
  openTrain(){this.selected=undefined;this.plateId=undefined;this.trains.select(undefined);this.trainOpen=true;}
  /** Where the mechanism's links and the shafts stand now: a shaft is a body, turned by the inputs. */
- private frames(rest=false){const b=this.preview??this.build(),turns=rest?{}:this.trains.turnsNow,base={...this.host.frames(),...shaftFrames(b?.train,turns)};if(!b)return base;
+ private frames(rest=false){const b=this.preview??this.build(),turns=rest?{}:this.trains.turnsNow;let base={...this.host.frames(),...shaftFrames(b?.train,turns)};if(!b)return base;
   const angle=b.train?motion(b.train,turns).angle:new Map<string,number>(),turned=Object.fromEntries([...angle].map(([k,v])=>[k.includes(':')?k:shaftBody(k),v])),values=rest?turned:{...turned,...this.values};let all={...base,...bodyFrames(b,base,values)};
+  // Linked gearboxes: their swing arms are bodies on their frames, turned by their sliders.
+  if(b.gears?.length){const arms=this.gearboxes.armFrames(b,all,values);if(Object.keys(arms).length){base={...base,...arms};all={...base,...bodyFrames(b,base,values)};}}
   // Shafts on moving bodies: a few rounds settle chains of them (a shaft on a part on a shaft).
   if(b.train?.shafts.some(s=>s.on))for(let k=0;k<3;k++){const next={...base,...carriedFrames(b.train,all,angle)};all={...next,...bodyFrames(b,next,values)};}
   // A linkage is solved in the world as it stands, against where that world is with every slider at 0; at rest its
@@ -160,6 +167,7 @@ export class BuildEditor{
   for(const i of b.items){if(!i.free)continue;const p=partOf(b,i),g=new THREE.Group();place(g,frames[itemBody(i.id)]??worldOf(i.free,frames));this.followers.push({object:g,free:i.free,key:itemBody(i.id)});g.add(this.partObject(p,i));this.group.add(g);
    if(p.body>0&&i.holder.kind!=='none'){const seat=holderPiece(b,i),under=new THREE.Group();under.position.z=-liftOf(i);for(const s of holderGeometry(seat,seat.items[0]).solids){const m=primMesh(s);if(m)under.add(m);}g.add(under);}
    const q=partBox(p,{position:[0,0,0],rotation:[0,0,0,1]}),box=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(...q.half.map(v=>2*v) as [number,number,number])),new THREE.LineBasicMaterial({color:bad.has(i.id)?0xff5a55:i.id===this.selected||lit.has(i.id)?0xffffff:0x63cbb3}));box.position.set(...q.center);g.add(box);}
+  this.gearboxes.draw(this.group,b,frames,this.values);
   const zone=b.items.find(i=>i.id===this.selected&&i.free&&i.wish)?.wish;if(zone){const m=new THREE.Mesh(new THREE.SphereGeometry(zone.size[0],24,16),new THREE.MeshBasicMaterial({color:0x7fb6ff,wireframe:true,transparent:true,opacity:.25}));m.position.set(...zone.center as [number,number,number]);this.group.add(m);}
   const shown=this.caseOf&&b.train?b.groups?.find(g=>g.id===this.caseOf):undefined;if(shown)try{const c=gearCase(b.train!,new Set(contents(b,shown.id).wheels.map(w=>w.id)),shown.housing??defaultGearCase);for(const s of c.solids){const m=primMesh(s);if(m){const mat=m.material as THREE.MeshStandardMaterial;mat.transparent=true;mat.opacity=.3;mat.depthWrite=false;m.userData.gearCase=true;this.group.add(m);}}}catch{/* no wheels any more */}
   if(this.active&&this.net.positions&&this.net.key===this.netKey(b)){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(this.net.positions,3));g.computeVertexNormals();const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0xc58a4a,roughness:.6,side:THREE.DoubleSide}));m.userData.net=true;this.group.add(m);}
@@ -169,17 +177,19 @@ export class BuildEditor{
  /** Ids of what the selection holds, its groups' members included. */
  private lit(b:Build|undefined){const out=new Set<string>();if(!b)return out;for(const k of this.multi){const m=memberOf(k);if(m.kind==='group'){const c=contents(b,m.id);for(const x of [...c.items,...c.plates,...c.wheels])out.add(x.id);}else out.add(m.id);}
   if(this.groupId&&b.groups?.some(g=>g.id===this.groupId)){const c=contents(b,this.groupId);for(const x of [...c.items,...c.plates,...c.wheels])out.add(x.id);}return out;}
- deselect(){this.selected=undefined;this.plateId=undefined;this.trainOpen=false;this.trains.select(undefined);this.links.select(undefined);this.links.overview=false;this.multi.clear();this.groupId=undefined;}
+ deselect(){this.gearboxes?.select(undefined);this.selected=undefined;this.plateId=undefined;this.trainOpen=false;this.trains.select(undefined);this.links.select(undefined);this.links.overview=false;this.multi.clear();this.groupId=undefined;}
  /** Test entries: a point of a linkage now, what one reads off, a slider. */
  linkagePoint(link:string,point:string){this.frames();return this.links.pointAt(link,point);}
  linkageReading(){this.frames();return this.links.reading();}
  setLinkageInput(link:string,value:number){this.links.setInput(link,value);}
+ /** Test entry: a linked gearbox as drawn. */
+ gearboxDrawn(id:string){return this.gearboxes.drawn(id);}
  /** Test entry: where a body stands now (its frame in the room). */
  frameOf(key:string){return this.frames()[key]?.position;}
  /** Test entry: where the first thing that hangs on a link stands. */
  followerAt(key?:string){const f=key?this.followers.find(x=>x.key===key):this.followers.find(x=>x.free.body||x.free.joint);return f?.object.position.toArray();}
  /** Moves what hangs on links with them: the frames change with every slider step. */
- follow(){if(!this.followers.some(f=>f.free.body||f.free.joint)&&!this.trains.riding&&!this.links.moving)return;const frames=this.frames();this.trains.follow(frames);this.links.follow();for(const f of this.followers){const at=frames[f.key];if(at)place(f.object,at);}}
+ follow(){if(!this.followers.some(f=>f.free.body||f.free.joint)&&!this.trains.riding&&!this.links.moving&&!this.gearboxes.moving)return;const frames=this.frames();this.trains.follow(frames);this.links.follow();this.gearboxes.follow(frames,this.values);for(const f of this.followers){const at=frames[f.key];if(at)place(f.object,at);}}
  private partObject(p:Part,i:BuildItem){const holder=new THREE.Group();holder.userData.item=i.id;const material=new THREE.MeshStandardMaterial({color:p.color,roughness:.55,metalness:.15}),geometry=p.mesh?this.loaded.get(p.mesh):undefined;
   if(geometry){const m=new THREE.Mesh(geometry,material);m.userData.shared=true;holder.add(m);}
   else{const size=p.box.max.map((v,k)=>v-p.box.min[k]) as [number,number,number],m=new THREE.Mesh(new THREE.BoxGeometry(...size),material);m.position.set(...p.box.min.map((v,k)=>v+size[k]/2) as [number,number,number]);holder.add(m);
@@ -202,7 +212,7 @@ export class BuildEditor{
    for(const c of plugRects(p,i)){const s=new THREE.Shape(c.rect.corners.map(([x,y])=>new THREE.Vector2(x,y))),m=new THREE.Mesh(new THREE.ShapeGeometry(s),new THREE.MeshBasicMaterial({color:0xffb347,transparent:true,opacity:.28,side:THREE.DoubleSide,depthWrite:false}));m.position.z=z;root.add(m);}}
  }
  /** The selected free thing carries the gizmo. */
- private gizmoTarget(){const b=this.build();return b?.items.find(i=>i.id===this.selected&&i.free)?.free??(this.selected?undefined:b?.plates.find(p=>p.id===this.plateId)?.free);}
+ private gizmoTarget(){const b=this.build(),g=this.gearboxes.selectedId?b?.gears?.find(x=>x.id===this.gearboxes.selectedId):undefined;if(g)return g.free;return b?.items.find(i=>i.id===this.selected&&i.free)?.free??(this.selected?undefined:b?.plates.find(p=>p.id===this.plateId)?.free);}
  private gizmoOff(){this.host.grip(undefined);}
  private syncGizmo(){
   if(this.drag||this.unitDrag||this.multi.size){this.gizmoOff();return;}const b=this.build(),mode=this.host.mode?.()??'translate';
@@ -234,13 +244,16 @@ export class BuildEditor{
  }
  private plateAt(ray:THREE.Raycaster){this.group.updateWorldMatrix(true,true);let o:THREE.Object3D|null|undefined=ray.intersectObjects(this.group.children,true)[0]?.object;while(o&&!o.userData.plate)o=o.parent;return o?.userData.plate as string|undefined;}
  private itemAt(ray:THREE.Raycaster){this.group.updateWorldMatrix(true,true);let o:THREE.Object3D|null|undefined=ray.intersectObjects(this.group.children,true)[0]?.object;while(o&&!o.userData.item)o=o.parent;return o?.userData.item as string|undefined;}
- hover(ray:THREE.Raycaster){return this.links.hover(ray,this.group)||this.trains.hover(ray,this.group)||!!this.itemAt(ray);}
+ hover(ray:THREE.Raycaster){return this.links.hover(ray,this.group)||this.trains.hover(ray,this.group)||!!this.itemAt(ray)||!!this.gearboxes.at(ray,this.group);}
  /** True if the press belongs to a part or a wheel. A press beside them in a mechanism goes on to the mechanism. */
  pointerDown(e:PointerEvent,ray:THREE.Raycaster){
   // A joint point or a link: its page; a point is dragged.
   if(!(e.ctrlKey||e.metaKey)&&this.links.pointerDown(e,ray,this.group))return true;
   // A rack or a bare shaft (a lead screw): their pages.
   if(!(e.ctrlKey||e.metaKey)&&!this.trains.wheelAt(ray,this.group)&&this.trains.pieceAt(ray,this.group)){this.multi.clear();this.groupId=undefined;this.selected=undefined;this.plateId=undefined;this.trainOpen=false;this.trains.pointerDown(e,ray,this.group);return true;}
+  const gear=!(e.ctrlKey||e.metaKey)?this.gearboxes.at(ray,this.group):undefined;
+  if(gear){this.host.picked?.();this.deselect();this.gearboxes.select(gear);this.refresh();this.host.leave();return true;}
+  this.gearboxes.select(undefined);
   const wid=this.trains.wheelAt(ray,this.group),hit=wid?undefined:this.itemAt(ray),pid=wid||hit?undefined:this.plateAt(ray),b0=this.build();
   // Strg-click: into the selection or out of it.
   if((e.ctrlKey||e.metaKey)&&(wid||hit||pid)){this.toggle({kind:wid?'wheel':hit?'item':'plate',id:(wid??hit??pid)!});this.host.orbit(false);window.addEventListener('pointerup',()=>this.host.orbit(true),{once:true});this.refresh();this.host.leave();return true;}
@@ -258,7 +271,7 @@ export class BuildEditor{
  }
  /** The one thing selected, as a member. */
  private single():Member|undefined{return this.selected?{kind:'item',id:this.selected}:this.trains.selectedId?{kind:'wheel',id:this.trains.selectedId}:this.groupId?{kind:'group',id:this.groupId}:this.plateId?{kind:'plate',id:this.plateId}:undefined;}
- private selectMember(m:Member){this.links.select(undefined);this.links.overview=false;this.multi.clear();this.selected=m.kind==='item'?m.id:undefined;this.plateId=m.kind==='plate'?m.id:undefined;this.groupId=m.kind==='group'?m.id:undefined;this.trainOpen=false;this.trains.select(m.kind==='wheel'?m.id:undefined);}
+ private selectMember(m:Member){this.gearboxes.select(undefined);this.links.select(undefined);this.links.overview=false;this.multi.clear();this.selected=m.kind==='item'?m.id:undefined;this.plateId=m.kind==='plate'?m.id:undefined;this.groupId=m.kind==='group'?m.id:undefined;this.trainOpen=false;this.trains.select(m.kind==='wheel'?m.id:undefined);}
  /** Strg-click: what was selected alone comes into the selection first; one left is selected alone again. */
  private toggle(m:Member){const one=this.single();if(one&&!this.multi.size)this.multi.add(keyOf(one));this.selected=undefined;this.plateId=undefined;this.groupId=undefined;this.trainOpen=false;this.trains.select(undefined);
   const k=keyOf(m);if(this.multi.has(k))this.multi.delete(k);else this.multi.add(k);if(this.multi.size===1)this.selectMember(memberOf([...this.multi][0]));}
@@ -294,7 +307,7 @@ export class BuildEditor{
    if(moved&&over){const hit=this.rootRay(ev).intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),0),new THREE.Vector3());if(hit)at=[Math.round(hit.x),Math.round(hit.y),0];}else if(!moved)at=this.besideAll();
    if(!at)return;let id='';this.host.change(()=>{id=insertBlock(this.ensure(),k,at!);},`${k.label} eingesetzt: eine feste Gruppe.`);if(id&&this.build()?.groups?.some(g=>g.id===id)){this.selectMember({kind:'group',id});this.refresh();this.host.leave();}};
   window.addEventListener('pointerup',up);}
- private besideAll():V{const b=this.build();if(!b)return [0,0,0];const frames=this.frames(),xs=[...b.items.map(i=>standing(b,i,frames).position[0]),...b.plates.map(p=>worldOf(p.free,frames).position[0]),...(b.train?.shafts??[]).map(s=>s.at[0])];return [xs.length?Math.round(Math.max(...xs))+120:0,0,0];}
+ private besideAll():V{const b=this.build();if(!b)return [0,0,0];const frames=this.frames(),xs=[...b.items.map(i=>standing(b,i,frames).position[0]),...b.plates.map(p=>worldOf(p.free,frames).position[0]),...(b.train?.shafts??[]).map(s=>s.at[0]),...(b.gears??[]).map(g=>worldOf(g.free,frames).position[0]+80)];return [xs.length?Math.round(Math.max(...xs))+120:0,0,0];}
  private startNew(part:Part,e:PointerEvent){this.drag={item:newItem('t-'+crypto.randomUUID().slice(0,8),part,[0,0]),isNew:true,offset:[0,0],moved:false,over:false,start:[e.clientX,e.clientY]};this.track();}
  private startPlate(e:PointerEvent){this.drag={plate:newPlateNode('platte-'+crypto.randomUUID().slice(0,6)),isNew:true,offset:[0,0],moved:false,over:false,start:[e.clientX,e.clientY]};this.track();}
  private track(){
@@ -312,7 +325,7 @@ export class BuildEditor{
   this.refresh();
  }
  private dragEnd(e:PointerEvent){
-  const d=this.drag,b=this.build();this.drag=undefined;this.host.orbit(true);if(!d)return;if(d.moved||d.isNew){this.trains.select(undefined);this.trainOpen=false;}
+  const d=this.drag,b=this.build();this.drag=undefined;this.host.orbit(true);if(!d)return;if(d.isNew||d.moved)this.gearboxes.select(undefined);if(d.moved||d.isNew){this.trains.select(undefined);this.trainOpen=false;}
   if(d.isNew&&!d.moved){this.placeByClick(d,b);d.over=true;}
   if(!d.moved&&!d.isNew||!d.over){this.refresh();return;}
   if(d.plate){const plate=d.plate;this.plateId=plate.id;this.selected=undefined;this.host.change(()=>{this.ensure().plates.push(plate);},'Bodenplatte platziert.');return;}
@@ -326,7 +339,7 @@ export class BuildEditor{
  /** The build that takes a new thing: a mechanism's own is made with its first part. */
  private ensure(){let x=this.build();if(!x){const d=this.host.doc();x=modelBuild('teile-'+crypto.randomUUID().slice(0,8),this.attachedTo!);d.builds=[...(d.builds??[]),x];}return x;}
  /** Keys of the view: R turns the selection, Entf removes it. */
- key(e:KeyboardEvent){if(this.links.key(e))return true;if(e.key==='Delete'&&this.groupId){this.removeSelectedGroup();return true;}if(this.trains.key(e))return true;if(!this.selected)return false;if(e.key==='r'||e.key==='R'){this.turn(e.shiftKey?-90:90);return true;}if(e.key==='Delete'){this.removeItem();return true;}return false;}
+ key(e:KeyboardEvent){if(this.links.key(e))return true;if(e.key==='Delete'&&this.gearboxes.selectedId){const id=this.gearboxes.selectedId;this.gearboxes.select(undefined);this.host.change(()=>{const b=this.build()!;b.gears=(b.gears??[]).filter(x=>x.id!==id);if(!b.gears.length)delete b.gears;},'Getriebe aus dem Projekt genommen.');return true;}if(e.key==='Delete'&&this.groupId){this.removeSelectedGroup();return true;}if(this.trains.key(e))return true;if(!this.selected)return false;if(e.key==='r'||e.key==='R'){this.turn(e.shiftKey?-90:90);return true;}if(e.key==='Delete'){this.removeItem();return true;}return false;}
  private turn(by:number){const id=this.selected!;this.host.change(()=>{const i=this.build()!.items.find(x=>x.id===id);if(!i)return;i.angle=(i.angle+by+360)%360;if(i.free)i.free.frame=compose(i.free.frame,{position:[0,0,0],rotation:axisAngle([0,0,1],by)});},'Teil gedreht');}
  private removeSelectedGroup(){const id=this.groupId!,name=this.groupLabel(id);this.groupId=undefined;this.host.change(()=>{removeGroup(this.build()!,id);},`${name} mit allem darin entfernt.`);}
  private removeItem(){const id=this.selected!;this.selected=undefined;this.host.change(()=>{const x=this.build()!;x.items=x.items.filter(i=>i.id!==id);},'Teil entfernt');}
@@ -415,9 +428,10 @@ export class BuildEditor{
    // The linkage: a row for the whole, one per link.
    if(linked){const head=el('button',{textContent:'⟋ Gestänge',className:'layer-name'});head.dataset.linkageOverview='true';head.setAttribute('aria-selected',String(this.links.overview));head.onclick=overview;layers.append(el('div',{className:'tree-row layer-row'},el('span',{className:'layer-fold'}),head));
     for(const r of this.links.rows()){const x=el('button',{textContent:r.text,className:'layer-name'});x.dataset.linkage=r.id;x.setAttribute('aria-selected',String(this.links.selectedId===r.id));x.onclick=()=>{this.host.picked?.();this.deselect();this.links.select(r.id);this.refresh();this.host.leave();};const row=el('div',{className:'tree-row layer-row'},el('span',{className:'layer-fold'}),x);row.style.paddingLeft='16px';layers.append(row);}}
+   for(const r of this.gearboxes.rows()){const x=el('button',{textContent:r.text,className:'layer-name'});x.dataset.gearboxRow=r.id;x.setAttribute('aria-selected',String(this.gearboxes.selectedId===r.id));x.onclick=()=>{this.host.picked?.();this.deselect();this.gearboxes.select(r.id);this.refresh();this.host.leave();};layers.append(el('div',{className:'tree-row layer-row'},el('span',{className:'layer-fold'}),x));}
    this.connectionList(layers,b);
    if(b.items.length+b.plates.length+(t?.wheels.length??0)>1)root.append(el('p',{className:'muted tree-hint',textContent:'Ziehen ordnet um und legt in Gruppen · Strg-Klick wählt mehrere · Strg+G gruppiert'}));}
-  if(!b?.items.length&&!b?.plates.length&&!wheels&&!b?.linkage?.links.length)layers.append(el('p',{className:'muted',textContent:this.attached?'Noch keine Teile. Aus der Bibliothek auf das Modell ziehen.':'Noch leer. Aus der Bibliothek links etwas in die Ansicht ziehen.'}));
+  if(!b?.items.length&&!b?.plates.length&&!wheels&&!b?.linkage?.links.length&&!b?.gears?.length)layers.append(el('p',{className:'muted',textContent:this.attached?'Noch keine Teile. Aus der Bibliothek auf das Modell ziehen.':'Noch leer. Aus der Bibliothek links etwas in die Ansicht ziehen.'}));
  }
  /** The connections of the build, like the joints folder of a CAD browser: what turns, slides or hangs on what. */
  private connectionList(root:HTMLElement,b:Build){
@@ -429,6 +443,7 @@ export class BuildEditor{
   const say=(name:string,f:Free)=>f.joint?.kind==='mutter'?`${name} wandert als Mutter auf der ${f.body?this.bodyName(f.body):'Welle'} (${f.joint.lead??8} mm/U)`:`${name} ${f.joint?(f.joint.kind==='drehen'?`dreht um ${f.joint.axis}`:`schiebt entlang ${f.joint.axis}`):'fest'} an ${f.body?this.bodyName(f.body):'der Welt'}${f.joint?.input?' · Eingang':''}`;
   for(const i of b.items)if(i.free&&(i.free.body||i.free.joint))rows.push({text:say(partOf(b,i).label,i.free),go:()=>this.selectMember({kind:'item',id:i.id})});
   for(const p of b.plates)if(p.free.body||p.free.joint)rows.push({text:say('Bodenplatte',p.free),go:()=>this.selectMember({kind:'plate',id:p.id})});
+  for(const g of b.gears??[])if(g.free.body||g.free.joint)rows.push({text:say(this.gearboxes.bodyName(gearBody(g.id)),g.free),go:()=>{this.deselect();this.gearboxes.select(g.id);}});
   for(const c of this.links.connections())rows.push({text:c.text,go:()=>{this.deselect();this.links.select(c.id);}});
   if(!rows.length)return;const open=!this.folded.has('verbindungen'),head=el('button',{textContent:`${open?'▾':'▸'} Verbindungen (${rows.length})`,className:'layer-section'});head.dataset.connections='true';head.onclick=()=>{if(open)this.folded.add('verbindungen');else this.folded.delete('verbindungen');this.host.leave();};root.append(head);
   if(open)for(const r of rows){const x=el('button',{textContent:r.text,className:'layer-link'});x.dataset.link='true';x.onclick=()=>{this.host.picked?.();r.go();this.refresh();this.host.leave();};root.append(x);}}
@@ -449,6 +464,7 @@ export class BuildEditor{
   const gears=el('details',{className:'store-group',open:!!this.wheels},el('summary',{textContent:'Zahnräder'}));gears.dataset.storeGears='true';
   if(this.attached)gears.append(el('p',{className:'muted',textContent:'Das Projekt hat einen Mechanismus: Räder hier lassen sich setzen und prüfen, aber nicht zu einem zweiten Mechanismus machen.'}));
   this.trains.renderStore(gears);root.append(gears);
+  this.gearboxes.renderStore(root);
   const suspension=el('details',{className:'store-group',open:!!this.build()?.linkage?.links.length},el('summary',{textContent:'Fahrwerk 1:10 (Gestänge)'}));suspension.dataset.storeLinkage='true';
   suspension.append(el('p',{className:'muted',textContent:'Man setzt Gelenkpunkte, die Lenker entstehen daraus. Dämpfer, Kugelköpfe und Räder sind gekaufte 1:10-Teile.'}));this.links.renderStore(suspension);root.append(suspension);
   const own=this.host.blocks?.()??[],blocks=el('details',{className:'store-group',open:own.length>0},el('summary',{textContent:`Eigene Bausteine (${own.length})`}));blocks.dataset.storeBlocks='true';
@@ -501,6 +517,8 @@ export class BuildEditor{
   const edit=(message:string,fn:(x:Build)=>void)=>this.host.change(()=>fn(this.build()!),message);
   const number:NumberField=(label,value,write,step='0.5')=>{const input=el('input',{type:'number',step,value:String(Math.round(value*1000)/1000)});input.setAttribute('aria-label',label);input.dataset.field=label;input.onchange=()=>{const n=Number(input.value);if(Number.isFinite(n))write(n);};return el('label',{},label,input);};
   const select:SelectField=(label,value,options,write)=>{const s=el('select');s.dataset.field=label;for(const [v,t] of options)s.add(new Option(t,v));s.value=value;s.onchange=()=>write(s.value);return el('label',{},label,s);};
+  const gl=b.gears?.find(x=>x.id===this.gearboxes.selectedId);
+  if(gl){this.gearboxes.renderProperties(root,gl);this.freeFields(root,gearBody(gl.id),gl.free,number,select,(message,fn)=>edit(message,x=>{const g=x.gears?.find(y=>y.id===gl.id);if(g)fn(g.free);}));return;}
   const i=b.items.find(x=>x.id===this.selected),n=b.plates.find(p=>p.id===this.plateId);
   if(i)this.itemPage(root,b,i,number,select,edit);else if(n)this.platePage(root,b,n,number,select,edit);
   const making=(this.host.phase?.()??3)===3,empty=!b.items.length&&!b.plates.length&&!b.train?.wheels.length&&!b.linkage?.links.length;
@@ -555,7 +573,7 @@ export class BuildEditor{
  /** The connection of a part or plate: connected to what, fixed or turning about / sliding along one of its axes, driven
   * or not; then where it stands on that. */
  private freeFields(root:HTMLElement,key:string,free:Free,number:NumberField,select:SelectField,write:(message:string,fn:(f:Free)=>void)=>void){
-  const b=this.build()!,below=hangsOn(b,key),bodies=Object.keys(this.frames()).filter(k=>!below.has(k)),j=free.joint;
+  const b=this.build()!,below=hangsOn(b,key),bodies=Object.keys(this.frames()).filter(k=>!below.has(k)&&![...below].some(x=>k.startsWith(x+'/'))),j=free.joint;
   root.append(heading('Verbindung'),select('Verbunden mit',free.body??'',[['','der Welt (steht im Raum)'],...bodies.map(l=>[l,this.bodyName(l)] as [string,string])],v=>write('Verbindung geändert',f=>{const next=reframe(f,v||undefined,this.frames());f.frame=next.frame;if(v)f.body=v;else delete f.body;})));
   const onShaft=b.train?.shafts.find(s=>shaftBody(s.id)===free.body);
   root.append(select('Verbindungsart',j?.kind??'fest',[['fest','fest'],['drehen','dreht um eine Achse'],['schieben','schiebt entlang einer Achse'],...(onShaft?[['mutter','Spindelmutter: wandert entlang der Welle'] as [string,string]]:[])],v=>{delete this.values[key];write('Verbindungsart geändert',f=>{if(v==='fest')delete f.joint;else if(v==='mutter')f.joint={kind:'mutter',axis:'y',lead:onShaft?.lead??8,min:-(onShaft?.length??200),max:onShaft?.length??200};else f.joint={kind:v as Joint['kind'],axis:f.joint?.kind===v?f.joint.axis:v==='drehen'?'z':'x',min:v==='drehen'?-180:0,max:v==='drehen'?180:100,...(f.joint?.input?{input:f.joint.input}:{})};});}));

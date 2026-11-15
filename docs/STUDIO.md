@@ -87,6 +87,26 @@ du ein Stück, kommt die Gruppe mit, ein Rad rastet dabei an Räder außerhalb e
 man Teile mit den Rädern einer Welle, verbindet das Studio die Teile fest mit dieser Welle (eine Verbindung wie jede
 andere). Starre Gruppen gehen als Bausteine in die Bibliothek. Strg-Klick wählt mehrere, Strg+G gruppiert.
 
+### Getriebe aus dem Getriebe-Generator
+
+Getriebe werden verknüpft, nicht kopiert, so wie das Getriebe seine Wellen verknüpft. Logik: `studio-gearbox.ts`,
+Daten: `GearLink` in `parts/build.ts`; geprüft von `scripts/check-studio-gearbox-browser.mjs`.
+
+- Die Bibliothek hat die Gruppe **Getriebe (Getriebe-Generator)**: alle Getriebe aus dem Ordner `getriebe`, dazu
+  „＋ Neues Getriebe“. Ein Klick setzt das Getriebe neben das, was schon da ist. Im Projekt steht nur, welche Datei, wo es
+  steht, woran es hängt und ob es gespiegelt ist; Platten, Säulen, Wellen und Kaufteile kommen aus dem Getriebe und
+  seinen Wellen, gerechnet vom selben CAD-Worker wie im Generator (LEGO-Räder und Motoren als Originalmodelle).
+- **Bearbeiten** öffnet den Getriebe-Generator in einem Fenster über dem Studio (`getriebe.html#open=<id>&embed=1`).
+  Jedes Speichern dort zeigt sich sofort im Studio dahinter; „Fertig“ schließt. Ein neues Getriebe aus dem Fenster kommt
+  beim Schließen ins Projekt.
+- **Gespiegelt** spiegelt über die Platten, an Ort und Stelle (um die Mitte seiner Höhe): die andere Seite eines
+  Fahrzeugs aus derselben Datei.
+- Das Getriebe ist ein **Körper** (`getriebe:<id>`) und jede **Schwinge** auch (`getriebe:<id>/<schwinge>`). Teile,
+  Platten und Gelenkpunkte lassen sich mit ihnen verbinden („Verbunden mit“) und fahren mit. Unter der Ansicht steht je
+  Schwinge ein Regler „Getriebe schwenken“ in ihrem Bereich. Gespiegelt schwenkt sie andersherum, der Körper bleibt starr.
+- Das Getriebe selbst hat Lage und Verbindung wie ein freies Teil: Griff in der Ansicht, X/Y/Z, „↻ 90° um X/Y/Z“,
+  verbunden mit der Welt, einer Platte oder einem anderen Körper.
+
 ### Gestänge aus Gelenkpunkten (Fahrwerk)
 
 Bei Aufhängungen wählt man die **Gelenkpunkte**, die Lenker folgen daraus, wie in Fahrwerksprogrammen mit Hardpoints.
