@@ -40,7 +40,7 @@ export type WebPlan={a:string;b:string;auto:boolean;forced:boolean;route?:'ausse
 export type LayerPlan={id:string;z0:number;z1:number;band:[number,number];split:number;pair:boolean;lips:[boolean,boolean];auto:boolean;rim:number;thickness:number;bearings:string[];webs:WebPlan[];holes:{on:string;r:number}[];parts:number};
 export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string};
 /** A bolt through all plates: where, the eye round it, which bearing of each layer its eye is joined to. */
-export type Bolt={at:[number,number];eye:number;hole:number;auto:boolean;attach:Record<string,string>};
+export type Bolt={at:[number,number];eye:number;hole:number;auto:boolean;attach:Record<string,string>;/** Set by hand onto a wheel, bearing or shaft. */hit?:boolean};
 /** Printed columns between two layers, one per bolt. */
 export type Columns={from:string;to:string;z0:number;z1:number};
 export type BomLine={what:string;count:number;note?:string};
@@ -200,8 +200,8 @@ function planBolts(doc:GearDoc,layers:LayerPlan[],bearings:Bearing[],shafts:Shaf
   const spread=(p:[number,number])=>Math.min(...places.map(q=>dist(p,q)))-cost(p);
   if(cands.length){places.push(cands.reduce((a,b)=>dist(b,c)-cost(b)>dist(a,c)-cost(a)?b:a));while(places.length<want){const next=cands.filter(p=>!places.includes(p)).reduce<[number,number]|undefined>((a,b)=>!a||spread(b)>spread(a)?b:a,undefined);if(!next||Math.min(...places.map(q=>dist(next,q)))<2*eye)break;places.push(next);}}
   if(places.length<Math.min(want,3))issues.push({level:'warnung',message:`Nur ${places.length} Platz für Bolzen gefunden: zu eng um die Lager. Rand größer oder Bolzen von Hand setzen`});}
- const bolts=places.map((at):Bolt=>{const attach:Record<string,string>={};for(const l of layers){const a=attachTo(at,l);if(a.b)attach[l.id]=a.b.key;}
-  if(!auto&&!clear(at))issues.push({level:'fehler',message:`Bolzen bei ${n(at[0])} / ${n(at[1])} mm trifft ein Rad, ein Lager oder eine Welle`});return {at,eye,hole,auto,attach};});
+ const bolts=places.map((at,index):Bolt=>{const attach:Record<string,string>={};for(const l of layers){const a=attachTo(at,l);if(a.b)attach[l.id]=a.b.key;}
+  const hit=!auto&&!clear(at);if(hit)issues.push({level:'fehler',message:`Bolzen bei ${n(at[0])} / ${n(at[1])} mm trifft ein Rad, ein Lager oder eine Welle`,ref:`bolzen:${index}`});return {at,eye,hole,auto,attach,...(hit?{hit}:{})};});
  // Its eye's web in each layer must not cross wheels either (only bolts set by hand can still).
  for(const bo of bolts)for(const l of layers){const k=bo.attach[l.id];if(!k)continue;for(const o of webHits(bo.at,bearings.find(x=>x.key===k)!,l))issues.push({level:'warnung',message:`Der Steg zum Bolzen bei ${n(bo.at[0])} / ${n(bo.at[1])} mm in Schicht ${layers.indexOf(l)+1} streift ${o.label}`});}
  const sorted=[...layers].sort((a,b)=>a.band[0]-b.band[0]),columns:Columns[]=[];

@@ -72,7 +72,7 @@ function draw(){
  const counts=['fehler','warnung'].map(l=>p.issues.filter(i=>i.level===l).length);$('issues-title').textContent=counts[0]?`Meldungen · ${counts[0]} Fehler`:counts[1]?`Meldungen · ${counts[1]} ${counts[1]===1?'Warnung':'Warnungen'}`:'Meldungen · alles passt';
  renderFiles(p);schedulePreview();
  $('bom').replaceChildren(...p.bom.map(b=>el('li',{},`${b.count} × ${b.what}`,b.note?el('small',{className:'muted',textContent:` · ${b.note}`}):'')));
- $('issues').replaceChildren(...p.issues.map(i=>{const li=el('li',{className:i.level,textContent:i.message});li.dataset.level=i.level;const r=i.ref;if(r){li.classList.add('link');li.onclick=()=>{if(r.startsWith('steg:')){const [a,b]=r.slice(5).split('|');editor.sel={kind:'web',a,b};}else if(open!.doc.shafts.some(s=>s.id===r))editor.sel={kind:'shaft',id:r};draw();};}return li;}));}
+ $('issues').replaceChildren(...p.issues.map(i=>{const li=el('li',{className:i.level,textContent:i.message});li.dataset.level=i.level;const r=i.ref;if(r){li.classList.add('link');li.onclick=()=>{if(r.startsWith('steg:')){const [a,b]=r.slice(5).split('|');editor.sel={kind:'web',a,b};}else if(r.startsWith('bolzen:'))editor.sel={kind:'bolt',index:Number(r.slice(7))};else if(open!.doc.shafts.some(s=>s.id===r))editor.sel={kind:'shaft',id:r};draw();};}return li;}));}
 
 $('new-gear').onclick=()=>void create('Neues Getriebe',newGear());
 $('examples').replaceChildren(...gearExamples.map(x=>{const b=el('button',{className:'start-card'},el('strong',{textContent:x.title}),el('small',{textContent:x.text}));b.dataset.example=x.key;b.onclick=()=>void fromExample(x.key);return b;}));
@@ -94,7 +94,9 @@ function editShaft(id?:string){editing={...(id?{id}:{})};const frame=$('shaft-fr
 async function closeShaft(){const d=$('shaft-dialog');if(d.hidden)return;const frame=$('shaft-frame') as HTMLIFrameElement;
  // Let the frame write what is still waiting, then read the shafts.
  try{frame.contentWindow?.dispatchEvent(new Event('pagehide'));}catch{/* other origin: not here */}
- d.hidden=true;await new Promise(r=>setTimeout(r,350));frame.src='about:blank';await loadShafts();
+ d.hidden=true;// The keys belong to the gearbox again, not to the emptied frame.
+ frame.blur();window.focus();(document.activeElement as HTMLElement|null)?.blur?.();
+ await new Promise(r=>setTimeout(r,350));frame.src='about:blank';await loadShafts();
  const made=editing?.created;editing=undefined;if(made&&open&&!open.doc.shafts.some(s=>s.shaft===made))editor.place(made);else draw();}
 $('shaft-dialog-close').onclick=()=>void closeShaft();
 addEventListener('message',e=>{const m=e.data as {source?:string;type?:string;id?:string;name?:string};if(e.origin!==location.origin||m?.source!=='welle'||!m.id)return;

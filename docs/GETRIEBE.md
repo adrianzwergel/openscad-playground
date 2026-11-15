@@ -20,7 +20,9 @@ Ziel wie dort: **einfach**. Nichts wird gezeichnet, was sich ableiten lässt.
 
 **Platten (geändert 2026-11-15):** Vorgabe ist eine Platte je Schicht. Die Welle ist mit Rädern, Hülsen und Lagern für sich axial fest, also reichen Anschläge ganz außen: die unterste Schicht hat den Bord unten (Taschen von oben eingesetzt), die oberste oben, mittlere Schichten haben durchgehende Bohrungen ohne Anschlag. Bei nur einer Schicht hält sonst nichts die andere Richtung: sie wird das Plattenpaar, das die Lager einklemmt. „Lager einklemmen“ in den Regeln macht jede Schicht zum Plattenpaar. Prüfung in `check-plan.mjs` und `check-cad.mjs`.
 
-**Offen:** Bolzen in der Draufsicht verschieben (das Dokument kann `bolts` schon); die Einstellung „Dicke der Stege“ wirkt noch nicht (Stege sind so dick wie ihre Platte); Probedrucke für Taschenspiel und Bord; Schnecke und Kegelräder.
+**Bolzen von Hand:** In der Draufsicht greifbar (gestrichelter Ring ums Loch). Der erste Zug macht aus den vorgeschlagenen Plätzen feste (`bolts`, gleiche Reihenfolge), gezogen wird im mm-Raster (Alt: frei). Ein Bolzen auf einem Rad, Lager oder einer Welle wird rot und gemeldet; die Meldung wählt ihn aus. Eigenschaften: x/y, ＋ Bolzen, Bolzen entfernen, Bolzen automatisch. Nach dem Schließen des Wellen-Fensters gehört die Tastatur wieder dem Getriebe.
+
+**Offen:** die Einstellung „Dicke der Stege“ wirkt noch nicht (Stege sind so dick wie ihre Platte); Probedrucke für Taschenspiel und Bord; Schnecke und Kegelräder.
 
 Der Katalog des Wellen-Generators kennt jetzt Zähne und Modul der Räder und Scheiben (`teeth`, `module`, `pulley`).
 
