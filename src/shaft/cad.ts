@@ -20,7 +20,7 @@ export type Mat=number[];
 /** The original model of a bought part, for the preview: its mesh file and where it goes in the part's frame. The solid
  * beside it stays the stand-in for STEP and the checks. */
 export type Asset={url:string;matrix:Mat};
-export type CadPart={name:string;file:string;kind:CadKind;shape:Shape3D;color:string;/** Made, not bought: gets files. */made:boolean;asset?:Asset;/** In a gearbox: the body it moves with (a swing arm's id, '' the frame). */body?:string};
+export type CadPart={name:string;file:string;kind:CadKind;shape:Shape3D;color:string;/** Made, not bought: gets files. */made:boolean;asset?:Asset;/** In a gearbox: the body it moves with (a swing arm's id, '' the frame). */body?:string;/** A ball bearing. */bearing?:boolean};
 /** b·a: first a, then b. */
 export function matMul(b:Mat,a:Mat):Mat{const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=b[k*4+r]*a[c*4+k];return o;}
 export const matMove=(v:[number,number,number]):Mat=>[1,0,0,0,0,1,0,0,0,0,1,0,v[0],v[1],v[2],1];
@@ -117,7 +117,7 @@ export function buildParts(doc:ShaftDoc,plan:Plan,keep?:Keep):{parts:CadPart[];f
  const parts:CadPart[]=[];const safe=(name:string,make:()=>Shape3D)=>{try{return make();}catch(e){throw Error(`${name}: ${e instanceof Error?e.message:e}`);}};
  parts.push({name:'Welle',file:'welle',kind:'welle',shape:safe('Welle',()=>shaftSolid(keep!,doc,plan)),color:'#9aa7b1',made:true});
  plan.sleeves.forEach((s,i)=>parts.push({name:s.label,file:`${s.kind}-${i+1}`,kind:s.kind,shape:safe(s.label,()=>sleeveSolid(keep!,doc,s)),color:s.kind==='adapter'?'#e0a060':'#b98fd6',made:true}));
- for(const t of plan.placed)if(t.arm)parts.push({name:t.label,file:`hebel-${t.id}`,kind:'hebel',shape:safe(t.label,()=>armSolid(keep!,doc,t)),color:'#d98f5c',made:true});else parts.push({...(t.part.group==='LEGO-Zahnräder'?{asset:{url:`${LDRAW}${t.part.id.replace(/^lego-/,'')}.stl`,matrix:matMul(matMove([(t.x0+t.x1)/2,0,0]),matTurn(90,[0,0,0],[0,1,0]))}}:{}),name:t.label,file:t.id,kind:'kauf',shape:safe(t.label,()=>partSolid(keep!,t)),color:t.part.group==='Lager'?'#aeb9c4':t.part.pulley?'#d9c06a':t.part.group==='LEGO-Zahnräder'?'#c9ced3':t.part.teeth?'#6fc6a6':'#9fb0bd',made:false});
+ for(const t of plan.placed)if(t.arm)parts.push({name:t.label,file:`hebel-${t.id}`,kind:'hebel',shape:safe(t.label,()=>armSolid(keep!,doc,t)),color:'#d98f5c',made:true});else parts.push({...(t.part.group==='Lager'?{bearing:true}:{}),...(t.part.group==='LEGO-Zahnräder'?{asset:{url:`${LDRAW}${t.part.id.replace(/^lego-/,'')}.stl`,matrix:matMul(matMove([(t.x0+t.x1)/2,0,0]),matTurn(90,[0,0,0],[0,1,0]))}}:{}),name:t.label,file:t.id,kind:'kauf',shape:safe(t.label,()=>partSolid(keep!,t)),color:t.part.group==='Lager'?'#aeb9c4':t.part.pulley?'#d9c06a':t.part.group==='LEGO-Zahnräder'?'#c9ced3':t.part.teeth?'#6fc6a6':'#9fb0bd',made:false});
  // A motor: its body with rounded edges and the centring boss on its flange.
  for(const m of plan.motors??[]){const w=m.part.size[0],left=m.end==='links';let shape=keep(drawRoundedRectangle(w,w,Math.min(4,w/8)).sketchOnPlane('YZ',m.x0).extrude(m.x1-m.x0) as Shape3D);
   if(m.part.pilot)try{shape=keep(shape.fuse(keep(makeCylinder(m.part.pilot/2,2,[m.face,0,0],[left?1:-1,0,0]))) as Shape3D);}catch{/* the body alone */}

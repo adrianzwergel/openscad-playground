@@ -15,6 +15,10 @@ try{const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.
  if(shots)await p.screenshot({path:path.join(shots,'rocker-1.png')});
  for(const [k,v] of [['g:g1',12],['g:g2',-8]])await p.$eval(`#pose input[data-pose="${k}"]`,(e,v)=>{e.value=v;e.dispatchEvent(new Event('input'));},String(v));await wait(300);await ready();await wait(1200);
  if(shots)await p.screenshot({path:path.join(shots,'rocker-2.png')});
+ // Prototype: no ball bearings in the 3D model any more, the parts list keeps them.
+ const before=(await p.evaluate(()=>window.preview.summary())).filter(m=>/685/.test(m.name)).length;assert.ok(before>0,'Kugellager im Modell');
+ const bom=await p.$eval('#bom',e=>e.textContent);await p.click('#properties [data-proto]');await wait(300);await ready();await wait(800);
+ assert.equal((await p.evaluate(()=>window.preview.summary())).filter(m=>/685/.test(m.name)).length,0,'Prototyp ohne Kugellager');assert.equal(await p.$eval('#bom',e=>e.textContent),bom,'Stückliste gleich');
  assert.deepEqual(errors,[]);
- console.log('Rocker-Bogie im Browser: Beispiel ohne Fehler, 3D mit Original-Motor, Rocker und Bogie geschwenkt.');
+ console.log('Rocker-Bogie im Browser: Beispiel ohne Fehler, 3D mit Original-Motor, Rocker und Bogie geschwenkt, als Prototyp ohne Kugellager.');
 }finally{await browser.close();await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}

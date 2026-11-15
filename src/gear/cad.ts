@@ -7,6 +7,7 @@
 import {draw,drawCircle,makeCylinder,makeBox} from 'replicad';
 import type {Drawing,Shape3D} from 'replicad';
 import {buildParts,profileDrawing,matMul,matMove,matTurn} from '../shaft/cad.ts';
+import {outer} from '../shaft/profile.ts';
 import type {Mat} from '../shaft/cad.ts';
 import type {CadPart} from '../shaft/cad.ts';
 import type {GearDoc} from './model.ts';
@@ -48,6 +49,9 @@ function join(d:Drawing,a:P,ra:number,b:P,rb:number):Drawing{try{return d.fuse(h
  const t=tangents(a,ra-.05,b,rb-.05);return t?d.fuse(draw(t[0]).lineTo(t[1]).lineTo(t[2]).lineTo(t[3]).close()):d;}
 function webShape(plan:GearPlan,l:LayerPlan,w:LayerPlan['webs'][number]):Drawing{const bearing=(k:string)=>plan.bearings.find(x=>x.key===k)!,ring=(k:string)=>bearing(k).D/2+l.rim;
  if(!w.path)return hull(bearing(w.a).at,ring(w.a),bearing(w.b).at,ring(w.b));const pts:P[]=[bearing(w.a).at,...w.path,bearing(w.b).at];let d=hull(pts[0],w.width!,pts[1],w.width!);for(let i=2;i<pts.length;i++)d=d.fuse(hull(pts[i-1],w.width!,pts[i],w.width!));return d;}
+/** In a prototype: the radius of the plain hole a bearing's shaft runs in: the shaft's Ø where the bearing sits (on a
+ * LEGO cross its width across) plus the play. */
+function protoHole(doc:GearDoc,plan:GearPlan,b:GearPlan['bearings'][number]){const x=plan.shafts.find(v=>v.id===b.on),t=x?.plan.placed.find(p=>p.id===b.item),prof=t?.seat??t?.bore;return ((prof?outer(prof):b.d)+doc.settings.protoPlay)/2;}
 /** What goes through a layer's plates: the lip's opening over each bearing, holes for shafts passing, bolt holes. */
 function throughHoles(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|undefined{const s=doc.settings;let holes:Drawing|undefined;const hole=(c:P,r:number)=>{const h=disc(c,r);holes=holes?holes.fuse(h):h;};
  // A motor: its pilot and screw holes, as slots along its belt so it can be moved to tension it.
@@ -55,7 +59,7 @@ function throughHoles(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|undefined{c
  for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;
   // A hub: the shaft's profile through the plate, turned as the shaft stands (along the shaft x becomes z: a quarter turn).
   if(b.hub){const d=profileDrawing(b.hub.profile,s.fit).rotate(b.hub.profile.kind==='rund'?37.3:90+b.hub.turn).translate(b.at[0],b.at[1]);holes=holes?holes.fuse(d):d;continue;}
-  if(b.motor){const m=b.motor;slot(b.at,(m.part.pilot??0)/2+s.hole,m);for(const h of m.part.holes)slot([b.at[0]+h.at[0],b.at[1]+h.at[1]],h.d/2+.2,m);continue;}hole(b.at,l.openings?.[k]??b.D/2-s.lipIn);}
+  if(b.motor){const m=b.motor;slot(b.at,(m.part.pilot??0)/2+s.hole,m);for(const h of m.part.holes)slot([b.at[0]+h.at[0],b.at[1]+h.at[1]],h.d/2+.2,m);continue;}hole(b.at,s.proto?protoHole(doc,plan,b):l.openings?.[k]??b.D/2-s.lipIn);}
  for(const h of l.holes){const c=plan.shafts.find(x=>x.id===h.on)!.at;if(h.arc){const b=band(c,h.r,h.arc);holes=holes?holes.fuse(b):b;continue;}hole(c,h.r);if(h.open){const [dx,dy]=h.open.dir,nx=-dy*h.r,ny=dx*h.r,e:P=[c[0]+dx*h.open.length,c[1]+dy*h.open.length],slot=draw([c[0]+nx,c[1]+ny]).lineTo([e[0]+nx,e[1]+ny]).lineTo([e[0]-nx,e[1]-ny]).lineTo([c[0]-nx,c[1]-ny]).close();holes=holes?holes.fuse(slot):slot;}}
  for(const bo of plan.bolts)if(bo.attach[l.id])hole(bo.at,bo.hole);
  return holes;}
@@ -73,7 +77,7 @@ export function plateOutline(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|unde
 /** Webs only as high as there is room under or over a part: their outline and heights. */
 export function steppedWebs(doc:GearDoc,plan:GearPlan,l:LayerPlan){const holes=throughHoles(doc,plan,l);return l.webs.filter(w=>w.z).map(w=>{const d=webShape(plan,l,w);return {shape:holes?d.cut(holes.clone()):d,z:w.z!};});}
 function plates(keep:Keep,doc:GearDoc,plan:GearPlan,l:LayerPlan,index:number):CadPart[]{
- const out=plateOutline(doc,plan,l);if(!out)return [];const s=doc.settings,[z0,z1]=l.band,bearings=l.bearings.map(k=>plan.bearings.find(b=>b.key===k)!).filter(b=>!b.motor&&!b.hub),steps=steppedWebs(doc,plan,l);
+ const out=plateOutline(doc,plan,l);if(!out)return [];const s=doc.settings,[z0,z1]=l.band,bearings=s.proto?[]:l.bearings.map(k=>plan.bearings.find(b=>b.key===k)!).filter(b=>!b.motor&&!b.hub),steps=steppedWebs(doc,plan,l);
  // A hub on a round shaft: the tap drill for a set screw M3 from outside, on the side away from the plate's other bearings.
  const screws=(solid:Shape3D,lo:number,hi:number)=>{const z=(z0+z1)/2;if(z<lo+1.3||z>hi-1.3)return solid;
   for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;if(!b.hub||b.hub.profile.kind!=='rund')continue;const others=l.bearings.map(q=>plan.bearings.find(x=>x.key===q)!).filter(q=>q!==b),c:P=others.length?[others.reduce((t,q)=>t+q.at[0],0)/others.length,others.reduce((t,q)=>t+q.at[1],0)/others.length]:[b.at[0]-1,b.at[1]],d=Math.hypot(b.at[0]-c[0],b.at[1]-c[1])||1;
@@ -94,7 +98,7 @@ function plates(keep:Keep,doc:GearDoc,plan:GearPlan,l:LayerPlan,index:number):Ca
 function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,ShaftFile|undefined>,pose?:Pose):CadPart[]{
  const out:CadPart[]=[];
  for(const x of plan.shafts){const placed=doc.shafts.find(p=>p.id===x.id)!,f=files[placed.shaft];if(!f)continue;const L=f.doc.length;
-  for(const part of buildParts(f.doc,x.plan,keep).parts){let shape=keep(part.shape.rotate(-90,[0,0,0],[0,1,0]) as Shape3D),m:Mat=matTurn(-90,[0,0,0],[0,1,0]);
+  for(const part of buildParts(f.doc,x.plan,keep).parts){if(doc.settings.proto&&part.bearing)continue;let shape=keep(part.shape.rotate(-90,[0,0,0],[0,1,0]) as Shape3D),m:Mat=matTurn(-90,[0,0,0],[0,1,0]);
    if(placed.flip){shape=keep(keep(shape.rotate(180,[0,0,0],[1,0,0]) as Shape3D).translate([0,0,L]) as Shape3D);m=matMul(matMove([0,0,L]),matMul(matTurn(180,[0,0,0],[1,0,0]),m));}
    // Turned about its own axis: as placed, plus how far the pose turns it; then with its swing arm about the pivot.
    const chain=links(plan.groups,plan.groups.find(v=>v.shafts.includes(x.id))?.id??'',pose?.groups??{}),fast=plan.groups.find(v=>v.fixed&&v.pivot===x.id&&!v.shafts.includes(x.id)),spin=(placed.turn??0)+(pose?(plan.turnRate[x.id]??0)*pose.turn:0)+chain.reduce((t,v)=>t+v.angle,0)+(fast?pose?.groups[fast.id]??0:0);
