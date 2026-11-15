@@ -36,3 +36,14 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 #shaft-frame{flex:1;border:0;width:100%;background:#151b22}
 #top .bolt-grip{cursor:grab}#top .bolt-grip .grip{fill:transparent;stroke:#c58a4a55;stroke-dasharray:2 2}#top .bolt-grip:hover .grip{stroke:#c58a4a}
 #top .bolt-grip.selected .grip{stroke:#fff;stroke-width:1.5;stroke-dasharray:none}#top .bolt-grip.hit .bolt,#top .bolt-grip.hit .grip{stroke:#e06c6c;stroke-width:2}
+#pose{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin:6px 0}#pose:empty{display:none}#pose .pose{display:flex;gap:6px;align-items:center;font-size:13px}#pose input[type=range]{width:180px}#pose output{min-width:3.2em;color:#f0d36e}
+.topview .fan{fill:#d98f5c22;stroke:#d98f5c;stroke-dasharray:5 3}.topview .fan.endless{fill:#d98f5c14}
+.topview .arm polygon,.topview .arm .arm-body{fill:#d98f5c88;stroke:#d98f5c}.topview .arm .hole{fill:#10161c;stroke:#d98f5c}
+.topview .swing{stroke:#b98fd61f}.topview .swing-line{stroke:#b98fd6;stroke-dasharray:6 4;stroke-width:1.2}
+.topview .pivot circle{fill:none;stroke:#b98fd6;stroke-width:1.5}.topview .pivot path{stroke:#b98fd6;stroke-width:1.2}.topview .pivot.selected circle{stroke:#f0d36e;stroke-width:2.5}
+.topview .swing-plate .ring,.topview .swing-plate .web{fill:#57466b}.topview .swing-plate .ring-arc{stroke:#57466b}
+.topview .ring-arc{stroke:#3d5566}.topview .hole-arc{stroke:#10161c}.topview .hole-edge{stroke:#56656f}
+.topview .shaft.on-swing .axle{fill:#b98fd6}.topview .shaft.of-group .axle{stroke:#f0d36e;stroke-width:2}
+#top .fan,#top .arm,#top .swing,#top .swing-line,#top .pivot,#top .ring-arc,#top .hole-arc,#top .hole-edge{pointer-events:none}
+#properties input[type=text]{width:100%}
+.sideview .arm{fill:#5a3a22;stroke:#d98f5c}

@@ -28,6 +28,26 @@ Ziel wie dort: **einfach**. Nichts wird gezeichnet, was sich ableiten lässt.
 
 **Bolzen von Hand:** In der Draufsicht greifbar (gestrichelter Ring ums Loch). Der erste Zug macht aus den vorgeschlagenen Plätzen feste (`bolts`, gleiche Reihenfolge), gezogen wird im mm-Raster (Alt: frei). Ein Bolzen auf einem Rad, Lager oder einer Welle wird rot und gemeldet; die Meldung wählt ihn aus. Eigenschaften: x/y, ＋ Bolzen, Bolzen entfernen, Bolzen automatisch. Nach dem Schließen des Wellen-Fensters gehört die Tastatur wieder dem Getriebe.
 
+## Bewegliches (2026-11-15)
+
+Bis hierher stand jede Welle fest und alles auf ihr war rund; wie weit sie dreht, war egal. Jetzt kennt der Plan, was sich gegen was bewegt.
+
+- **Hebel:** ein gedrucktes Teil im Wellen-Generator (`docs/WELLE.md`), nicht rund, dreht mit seiner Welle. In der Ebene zeigt er bei Winkel 0° nach −x (längs der Welle wird x zu z), umgedreht gespiegelt; `PlacedShaft.turn` dreht die Welle, wie sie steht.
+- **Drehbereich** (`GearDoc.turn`): an einer Welle gesetzt, von–bis in Grad ab der gezeichneten Stellung. Die anderen Wellen folgen über die Übersetzungen (`turnRate`), solange keine bewegte Schwinge dazwischen liegt. Ohne Bereich, oder ab 360°, dreht alles endlos.
+- **Schwenkfläche:** ein Hebel überstreicht einen Fächer um seine Achse (endlos: den vollen Kreis). Er ist ein Hindernis wie Rad und Riemen (`Obstacle.spin`), also weichen ihm Ringe, Stege (außen herum, in die Tiefe), Freiloch-Ringe und Bolzen von selbst aus. Ein Hebel in der Höhe einer Platte an seiner eigenen Welle ist ein Fehler.
+- **Schwinge** (`GearDoc.groups`): Wellen, die gemeinsam um die Achse einer Welle (`pivot`) schwenken, von–bis gegen den Uhrzeigersinn. Sie ist ein eigener Körper mit eigenen Platten, Bolzen und Säulen (`LayerPlan.body`, `Bolt.body`, `Columns.body`). Ihre Schichten entstehen aus den Lagern ihrer Wellen; Lager der Drehachse in derselben Höhe gehören zu ihr (dort hängt sie), die übrigen halten die Achse im Gestell. Schichten von Hand tragen `group`.
+- **Eingriff über Körper hinweg:** um die Drehachse bleibt der Achsabstand, der Eingriff hält. Sonst kämmt es nur in der gezeichneten Stellung (Warnung); läuft das Rad beim Schwenken in den Partner, ist es ein Fehler. Ein Riemen zu einer schwenkenden Scheibe wird durch Schwenken gespannt (`BeltPlan.swing`), der Motor braucht dann keine Langlöcher. Eine Schwinge, die nur einen Motor trägt, bekommt seine Motorplatte mit dem Lager der Drehachse darin.
+- **Jeder Körper sieht die anderen als das, was sie gegen ihn überstreichen** (`view` in `plan.ts`, Geometrie in `sweep.ts`): eine Scheibe wird zum Band entlang eines Bogens, ein Hebel auf der Drehachse zum weiteren Fächer (beides mit genauem Abstand), alles andere wird in Winkelschritten abgetastet. Aus Sicht der Schwinge schwenkt das Gestell rückwärts.
+- **Ausschnitt im Bogen:** geht eine Welle durch die Platte eines Körpers, gegen den sie schwenkt, ist ihr Freiloch ein Langloch entlang des Bogens (`Hole.arc`), mit Materialrand, wo es in die Platte schneidet. Schwenkt sie durch ein Lager der Platte, ist es ein Fehler.
+- **Zusätzlich geprüft:** alles, was sich gegeneinander bewegt, paarweise in gemeinsamer Höhe (Hebel, Räder, Hülsen, Lager, Wellen, Motorkörper): „stößt beim Drehen/Schwenken an“. Zwei Hebel, die gekoppelt drehen, werden Stellung für Stellung geprüft statt Fächer gegen Fächer. Platten verschiedener Körper in derselben Höhe; Säulen gegen fremde Platten; Schwinge hängt an der Drehachse, Drehachse im Gestell gelagert.
+- **Stellung:** Regler über der Draufsicht (Drehung, je Schwinge) zeigen das Getriebe in einer Stellung, auch in 3D. Gespeichert und gefertigt wird immer die gezeichnete Stellung; ein Griff an eine Welle oder einen Bolzen stellt sie wieder her.
+- **Bedienung:** Drehbereich und „＋ Schwinge um diese Welle“ an der Welle; die Schwinge mit Name, Drehachse, Bereich und ihren Wellen als eigenes Feld; Beispiele „Abtrieb mit Hebel“ und „Schwinge um die Antriebsachse“.
+- **Nicht dabei:** Endanschläge (zweiter Schritt, bisher nur die Prüfung), Schieben (Zahnstange, Schlitten), Schwinge auf einer Schwinge, zwei Schwingen in derselben Höhe durch dieselbe Platte. Ein Hebel auf einer Schwingen-Welle gilt gegen andere Körper als Scheibe seiner Reichweite. Die Motor-Langlöcher drehen in der Stellungs-Ansicht nicht mit.
+
+Die Hülle zweier Scheiben hat jetzt einen genauen Abstand (`capsuleDistance`) statt 64 Stützpunkten, und im Umriss wird erst das Tangenten-Viereck angefügt, dann die zweite Scheibe: ein Bolzenauge direkt am Ring berührt ihn nur, und diese Fast-Berührung vertragen die 2D-Booleans nicht als Kante.
+
+Prüfung: `scripts/gear/check-swing.mjs` (Hebel, Drehbereich, Geometrie), `check-group.mjs` (Schwinge, Bogen-Ausschnitt, Volumen, Stellung), `check-moving-browser.mjs`.
+
 **Offen:** die Einstellung „Dicke der Stege“ wirkt noch nicht (Stege sind so dick wie ihre Platte); Probedrucke für Taschenspiel und Bord; Schnecke und Kegelräder.
 
 Der Katalog des Wellen-Generators kennt jetzt Zähne und Modul der Räder und Scheiben (`teeth`, `module`, `pulley`).

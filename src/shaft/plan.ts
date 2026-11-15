@@ -7,18 +7,21 @@
 // every split between them. Between the two sides stays a collar (Bund) that stops the innermost parts.
 import {inner,outer,passes,largestPassing,label,same,rund} from './profile.ts';
 import type {Profile} from './profile.ts';
-import {onPart,inPart} from './catalog.ts';
+import {onPart,inPart,defaultArm} from './catalog.ts';
 import {partById} from '../mechanics/parts/catalog.ts';
 import type {Part} from '../mechanics/parts/catalog.ts';
 import type {OnPart,InPart} from './catalog.ts';
 import {thread,setScrew,keyFor,keyLengths,ringFor,eclipFor} from './din.ts';
-import type {ShaftDoc,Side,Work} from './model.ts';
+import type {ShaftDoc,Side,Work,ArmSpec} from './model.ts';
 
 const eps=1e-6;
 export type Role='sitz'|'frei'|'bund'|'eigen';
 export type Section={x0:number;x1:number;profile:Profile;role:Role};
 /** A part on the shaft as planned: its seat, its bore, the end it goes on from. */
-export type Placed={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;side:Side;adapter?:string};
+/** `arm`: an arm's measures and its hub's Ø (the part's `outer` is that hub). */
+export type Placed={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;side:Side;adapter?:string;arm?:ArmSpec&{hub:number;/** A round bore: a set screw M3 in the hub, opposite the arm, holds it. */screw?:boolean}};
+/** Wall of an arm's hub round its bore. */
+export const ARM_WALL=3;
 /** A printed or turned sleeve: an adapter under a part, or a spacer. `steps`: its outside along x. */
 export type Sleeve={id:string;kind:'adapter'|'huelse';label:string;for?:string;auto:boolean;x0:number;x1:number;side:Side;inner:Profile;steps:{x0:number;x1:number;outer:Profile}[]};
 export type Insert={id:string;part:InPart;label:string;end:Side;x0:number;x1:number;profile:Profile;wall:number};
@@ -32,7 +35,7 @@ export type Machining={work:Work;drill?:number;depth?:number;screw?:string;key?:
 export type ShaftMotor={id:string;part:Part;label:string;end:Side;face:number;x0:number;x1:number};
 export type Plan={motors?:ShaftMotor[];length:number;sections:Section[];placed:Placed[];sleeves:Sleeve[];inserts:Insert[];machining:Machining[];issues:Issue[];bom:BomLine[];split:number};
 
-type Ref={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;spacer:boolean;clamp:boolean;side?:Side};
+type Ref={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;spacer:boolean;clamp:boolean;side?:Side;/** An arm: its measures; `follow`: its bore takes the profile of where it sits. */arm?:ArmSpec;follow?:boolean};
 const n=(x:number)=>String(+x.toFixed(2)).replace('.',',');
 const mm=(x:number)=>`${n(x)} mm`;
 const overlaps=(a0:number,a1:number,b0:number,b1:number)=>a0<b1-eps&&b0<a1-eps;
@@ -42,7 +45,7 @@ export function planShaft(doc:ShaftDoc):Plan{
  const refs:Ref[]=[];
  for(const it of doc.items){const part=onPart(it.part);if(!part){issues.push({level:'fehler',message:`Unbekanntes Teil ${it.part}`,ref:it.id});continue;}
   const width=part.own&&it.width?it.width:part.width,bore=part.own&&it.bore?it.bore:part.bore;
-  refs.push({id:it.id,part,label:part.spacer?'Distanzhülse':part.label.split(' (')[0],x0:it.x,x1:it.x+width,bore,spacer:!!part.spacer,clamp:!!part.clamp,...(it.side?{side:it.side}:{})});}
+  refs.push({id:it.id,part,label:part.spacer?'Distanzhülse':part.label.split(' (')[0],x0:it.x,x1:it.x+width,bore,spacer:!!part.spacer,clamp:!!part.clamp,...(it.side?{side:it.side}:{}),...(part.arm?{arm:it.arm??{...defaultArm},follow:!it.bore}:{})});}
  refs.sort((a,b)=>a.x0-b.x0);
  for(const r of refs)if(r.x0<-eps||r.x1>L+eps)issues.push({level:'fehler',message:`${r.label} ragt über das Wellenende (${mm(r.x0)} bis ${mm(r.x1)}, Welle ${mm(L)})`,ref:r.id});
  for(let i=1;i<refs.length;i++)if(refs[i].x0<refs[i-1].x1-eps)issues.push({level:'fehler',message:`${refs[i-1].label} und ${refs[i].label} überlappen um ${mm(refs[i-1].x1-refs[i].x0)}`,ref:refs[i].id});
@@ -72,7 +75,15 @@ function build(doc:ShaftDoc,refs:Ref[],k:number,inserts:Insert[],given:Issue[]):
   list.forEach((r,i)=>{const inward=side==='links'?r.x1:r.x0,outward=side==='links'?r.x0:r.x1,gap:[number,number]=side==='links'?[inward,edge]:[edge,inward];
    const free=largestPassing(C);
    // The bore: a spacer takes what the next part outwards needs, or what passes everything further in.
-   const bore=r.spacer?free??list.slice(i+1).find(x=>!x.spacer)?.bore??r.bore:r.bore;
+   // An arm without a bore of its own takes what can be put together there. A section set by hand: that. Parts further in:
+   // what passes their bores; a round one becomes a D of that Ø when the arm is the outermost (nothing has to go over a
+   // round seat after it), else it stays round and a set screw in the hub holds it. Innermost: what lets the next part's
+   // seat through (a round one: a D two mm larger, a shoulder for that part).
+   const hand=r.follow?doc.sections?.find(o=>overlaps(o.x0,o.x1,r.x0,r.x1))?.profile:undefined,nextOut=r.follow?list.slice(i+1).find(x=>!x.spacer&&!x.arm)?.bore:undefined;
+   // Alone on its side: like the nearest part on the shaft.
+   const beside=r.follow?refs.filter(x=>x!==r&&!x.spacer&&!x.arm).sort((x,y)=>Math.abs(x.x0-r.x0)-Math.abs(y.x0-r.x0))[0]?.bore:undefined;
+   const follow=()=>hand??(free?(free.kind==='rund'&&!nextOut?{kind:'d',d:free.d,flat:+Math.max(.5,free.d/10).toFixed(2)} as Profile:free):nextOut?(nextOut.kind==='rund'?{kind:'d',d:nextOut.d+2,flat:1} as Profile:nextOut):beside?(beside.kind==='rund'?{kind:'d',d:beside.d,flat:+Math.max(.5,beside.d/10).toFixed(2)} as Profile:beside):r.bore);
+   const bore=r.spacer?free??list.slice(i+1).find(x=>!x.spacer)?.bore??r.bore:r.follow?follow():r.bore;
    let seat=bore,adapter:Sleeve|undefined;
    if(!C.every(c=>passes(bore,c))){seat=free!;adapter={id:`adapter-${r.id}`,kind:'adapter',label:`Adapter ${label(seat)} → ${label(bore)}`,for:r.id,auto:true,x0:r.x0,x1:r.x1,side,inner:seat,steps:[{x0:r.x0,x1:r.x1,outer:bore}]};
     const wall=(inner(bore)-outer(seat))/2;if(wall<=eps)issues.push({level:'fehler',message:`${r.label}: ${label(seat)} passt nicht in die Bohrung ${label(bore)}, kein Adapter möglich. Ein Teil von der anderen Seite aufschieben?`,ref:r.id});else if(wall<s.minWall-eps)issues.push({level:'warnung',message:`${adapter.label} unter ${r.label}: Wand nur ${mm(wall)} (mindestens ${mm(s.minWall)})`,ref:adapter.id});}
@@ -85,6 +96,7 @@ function build(doc:ShaftDoc,refs:Ref[],k:number,inserts:Insert[],given:Issue[]):
    secs.push({x0:r.x0,x1:r.x1,role:'sitz',profile:seat});
    if(adapter){sleeves.push(adapter);C.push(seat);}
    if(r.spacer){const d=+(outer(bore)+2*s.spacerWall).toFixed(2);sleeves.push({id:r.id,kind:'huelse',label:`Distanzhülse ${label(bore)} × Ø${n(d)}`,auto:false,x0:r.x0,x1:r.x1,side,inner:bore,steps:[{x0:r.x0,x1:r.x1,outer:rund(d)}]});}
+   else if(r.arm){const hub=+Math.max(outer(bore)+2*ARM_WALL,r.arm.width).toFixed(2);placed.push({id:r.id,part:{...r.part,outer:hub},label:r.label,x0:r.x0,x1:r.x1,bore,side,arm:{...r.arm,hub,...((adapter?seat:bore).kind==='rund'?{screw:true}:{})},...(adapter?{adapter:adapter.id}:{})});}
    else placed.push({id:r.id,part:r.part,label:r.label,x0:r.x0,x1:r.x1,bore,side,...(adapter?{adapter:adapter.id}:{})});
    C.push(bore);edge=outward;});
   const end=side==='links'?0:L,free=largestPassing(C);if(Math.abs(edge-end)>eps)secs.push({x0:Math.min(edge,end),x1:Math.max(edge,end),role:free?'frei':'bund',...(free?{profile:free}:{})});};
@@ -124,6 +136,11 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
  const rings=doc.works.filter(w=>w.kind==='ring') as Extract<Work,{kind:'ring'}>[],ends=doc.works.filter(w=>w.kind==='gewinde') as Extract<Work,{kind:'gewinde'}>[];
  for(const side of ['links','rechts'] as Side[]){const mine=bodies.filter(b=>b.side===side);if(!mine.length)continue;const o=side==='links'?mine.reduce((a,b)=>b.x0<a.x0?b:a):mine.reduce((a,b)=>b.x1>a.x1?b:a),face=side==='links'?o.x0:o.x1;
   if(!('part' in o&&o.part.clamp)&&!rings.some(r=>Math.abs(r.x-face)<3)&&!ends.some(e=>e.end===side&&Math.abs(face-(side==='links'?0:L))<3))issues.push({level:'hinweis',message:`${o.label} ist nach ${side} nicht gesichert: ${p.sections.some(c=>c.profile.kind==='kreuz'&&(overlaps(c.x0,c.x1,o.x0,o.x1)||Math.abs((side==='links'?c.x1:c.x0)-face)<eps))?'Sicherungsring oder E-Ring (Nut ins Kreuz), LEGO-Buchse':'Sicherungsring, E-Ring oder Stellring'}, Gewinde mit Scheibe, oder das Gehäuse hält es`,ref:o.id});}
+ // Arms: something must turn them.
+ for(const t of p.placed){if(!t.arm)continue;const seat=sleeveOf(t.adapter)?.inner??t.bore;
+  if(seat.kind==='rund'&&!doc.works.some(w=>(w.kind==='nut'||w.kind==='abflachung')&&overlaps(w.x0,w.x1,t.x0,t.x1)))issues.push({level:'hinweis',message:`${t.label} sitzt auf ${label(seat)}: rund nimmt ihn nur die Madenschraube M3 in seiner Nabe mit. Eine Abflachung auf der Welle dort hält ihn sicher`,ref:t.id});
+  if(t.arm.length<t.arm.hub/2)issues.push({level:'hinweis',message:`${t.label}: ${mm(t.arm.length)} lang, kürzer als seine Nabe (Ø${n(t.arm.hub)})`,ref:t.id});
+  if(t.arm.hole>t.arm.width-2*s.minWall+eps)issues.push({level:'fehler',message:`${t.label}: Loch Ø${n(t.arm.hole)} lässt in ${mm(t.arm.width)} Breite keine Wand`,ref:t.id});}
  // Shafts inside.
  for(const i of p.inserts){const wall=Math.min(...within(i.x0,i.x1).map(c=>(inner(c.profile)-outer(i.profile))/2));if(wall<=eps)issues.push({level:'fehler',message:`${i.label} (${label(i.profile)}) passt nicht in die Welle: dort ${[...new Set(within(i.x0,i.x1).map(c=>label(c.profile)))].join(', ')}`,ref:i.id});else if(wall<i.wall-eps)issues.push({level:wall<s.minWall?'fehler':'warnung',message:`Wand um ${i.label} nur ${mm(wall)} (gewünscht ${mm(i.wall)})`,ref:i.id});}
  // Machining.
@@ -163,7 +180,7 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
  // Parts list.
  const bom=new Map<string,BomLine>(),add=(what:string,note?:string)=>{const b=bom.get(what);if(b)b.count++;else bom.set(what,{what,count:1,...(note?{note}:{})});};
  add(doc.making==='cnc'?'Welle (gedreht/gefräst)':'Welle (gedruckt)',`${mm(L)} lang, größter Ø ${n(Math.max(...p.sections.map(c=>outer(c.profile))))}`);
- for(const t of p.placed){add(t.part.label);if(t.part.extra)add(t.part.extra);}
+ for(const t of p.placed){if(t.arm)add(`Hebel (gedruckt): ${label(t.bore)}, ${n(t.arm.length)} mm lang`,`${mm(t.x1-t.x0)} dick, ${mm(t.arm.width)} breit${t.arm.hole?`, Loch Ø${n(t.arm.hole)}`:''}`);else add(t.part.label);if(t.arm?.screw)add('Madenschraube DIN 913 M3 × 4','in der Nabe des Hebels');if(t.part.extra)add(t.part.extra);}
  for(const m of p.motors!)add(m.part.label,'Kaufteil, seine Welle steckt in dieser');
  for(const x of p.sleeves)add(`${x.kind==='adapter'?'Adapter':'Distanzhülse'} (gedruckt): ${x.label.replace(/^(Adapter|Distanzhülse) /,'')}`,mm(x.x1-x.x0)+' lang');
  for(const m of p.machining){if(m.screw)add(m.screw);if(m.drill!==undefined){const t=thread((m.work as {m:number}).m)!;add(`Gewindebohrer M${n(t.m)} (Kernloch Ø${n(t.drill)})`);}if(m.key)add(`Passfeder DIN 6885 A ${m.key.b} × ${m.key.h} × ${m.key.length}`);if(m.ring)add(m.ring.label);}

@@ -10,4 +10,6 @@ export const shaftExamples:{key:string;title:string;text:string;make:()=>ShaftDo
   make:()=>({...newShaft(),length:50,items:[{id:'b',part:'lager-608',x:40}],inserts:[{id:'m',part:'motor-nema17-40',end:'links',depth:15}],works:[{id:'s',kind:'madenschraube',x:7,m:3}]})},
  {key:'stirnrad',title:'Stirnrad zwischen zwei 608',text:'Ein gedrucktes Rad mit Bohrung Ø8: die Distanzhülse hält es an seinem Platz.',
   make:()=>({...newShaft(),length:60,items:[{id:'a',part:'lager-608',x:2},{id:'g',part:'stirnrad-m1-z40',x:25,bore:rund(8)},{id:'b',part:'lager-608',x:50}]})},
+ {key:'hebel',title:'Welle mit Hebel',text:'Ein gedruckter Hebel zwischen Rad und Lager: seine Bohrung nimmt das Profil des Abschnitts, auf dem er sitzt.',
+  make:()=>({...newShaft(),length:60,items:[{id:'a',part:'lager-608',x:2},{id:'g',part:'stirnrad-m1-z40',x:20,bore:rund(8)},{id:'h',part:'hebel',x:34,width:6,arm:{length:35,width:10,angle:0,hole:4}},{id:'b',part:'lager-608',x:50}]})},
 ];

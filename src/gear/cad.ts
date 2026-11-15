@@ -11,6 +11,10 @@ import type {CadPart} from '../shaft/cad.ts';
 import type {GearDoc} from './model.ts';
 import type {GearPlan,LayerPlan,ShaftFile} from './plan.ts';
 import {tangents} from './draw.ts';
+import {rot} from './sweep.ts';
+import type {Sweep,Pose} from './sweep.ts';
+
+export type {Pose} from './sweep.ts';
 
 type Keep=<T extends {delete():void}>(v:T)=>T;
 type P=[number,number];
@@ -22,7 +26,18 @@ const disc=(c:P,r:number)=>drawCircle(r).rotate(37.3).translate(c[0],c[1]);
 function hull(a:P,ra:number,b:P,rb:number):Drawing{const d0=Math.hypot(b[0]-a[0],b[1]-a[1]);
  // One disc inside the other (also touching it from inside, which OpenCascade cannot fuse): the hull is the larger one.
  if(d0<=Math.abs(ra-rb)+1e-6)return ra>=rb?disc(a,ra):disc(b,rb);
- const t=tangents(a,ra,b,rb);let d=disc(a,ra).fuse(disc(b,rb));if(t)d=d.fuse(draw(t[0]).lineTo(t[1]).lineTo(t[2]).lineTo(t[3]).close());return d;}
+ // The quadrilateral first: two discs that just touch (a bolt's eye right outside a ring) meet inside it then, and their
+ // near-tangent crossing, which the 2D booleans cannot stand, is no edge any more.
+ const t=tangents(a,ra,b,rb);if(!t)return disc(a,ra).fuse(disc(b,rb));return disc(a,ra).fuse(draw(t[0]).lineTo(t[1]).lineTo(t[2]).lineTo(t[3]).close()).fuse(disc(b,rb));}
+/** A disc swept along an arc about `w.c`: a slot along the arc with round ends, as one outline of four arcs. Right at the
+ * centre (or all the way round) it is a disc or a ring. */
+function band(at:P,r:number,w:Sweep):Drawing{const d=Math.hypot(at[0]-w.c[0],at[1]-w.c[1]),width=w.to-w.from;
+ if(d<1e-6||width<1e-6)return disc(rot(at,w.c,w.from),r);
+ if(width>=359.9)return d>r+.05?drawCircle(d+r).rotate(37.3).cut(drawCircle(d-r).rotate(11.3)).translate(w.c[0],w.c[1]):disc(w.c,d+r);
+ if(d<=r+.05){// No inner edge: discs along the arc, joined.
+  const k=Math.max(1,Math.ceil(width/20));let out:Drawing|undefined;for(let i=0;i<k;i++){const h=hull(rot(at,w.c,w.from+width*i/k),r,rot(at,w.c,w.from+width*(i+1)/k),r);out=out?out.fuse(h):h;}return out!;}
+ const on=(rad:number,deg:number):P=>{const u:P=[(at[0]-w.c[0])/d,(at[1]-w.c[1])/d],q=rot([w.c[0]+u[0]*rad,w.c[1]+u[1]*rad],w.c,deg);return q;},mid=(w.from+w.to)/2,s=rot(at,w.c,w.from),e=rot(at,w.c,w.to),cap=(c:P,deg:number,sign:number):P=>{const t=(deg+90*sign)*Math.PI/180+Math.atan2(at[1]-w.c[1],at[0]-w.c[0]);return [c[0]+r*Math.cos(t),c[1]+r*Math.sin(t)];};
+ return draw(on(d+r,w.from)).threePointsArcTo(on(d+r,w.to),on(d+r,mid)).threePointsArcTo(on(d-r,w.to),cap(e,w.to,1)).threePointsArcTo(on(d-r,w.from),on(d-r,mid)).threePointsArcTo(on(d+r,w.from),cap(s,w.from,-1)).close();}
 /** A web's shape: the hull of both rings, or bars of one width through the points round a part. */
 function webShape(plan:GearPlan,l:LayerPlan,w:LayerPlan['webs'][number]):Drawing{const bearing=(k:string)=>plan.bearings.find(x=>x.key===k)!,ring=(k:string)=>bearing(k).D/2+l.rim;
  if(!w.path)return hull(bearing(w.a).at,ring(w.a),bearing(w.b).at,ring(w.b));const pts:P[]=[bearing(w.a).at,...w.path,bearing(w.b).at];let d=hull(pts[0],w.width!,pts[1],w.width!);for(let i=2;i<pts.length;i++)d=d.fuse(hull(pts[i-1],w.width!,pts[i],w.width!));return d;}
@@ -31,7 +46,7 @@ function throughHoles(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|undefined{c
  // A motor: its pilot and screw holes, as slots along its belt so it can be moved to tension it.
  const slot=(c:P,r:number,m:{slot?:[number,number];travel:number})=>{if(!m.slot||!m.travel){hole(c,r);return;}const t=m.travel/2,a:P=[c[0]-m.slot[0]*t,c[1]-m.slot[1]*t],e:P=[c[0]+m.slot[0]*t,c[1]+m.slot[1]*t],h=hull(a,r,e,r);holes=holes?holes.fuse(h):h;};
  for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;if(b.motor){const m=b.motor;slot(b.at,(m.part.pilot??0)/2+s.hole,m);for(const h of m.part.holes)slot([b.at[0]+h.at[0],b.at[1]+h.at[1]],h.d/2+.2,m);continue;}hole(b.at,b.D/2-s.lipIn);}
- for(const h of l.holes){const c=plan.shafts.find(x=>x.id===h.on)!.at;hole(c,h.r);if(h.open){const [dx,dy]=h.open.dir,nx=-dy*h.r,ny=dx*h.r,e:P=[c[0]+dx*h.open.length,c[1]+dy*h.open.length],slot=draw([c[0]+nx,c[1]+ny]).lineTo([e[0]+nx,e[1]+ny]).lineTo([e[0]-nx,e[1]-ny]).lineTo([c[0]-nx,c[1]-ny]).close();holes=holes?holes.fuse(slot):slot;}}
+ for(const h of l.holes){const c=plan.shafts.find(x=>x.id===h.on)!.at;if(h.arc){const b=band(c,h.r,h.arc);holes=holes?holes.fuse(b):b;continue;}hole(c,h.r);if(h.open){const [dx,dy]=h.open.dir,nx=-dy*h.r,ny=dx*h.r,e:P=[c[0]+dx*h.open.length,c[1]+dy*h.open.length],slot=draw([c[0]+nx,c[1]+ny]).lineTo([e[0]+nx,e[1]+ny]).lineTo([e[0]-nx,e[1]-ny]).lineTo([c[0]-nx,c[1]-ny]).close();holes=holes?holes.fuse(slot):slot;}}
  for(const bo of plan.bolts)if(bo.attach[l.id])hole(bo.at,bo.hole);
  return holes;}
 /** The outline of a layer's plates, with everything that goes through cut out. Webs lowered or raised under/over a
@@ -43,7 +58,7 @@ export function plateOutline(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|unde
  for(const w of l.webs)if(!w.z)d=d.fuse(webShape(plan,l,w));
  for(const bo of plan.bolts){const k=bo.attach[l.id];if(k)d=d.fuse(hull(bearing(k).at,ring(k),bo.at,bo.eye));}
  // Material round a hole that cuts into the plate, before the hole goes out.
- for(const h of l.holes)if(h.ring)d=d.fuse(disc(plan.shafts.find(x=>x.id===h.on)!.at,h.ring));
+ for(const h of l.holes)if(h.ring){const c=plan.shafts.find(x=>x.id===h.on)!.at;d=d.fuse(h.arc?band(c,h.ring,h.arc):disc(c,h.ring));}
  const holes=throughHoles(doc,plan,l);return holes?d.cut(holes):d;}
 /** Webs only as high as there is room under or over a part: their outline and heights. */
 export function steppedWebs(doc:GearDoc,plan:GearPlan,l:LayerPlan){const holes=throughHoles(doc,plan,l);return l.webs.filter(w=>w.z).map(w=>{const d=webShape(plan,l,w);return {shape:holes?d.cut(holes.clone()):d,z:w.z!};});}
@@ -61,18 +76,25 @@ function plates(keep:Keep,doc:GearDoc,plan:GearPlan,l:LayerPlan,index:number):Ca
  for(const be of bearings){const a=l.lips[0]?be.z0:z0-.01,e=l.lips[1]?be.z1:z1+.01;one=keep(one.cut(keep(makeCylinder(be.D/2+s.fit,e-a,[be.at[0],be.at[1],a],[0,0,1]))) as Shape3D);}
  return [{name:`Schicht ${index+1}`,file:`schicht-${index+1}`,kind:'platte',shape:one,color:'#7a93a6',made:true}];}
 /** A linked shaft's parts, turned upright (x of the shaft generator becomes z) and put where it stands. */
-function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,ShaftFile|undefined>):CadPart[]{
+function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,ShaftFile|undefined>,pose?:Pose):CadPart[]{
  const out:CadPart[]=[];
  for(const x of plan.shafts){const placed=doc.shafts.find(p=>p.id===x.id)!,f=files[placed.shaft];if(!f)continue;const L=f.doc.length;
   for(const part of buildParts(f.doc,x.plan,keep).parts){let shape=keep(part.shape.rotate(-90,[0,0,0],[0,1,0]) as Shape3D);
    if(placed.flip)shape=keep(keep(shape.rotate(180,[0,0,0],[1,0,0]) as Shape3D).translate([0,0,L]) as Shape3D);
-   shape=keep(shape.translate([placed.at[0],placed.at[1],placed.z]) as Shape3D);
+   // Turned about its own axis: as placed, plus how far the pose turns it; then with its swing arm about the pivot.
+   const g=plan.groups.find(v=>v.shafts.includes(x.id)),swing=g?pose?.groups[g.id]??0:0,spin=(placed.turn??0)+(pose?(plan.turnRate[x.id]??0)*pose.turn:0)+swing;
+   if(Math.abs(spin)>1e-9)shape=keep(shape.rotate(spin,[0,0,0],[0,0,1]) as Shape3D);
+   const at=g&&swing?rot(placed.at,g.at,swing):placed.at;
+   shape=keep(shape.translate([at[0],at[1],placed.z]) as Shape3D);
    out.push({...part,shape,name:`${part.name} · ${x.label}`,file:`${slug(x.label)}-${part.file}`});}}
  return out;}
 /** Everything of a gearbox. `keep` registers what must be freed. */
-export function buildGearParts(doc:GearDoc,plan:GearPlan,files:Record<string,ShaftFile|undefined>,keep:Keep):CadPart[]{
+export function buildGearParts(doc:GearDoc,plan:GearPlan,files:Record<string,ShaftFile|undefined>,keep:Keep,pose?:Pose):CadPart[]{
  const parts:CadPart[]=[];plan.layers.forEach((l,i)=>parts.push(...plates(keep,doc,plan,l,i)));
- plan.columns.forEach((c,i)=>{for(const bo of plan.bolts){const tube=drawCircle(bo.eye-.5).cut(drawCircle(bo.hole)).translate(bo.at[0],bo.at[1]);parts.push({name:`Distanzsäule ${c.from} – ${c.to}`,file:`saeule-${i+1}`,kind:'saeule',shape:keep(tube.sketchOnPlane('XY',c.z0).extrude(c.z1-c.z0) as Shape3D),color:'#c58a4a',made:true});}});
+ plan.columns.forEach((c,i)=>{for(const bo of plan.bolts){if(bo.body!==c.body)continue;const tube=drawCircle(bo.eye-.5).cut(drawCircle(bo.hole)).translate(bo.at[0],bo.at[1]);parts.push({name:`Distanzsäule ${c.from} – ${c.to}`,file:`saeule-${i+1}`,kind:'saeule',shape:keep(tube.sketchOnPlane('XY',c.z0).extrude(c.z1-c.z0) as Shape3D),color:'#c58a4a',made:true});}});
+ // A swing arm's plates and columns stand where the pose swings them.
+ const body=(p:CadPart):string=>p.kind==='platte'?plan.layers[Number(/^schicht-(\d+)/.exec(p.file)![1])-1].body:plan.columns[Number(/^saeule-(\d+)/.exec(p.file)![1])-1].body;
+ if(pose)for(const p of parts){const g=plan.groups.find(v=>v.id===body(p)),a=g?pose.groups[g.id]??0:0;if(g&&a)p.shape=keep(p.shape.rotate(a,[g.at[0],g.at[1],0],[0,0,1]) as Shape3D);}
  // The motors' bodies come with their shafts' parts.
- parts.push(...shaftParts(keep,plan,doc,files));
+ parts.push(...shaftParts(keep,plan,doc,files,pose));
  return parts;}

@@ -3,7 +3,7 @@
 // their edges, the shaft's end. Drops snap to edges and the grid (Alt: free); parts on the shaft never overlap.
 import type {ShaftDoc,OnItem,InItem,Work,Side,OwnSection,Settings} from './model.ts';
 import type {Plan,Issue} from './plan.ts';
-import {onParts,inParts,onGroups,inGroups,onPart,inPart} from './catalog.ts';
+import {onParts,inParts,onGroups,inGroups,onPart,inPart,defaultArm} from './catalog.ts';
 import {label,outer,rund} from './profile.ts';
 import type {Profile} from './profile.ts';
 import {silhouette,tallest} from './draw.ts';
@@ -53,7 +53,7 @@ export class ShaftEditor{
   const group=(title:string,cards:HTMLElement[])=>cards.length?[el('h3',{textContent:title}),...cards]:[];
   const filterBox=el('input',{type:'search',placeholder:'Suchen …',value:filter,id:'catalog-filter'});filterBox.oninput=()=>{this.renderCatalog(root,filterBox.value);const x=document.getElementById('catalog-filter') as HTMLInputElement;x.focus();x.setSelectionRange(x.value.length,x.value.length);};
   root.replaceChildren(filterBox,
-   el('h2',{textContent:'Auf der Welle'}),...onGroups.flatMap(g=>group(g,onParts.filter(p=>p.group===g&&hit(p.label,g)).map(p=>card(`auf:${p.id}`,p.label,p.spacer?'Länge frei, innen wie der Abschnitt':`${label(p.bore)} · ${n(p.width)} mm breit`,!p.checked)))),
+   el('h2',{textContent:'Auf der Welle'}),...onGroups.flatMap(g=>group(g,onParts.filter(p=>p.group===g&&hit(p.label,g)).map(p=>card(`auf:${p.id}`,p.label,p.spacer?'Länge frei, innen wie der Abschnitt':p.arm?'Dreht mit der Welle; Bohrung wie der Abschnitt':`${label(p.bore)} · ${n(p.width)} mm breit`,!p.checked)))),
    el('h2',{textContent:'In der Welle'}),...inGroups.flatMap(g=>group(g,inParts.filter(p=>p.group===g&&hit(p.label,g)).map(p=>card(`in:${p.id}`,p.label.split(':')[0],`${label(p.profile)}${p.length?` · ${n(p.length)} mm lang`:''} · von einem Ende`,!p.checked)))),
    el('h2',{textContent:'Bearbeitung'}),...workTemplates.filter(w=>hit(w.label)).map(w=>card(`work:${w.key}`,w.label,w.text)),
    el('h2',{textContent:'Abschnitt'}),...(hit('abschnitt','von hand')?[card('section','Abschnitt von Hand','Eigenes Profil für einen Bereich; die Prüfung läuft weiter')]:[]));
@@ -63,7 +63,7 @@ export class ShaftEditor{
   const [kind,id]=key.split(/:(.*)/);
   if(kind==='auf'){const p=onPart(id)!;const w=p.width,taken=d.items.map(i=>({x0:i.x,x1:i.x+this.widthOf(i)}));let at=toGrid(x===undefined?d.length/2-w/2:x-w/2,GRID);at=freeSpot(taken,at,w,d.length);
    if(taken.some(t=>at<t.x1-1e-9&&at+w>t.x0+1e-9)||at+w>d.length+1e-9){at=Math.max(d.length,...taken.map(t=>t.x1))+1;d.length=toGrid(at+w+1,GRID);}
-   const it:OnItem={id:this.newId(p.spacer?'h':'t'),part:p.id,x:+at.toFixed(2)};d.items.push(it);this.sel={kind:'item',id:it.id};this.host.commit(`${p.label} bei ${n(it.x)} mm`);return;}
+   const it:OnItem={id:this.newId(p.spacer?'h':'t'),part:p.id,x:+at.toFixed(2),...(p.arm?{arm:{...defaultArm}}:{})};d.items.push(it);this.sel={kind:'item',id:it.id};this.host.commit(`${p.label} bei ${n(it.x)} mm`);return;}
   if(kind==='in'){const p=inPart(id)!;const free=(['links','rechts'] as Side[]).filter(s=>!d.inserts.some(i=>i.end===s));const end:Side=x!==undefined?(x<d.length/2?'links':'rechts'):free[0]??'links';
    const depth=toGrid(Math.min(p.length?Math.max(5,p.length-3):12,d.length*.6),GRID),old=d.inserts.find(i=>i.end===end);if(old)d.inserts.splice(d.inserts.indexOf(old),1);
    const it:InItem={id:this.newId('w'),part:p.id,end,depth};d.inserts.push(it);this.sel={kind:'insert',id:it.id};this.host.commit(`${p.label.split(':')[0]} steckt von ${end}${old?' (ersetzt die bisherige)':''}`);return;}
@@ -76,7 +76,7 @@ export class ShaftEditor{
  clips():Clip[]{const d=this.doc,p=this.host.plan(),out:Clip[]=[],L=d.length;
   const level=(refs:string[])=>{const mine=p.issues.filter(i=>i.ref&&refs.includes(i.ref));return mine.some(i=>i.level==='fehler')?'fehler':mine.some(i=>i.level==='warnung')?'warnung':'';};
   for(const it of d.items){const part=onPart(it.part),pl=p.placed.find(t=>t.id===it.id),sl=p.sleeves.find(s=>s.id===it.id),side=pl?.side??sl?.side,w=this.widthOf(it);
-   out.push({key:`item:${it.id}`,lane:'auf',sel:{kind:'item',id:it.id},x0:it.x,x1:it.x+w,text:part?.short??it.part,title:`${part?.label??it.part}${side?` · von ${side} aufgeschoben`:''}${it.side?' (fest)':''}`,cls:`${part?.spacer?'spacer':part?.group==='Lager'?'bearing':'gear'}${side?' from-'+side:''} ${level([it.id])}`,...(part?.own?{resize:'both' as const}:{})});}
+   out.push({key:`item:${it.id}`,lane:'auf',sel:{kind:'item',id:it.id},x0:it.x,x1:it.x+w,text:part?.short??it.part,title:`${part?.label??it.part}${side?` · von ${side} aufgeschoben`:''}${it.side?' (fest)':''}`,cls:`${part?.spacer?'spacer':part?.arm?'arm':part?.group==='Lager'?'bearing':'gear'}${side?' from-'+side:''} ${level([it.id])}`,...(part?.own?{resize:'both' as const}:{})});}
   for(const s of p.sleeves.filter(x=>x.auto))out.push({key:`sleeve:${s.id}`,lane:'erzeugt',...(s.for?{sel:{kind:'item',id:s.for} as Selection}:{}),x0:s.x0,x1:s.x1,text:s.kind==='adapter'?'Adapter':'Hülse',title:s.label,cls:`${s.kind} ${level([s.id])}`});
   for(const m of p.motors??[])out.push({key:`motor:${m.id}`,lane:'motor',sel:{kind:'insert',id:m.id},x0:m.x0,x1:m.x1,text:m.label,title:`${m.label}: Flansch bei ${n(m.face)} mm. Ziehen schiebt den Motor entlang der Achse (wie tief seine Welle steckt)`,cls:'motor'});
   for(const i of p.inserts)out.push({key:`insert:${i.id}`,lane:'in',sel:{kind:'insert',id:i.id},x0:i.x0,x1:i.x1,text:`${i.end==='links'?'':'→ '}${i.label}${i.end==='links'?' ←':''}`,title:`${i.label} · ${label(i.profile)} · ${n(i.x1-i.x0)} mm tief von ${i.end}`,cls:`insert ${level([i.id])}`,resize:'inner'});
@@ -160,7 +160,10 @@ export class ShaftEditor{
   const head=(title:string,sub?:string)=>[el('h2',{textContent:title}),...(sub?[el('p',{className:'muted',textContent:sub})]:[])];
   if(s?.kind==='item'){const it=this.item(s.id);if(!it){this.sel=undefined;return this.renderProperties(root);}const part=onPart(it.part)!,pl=p.placed.find(t=>t.id===it.id),sleeves=p.sleeves.filter(x=>x.for===it.id||x.id===it.id);
    root.replaceChildren(...head(part.label,part.note),field('Position [mm]',it.x,v=>{it.x=Math.max(0,v!);}),
-    ...(part.own?[field('Breite [mm]',this.widthOf(it),v=>{if(v&&v>0)it.width=v;},{min:.5})]:[]),...(part.own&&!part.spacer?[profile('Bohrung',it.bore??part.bore,b=>{it.bore=b;})]:[]),
+    ...(part.own?[field(part.arm?'Dicke entlang der Welle [mm]':'Breite [mm]',this.widthOf(it),v=>{if(v&&v>0)it.width=v;},{min:.5})]:[]),
+    ...(part.arm?(()=>{const a=it.arm??={...defaultArm},own=!!it.bore;return [field('Länge Achse bis Auge [mm]',a.length,v=>{if(v&&v>0)a.length=v;},{min:1}),field('Breite des Arms [mm]',a.width,v=>{if(v&&v>0)a.width=v;},{min:1}),field('Winkel auf der Welle [°]',a.angle,v=>{a.angle=v??0;},{step:15}),field('Loch am Ende Ø [mm]',a.hole,v=>{a.hole=Math.max(0,v??0);},{step:.5,min:0}),
+     choice('Bohrung',own?'eigen':'auto' as 'auto'|'eigen',[['auto',`wie der Abschnitt${pl?` (jetzt ${label(pl.bore)})`:''}`],['eigen','eigenes Profil']],v=>{if(v==='auto')delete it.bore;else it.bore=pl?.bore??part.bore;}),...(own?[profile('Profil',it.bore!,b=>{it.bore=b;})]:[]),this.armView(pl)];})():[]),
+    ...(part.own&&!part.spacer&&!part.arm?[profile('Bohrung',it.bore??part.bore,b=>{it.bore=b;})]:[]),
     choice('Aufschieben von','auto' as 'auto'|Side,[['auto',`selbst wählen${pl?` (jetzt ${pl.side})`:''}`],['links','links (fest)'],['rechts','rechts (fest)']],v=>{if(v==='auto')delete it.side;else it.side=v;}),
     el('p',{className:'prop-info'},pl?`Sitzt auf ${label(p.sections.find(c=>pl.x0+.01>=c.x0&&pl.x0+.01<=c.x1)?.profile??pl.bore)}, Bohrung ${label(pl.bore)}, von ${pl.side} aufgeschoben.`:sleeves[0]?`Innen ${label(sleeves[0].inner)}, von ${sleeves[0].side} aufgeschoben.`:''),
     ...sleeves.filter(x=>x.auto).map(x=>el('p',{className:'prop-info sleeve'},`Dazu erzeugt: ${x.label}, ${n(x.x1-x.x0)} mm lang.`)),issues([it.id,...sleeves.map(x=>x.id)]),remove(part.spacer?'Hülse':'Teil',()=>{d.items.splice(d.items.indexOf(it),1);}));return;}
@@ -183,6 +186,11 @@ export class ShaftEditor{
    choice('Fertigung',d.making,[['druck','3D-Druck'],['cnc','CNC (Drehen/Fräsen)']],v=>{d.making=v;}),field('Bund-Ø [mm]',d.collar,v=>{if(v===undefined)delete d.collar;else d.collar=v;},{optional:true,placeholder:'aus den Nachbarn'}),
    el('h3',{textContent:'Regeln'}),set('shoulder','Absatz über Nachbar [mm]'),set('spacerWall','Wand Distanzhülse [mm]'),set('minWall','Dünnste Wand [mm]'),set('insertWall','Wand um gesteckte Wellen [mm]'),set('chamfer','Fase an den Enden [mm]'),set('play','Spiel je Seite beim Druck [mm]',.05));
  }
+ /** An arm seen along the axis: 0° is up, where a D shaft's flat looks. */
+ private armView(pl?:Plan['placed'][number]):HTMLElement|string{const a=pl?.arm;if(!a)return '';const R=a.length+a.width/2+2,S=150,k=S/2/Math.max(R,a.hub/2+2),t=a.angle*Math.PI/180,f=a.length>Math.abs(a.hub-a.width)/2?Math.acos((a.hub-a.width)/2/a.length):0;
+  // Drawing coordinates as in the solid (x: world y, y: world z), turned by the angle, y up on the screen.
+  const pt=(x:number,y:number)=>{const X=x*Math.cos(t)-y*Math.sin(t),Y=x*Math.sin(t)+y*Math.cos(t);return `${(S/2+X*k).toFixed(1)},${(S/2-Y*k).toFixed(1)}`;},on=(cy:number,r:number,s:number)=>pt(s*r*Math.sin(f),cy+r*Math.cos(f)),c=(x:number,y:number,r:number,cls:string)=>{const [cx,cy]=pt(x,y).split(',');return `<circle class="${cls}" cx="${cx}" cy="${cy}" r="${(r*k).toFixed(1)}"/>`;};
+  const box=el('div');box.innerHTML=`<svg class="arm-view" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}"><title>Stirnansicht: 0° zeigt nach oben (zur Abflachung einer D-Welle)</title><line class="zero" x1="${S/2}" y1="${S/2}" x2="${S/2}" y2="4"/><polygon class="body" points="${on(0,a.hub/2,1)} ${on(a.length,a.width/2,1)} ${on(a.length,a.width/2,-1)} ${on(0,a.hub/2,-1)}"/>${c(0,0,a.hub/2,'body')}${c(0,a.length,a.width/2,'body')}${a.hole?c(0,a.length,a.hole/2,'bore'):''}${c(0,0,outer(pl!.bore)/2,'bore')}</svg>`;return box.firstElementChild as HTMLElement;}
  /** Del removes what is chosen. */
  removeSelected(){const d=this.doc,s=this.sel;if(!s||this.host.readOnly())return;this.host.begin();
   if(s.kind==='item')d.items=d.items.filter(x=>x.id!==s.id);else if(s.kind==='insert')d.inserts=d.inserts.filter(x=>x.id!==s.id);else if(s.kind==='work')d.works=d.works.filter(x=>x.id!==s.id);else{d.sections?.splice(s.index,1);if(!d.sections?.length)delete d.sections;}

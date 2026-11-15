@@ -8,11 +8,11 @@ import type {Profile} from './profile.ts';
 
 /** Sits on the shaft: its bore, how wide it is along the shaft, its outer Ø. `stop`: the largest shoulder that touches
  * only what turns with the shaft (a bearing's inner ring). `own`: bore and width can be set per piece. */
-export type OnPart={id:string;label:string;/** For narrow clips. */short:string;group:string;bore:Profile;width:number;outer:number;stop?:number;source:string;checked:boolean;note?:string;own?:boolean;/** A spacer: its bore follows the piece it sits on. */spacer?:boolean;/** Holds itself where it is (clamps or is screwed): needs no shoulder, holds what is inside of it. */clamp?:boolean;/** What comes with it into the parts list. */extra?:string;/** A wheel: teeth and module (LEGO: module 1); a GT2 pulley: teeth, `pulley`. For the gearbox generator. */teeth?:number;module?:number;pulley?:boolean};
+export type OnPart={id:string;label:string;/** For narrow clips. */short:string;group:string;bore:Profile;width:number;outer:number;stop?:number;source:string;checked:boolean;note?:string;own?:boolean;/** A spacer: its bore follows the piece it sits on. */spacer?:boolean;/** Holds itself where it is (clamps or is screwed): needs no shoulder, holds what is inside of it. */clamp?:boolean;/** What comes with it into the parts list. */extra?:string;/** A wheel: teeth and module (LEGO: module 1); a GT2 pulley: teeth, `pulley`. For the gearbox generator. */teeth?:number;module?:number;pulley?:boolean;/** A printed arm (lever): not round, it turns with the shaft and sweeps an area. Its measures are the item's. */arm?:boolean};
 /** Goes into the shaft from one end. `length`: how long it is (a motor's shaft), the most it can go in. */
 export type InPart={id:string;label:string;group:string;profile:Profile;length?:number;source:string;checked:boolean;note?:string};
 
-export const onGroups=['Lager','LEGO-Zahnräder','Stirnräder','Riemenscheiben','Sicherung','Hülsen'];
+export const onGroups=['Lager','LEGO-Zahnräder','Stirnräder','Riemenscheiben','Hebel','Sicherung','Hülsen'];
 export const inGroups=['Motoren','LEGO','Wellen'];
 
 const bearings:OnPart[]=bearingCatalog.filter(b=>b.kind==='ball').map(b=>({id:`lager-${b.id}`,label:b.label,short:b.id,group:'Lager',bore:rund(b.d),width:b.B,outer:b.D,stop:b.d+.4*(b.D-b.d),source:'Lagerkatalog des Studios',checked:true}));
@@ -25,7 +25,11 @@ export const spacerPart:OnPart={id:'huelse',short:'Hülse',label:'Distanzhülse'
 // screw on a round shaft. Measures typed in, so `checked: false`.
 const bushes:OnPart[]=[{id:'lego-buchse-halb',short:'Buchse ½',label:'LEGO-Buchse ½ (4265c)',width:4,outer:7.2},{id:'lego-buchse',short:'Buchse',label:'LEGO-Buchse 1 (3713)',width:8,outer:7.6}].map(b=>({...b,group:'Sicherung',bore:{kind:'kreuz'} as Profile,clamp:true,source:'LEGO, Maße von Hand',checked:false,note:'Klemmt auf dem LEGO-Kreuz, wie bei LEGO-Achsen. Länge und Ø von Hand eingetragen, bitte nachmessen.'}));
 const collars:OnPart[]=([[3,7,5,3],[4,8,5,3],[5,10,6,3],[6,12,6,4],[8,16,8,4],[10,20,10,5]] as const).map(([d,D,B,m])=>({id:`stellring-${d}`,short:`Stellring ${d}`,label:`Stellring DIN 705 Ø${d}`,group:'Sicherung',bore:rund(d),width:B,outer:D,clamp:true,extra:`Madenschraube M${m} (im Stellring)`,source:'DIN 705, Maße von Hand',checked:false,note:`Mit Madenschraube M${m}. Außen-Ø und Breite je nach Hersteller, bitte nachmessen.`}));
-export const onParts:OnPart[]=[...bearings,...lego,...[[12,1],[20,1],[30,1],[40,1],[15,2],[20,2]].map(([z,m])=>spur(z,m)),...[16,20,40].map(pulley),...bushes,...collars,spacerPart];
+// A printed arm: a hub with the bore of the piece it sits on, a bar to an eye at its end. `outer` is the hub's Ø (from the
+// bore, in the plan).
+export const armPart:OnPart={id:'hebel',short:'Hebel',label:'Hebel (gedruckt)',group:'Hebel',bore:{kind:'d',d:5,flat:.5},width:5,outer:11,source:'Wellen-Generator',checked:true,own:true,arm:true,note:'Dreht mit der Welle. Die Bohrung nimmt das Profil des Abschnitts, auf dem er sitzt; Länge, Breite, Winkel und Loch am Teil einstellbar.'};
+export const defaultArm={length:30,width:8,angle:0,hole:3};
+export const onParts:OnPart[]=[...bearings,...lego,...[[12,1],[20,1],[30,1],[40,1],[15,2],[20,2]].map(([z,m])=>spur(z,m)),...[16,20,40].map(pulley),armPart,...bushes,...collars,spacerPart];
 
 // NEMA motors have a D shaft; the depth of the flat is the usual one, the catalog only knows the Ø.
 const motors:InPart[]=parts.filter(p=>p.shaft).map(p=>({id:`motor-${p.id}`,label:`${p.label.replace(/ Schrittmotor/,'')}: Welle ${String(p.shaft!.d).replace('.',',')} mm`,group:'Motoren',profile:{kind:'d',d:p.shaft!.d,flat:.5} as Profile,length:p.shaft!.length,source:p.source,checked:false,note:'Abflachung 0,5 mm wie üblich, bitte am Motor nachmessen.'}));

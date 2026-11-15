@@ -152,3 +152,11 @@ Bau des Beispiels, ohne Drehprofil waren es 8 MB). Daher so wenige Booleans wie 
 | 4 | Bearbeitungen: Madenschraube mit Kernloch, Gewinde am Ende, Passfeder- und Sicherungsring-Nut, Abflachung |
 | 5 | Distanzhülsen und Adapter automatisch, ZIP mit allen Teilen und Stückliste |
 | später | Welle aus dem Studio öffnen und zurückgeben; weitere Generatoren auf demselben Gerüst |
+
+## Hebel (2026-11-15)
+
+Ein gedrucktes Teil der Gruppe „Hebel“: Nabe, Arm und Auge mit Loch, dreht mit der Welle (für bewegliche Teile im Getriebe-Generator). Am Teil einstellbar: Dicke entlang der Welle, Länge Achse bis Auge, Breite, Winkel auf der Welle (0° zeigt dorthin, wohin die Abflachung einer D-Welle schaut, gezählt wie der Winkel einer Madenschraube), Loch am Ende. `OnItem.arm`, im Plan `Placed.arm` mit dem Naben-Ø (Bohrung + 2 × 3 mm, mindestens die Armbreite).
+
+**Bohrung „wie der Abschnitt“** (Vorgabe, sonst ein eigenes Profil): ein Abschnitt von Hand gilt; sonst das, was durch die Teile weiter innen passt (ein rundes als D gleichen Ø, wenn der Hebel das äußerste Teil ist; liegt außen noch etwas, bleibt es rund); als innerstes Teil seiner Seite das, was den Sitz des nächsten Teils durchlässt (vor einem Lager Ø8 ein D10 mit 1 mm Abflachung, zugleich dessen Schulter); allein auf seiner Seite wie das nächste Teil der Welle. Eine runde Bohrung bekommt das Kernloch für eine Madenschraube M3 in der Nabe, dem Arm gegenüber, und einen Hinweis auf die Abflachung.
+
+Im 3D-Modell ein gemachtes Teil (`hebel-<id>`, STEP und STL), im Längsschnitt Nabe mit Fahne, in den Eigenschaften die Stirnansicht. Prüfung: `scripts/shaft/check-arm.mjs`.

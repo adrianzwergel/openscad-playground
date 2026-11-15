@@ -11,8 +11,9 @@ import type {Plan,Sleeve} from './plan.ts';
 import type {ShaftDoc} from './model.ts';
 import type {Profile} from './profile.ts';
 import {LEGO_ACROSS,LEGO_ARM,outer,label} from './profile.ts';
+import {thread} from './din.ts';
 
-export type CadKind='welle'|'adapter'|'huelse'|'kauf'|'platte'|'saeule';
+export type CadKind='welle'|'adapter'|'huelse'|'kauf'|'platte'|'saeule'|'hebel';
 export type CadPart={name:string;file:string;kind:CadKind;shape:Shape3D;color:string;/** Made, not bought: gets files. */made:boolean};
 type Keep=<T extends {delete():void}>(v:T)=>T;
 
@@ -70,13 +71,26 @@ function sleeveSolid(keep:Keep,doc:ShaftDoc,s:Sleeve){
 /** A bought part as a ring: its outer Ø, its bore. */
 const ring=(keep:Keep,x0:number,x1:number,D:number,d:number)=>keep(keep(makeCylinder(D/2,x1-x0,[x0,0,0],[1,0,0])).cut(keep(makeCylinder(Math.max(.1,d/2),x1-x0+2,[x0-1,0,0],[1,0,0]))) as Shape3D);
 
+/** An arm in the YZ plane (drawing x: world y, drawing y: world z): hub and end disc with the bar between their outer
+ * tangents, the hole at its end; turned `angle` about the axis from +z (as a set screw's angle). */
+export function armDrawing(a:{length:number;width:number;angle:number;hole:number;hub:number}):Drawing{
+ const r0=a.hub/2,r1=a.width/2,L=a.length;let d:Drawing=drawCircle(r0);
+ if(L>Math.abs(r0-r1)+1e-6){const f=Math.acos((r0-r1)/L),on=(cy:number,r:number,s:number):[number,number]=>[s*r*Math.sin(f),cy+r*Math.cos(f)];
+  d=d.fuse(drawCircle(r1).rotate(37.3).translate(0,L)).fuse(draw(on(0,r0,1)).lineTo(on(L,r1,1)).lineTo(on(L,r1,-1)).lineTo(on(0,r0,-1)).close());}
+ if(a.hole>0)d=d.cut(drawCircle(a.hole/2).translate(0,L));
+ return d.rotate(a.angle);}
+function armSolid(keep:Keep,doc:ShaftDoc,t:Plan['placed'][number]){const a=t.arm!;
+ let s=keep(keep(armDrawing(a).sketchOnPlane('YZ',t.x0).extrude(t.x1-t.x0) as Shape3D).cut(along(keep,t.bore,t.x0-1,t.x1+1,fitOf(doc,t.bore,false))) as Shape3D);
+ // A round bore: the tap drill for a set screw M3 through the hub, on the side away from the arm.
+ if(a.screw){const r=a.angle*Math.PI/180;s=keep(s.cut(keep(makeCylinder(thread(3)!.drill/2,a.hub/2+1,[(t.x0+t.x1)/2,0,0],[0,Math.sin(r),-Math.cos(r)]))) as Shape3D);}
+ return s;}
 /** All solids of a plan. `keep` registers what must be freed (localGC); without, one is made here and returned. */
 export function buildParts(doc:ShaftDoc,plan:Plan,keep?:Keep):{parts:CadPart[];free:()=>void}{
  let free=()=>{};if(!keep){const [k,gc]=localGC();keep=k as Keep;free=gc;}
  const parts:CadPart[]=[];const safe=(name:string,make:()=>Shape3D)=>{try{return make();}catch(e){throw Error(`${name}: ${e instanceof Error?e.message:e}`);}};
  parts.push({name:'Welle',file:'welle',kind:'welle',shape:safe('Welle',()=>shaftSolid(keep!,doc,plan)),color:'#9aa7b1',made:true});
  plan.sleeves.forEach((s,i)=>parts.push({name:s.label,file:`${s.kind}-${i+1}`,kind:s.kind,shape:safe(s.label,()=>sleeveSolid(keep!,doc,s)),color:s.kind==='adapter'?'#e0a060':'#b98fd6',made:true}));
- for(const t of plan.placed)parts.push({name:t.label,file:t.id,kind:'kauf',shape:ring(keep,t.x0,t.x1,t.part.outer,outer(t.bore)),color:t.part.group==='Lager'?'#6fa4c6':'#6fc6a6',made:false});
+ for(const t of plan.placed)if(t.arm)parts.push({name:t.label,file:`hebel-${t.id}`,kind:'hebel',shape:safe(t.label,()=>armSolid(keep!,doc,t)),color:'#d98f5c',made:true});else parts.push({name:t.label,file:t.id,kind:'kauf',shape:ring(keep,t.x0,t.x1,t.part.outer,outer(t.bore)),color:t.part.group==='Lager'?'#6fa4c6':'#6fc6a6',made:false});
  for(const m of plan.motors??[]){const w=m.part.size[0]/2;parts.push({name:m.label,file:`motor-${m.id}`,kind:'kauf',shape:keep(makeBox([m.x0,-w,-w],[m.x1,w,w])),color:'#3a4048',made:false});}
  for(const i of plan.inserts){const len=i.part.length??(i.x1-i.x0)+12,x0=i.end==='links'?i.x1-len:i.x0,x1=i.end==='links'?i.x1:i.x0+len;parts.push({name:`${i.label} (${label(i.profile)})`,file:i.id,kind:'kauf',shape:along(keep,i.profile,x0,x1),color:'#e0c56c',made:false});}
  return {parts,free};}
