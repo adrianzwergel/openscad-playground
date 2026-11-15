@@ -47,3 +47,6 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 #top .fan,#top .arm,#top .swing,#top .swing-line,#top .pivot,#top .ring-arc,#top .hole-arc,#top .hole-edge{pointer-events:none}
 #properties input[type=text]{width:100%}
 .sideview .arm{fill:#5a3a22;stroke:#d98f5c}
+.topview .hub-ring{fill:#f0d36e55;stroke:#f0d36e;stroke-width:1.5}.topview .hub-bore{fill:#10161c;stroke:#f0d36e}#top .hub{pointer-events:none}
+.topview .wheel.free .tip{stroke-dasharray:2 3;stroke-width:1.6}
+#drives .drive-line{color:#f0d36e}

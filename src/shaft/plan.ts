@@ -19,7 +19,7 @@ export type Role='sitz'|'frei'|'bund'|'eigen';
 export type Section={x0:number;x1:number;profile:Profile;role:Role};
 /** A part on the shaft as planned: its seat, its bore, the end it goes on from. */
 /** `arm`: an arm's measures and its hub's Ø (the part's `outer` is that hub). */
-export type Placed={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;side:Side;adapter?:string;arm?:ArmSpec&{hub:number;/** A round bore: a set screw M3 in the hub, opposite the arm, holds it. */screw?:boolean}};
+export type Placed={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;side:Side;adapter?:string;/** A wheel turning freely on the shaft. */free?:boolean;arm?:ArmSpec&{hub:number;/** A round bore: a set screw M3 in the hub, opposite the arm, holds it. */screw?:boolean}};
 /** Wall of an arm's hub round its bore. */
 export const ARM_WALL=3;
 /** A printed or turned sleeve: an adapter under a part, or a spacer. `steps`: its outside along x. */
@@ -35,7 +35,7 @@ export type Machining={work:Work;drill?:number;depth?:number;screw?:string;key?:
 export type ShaftMotor={id:string;part:Part;label:string;end:Side;face:number;x0:number;x1:number};
 export type Plan={motors?:ShaftMotor[];length:number;sections:Section[];placed:Placed[];sleeves:Sleeve[];inserts:Insert[];machining:Machining[];issues:Issue[];bom:BomLine[];split:number};
 
-type Ref={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;spacer:boolean;clamp:boolean;side?:Side;/** An arm: its measures; `follow`: its bore takes the profile of where it sits. */arm?:ArmSpec;follow?:boolean};
+type Ref={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;spacer:boolean;clamp:boolean;side?:Side;/** An arm: its measures; `follow`: its bore takes the profile of where it sits. */arm?:ArmSpec;follow?:boolean;free?:boolean};
 const n=(x:number)=>String(+x.toFixed(2)).replace('.',',');
 const mm=(x:number)=>`${n(x)} mm`;
 const overlaps=(a0:number,a1:number,b0:number,b1:number)=>a0<b1-eps&&b0<a1-eps;
@@ -45,7 +45,7 @@ export function planShaft(doc:ShaftDoc):Plan{
  const refs:Ref[]=[];
  for(const it of doc.items){const part=onPart(it.part);if(!part){issues.push({level:'fehler',message:`Unbekanntes Teil ${it.part}`,ref:it.id});continue;}
   const width=part.own&&it.width?it.width:part.width,bore=part.own&&it.bore?it.bore:part.bore;
-  refs.push({id:it.id,part,label:part.spacer?'Distanzhülse':part.label.split(' (')[0],x0:it.x,x1:it.x+width,bore,spacer:!!part.spacer,clamp:!!part.clamp,...(it.side?{side:it.side}:{}),...(part.arm?{arm:it.arm??{...defaultArm},follow:!it.bore}:{})});}
+  refs.push({id:it.id,part,label:part.spacer?'Distanzhülse':part.label.split(' (')[0],x0:it.x,x1:it.x+width,bore,spacer:!!part.spacer,clamp:!!part.clamp,...(it.side?{side:it.side}:{}),...(part.arm?{arm:it.arm??{...defaultArm},follow:!it.bore}:{}),...(it.free&&part.teeth?{free:true}:{})});}
  refs.sort((a,b)=>a.x0-b.x0);
  for(const r of refs)if(r.x0<-eps||r.x1>L+eps)issues.push({level:'fehler',message:`${r.label} ragt über das Wellenende (${mm(r.x0)} bis ${mm(r.x1)}, Welle ${mm(L)})`,ref:r.id});
  for(let i=1;i<refs.length;i++)if(refs[i].x0<refs[i-1].x1-eps)issues.push({level:'fehler',message:`${refs[i-1].label} und ${refs[i].label} überlappen um ${mm(refs[i-1].x1-refs[i].x0)}`,ref:refs[i].id});
@@ -97,7 +97,7 @@ function build(doc:ShaftDoc,refs:Ref[],k:number,inserts:Insert[],given:Issue[]):
    if(adapter){sleeves.push(adapter);C.push(seat);}
    if(r.spacer){const d=+(outer(bore)+2*s.spacerWall).toFixed(2);sleeves.push({id:r.id,kind:'huelse',label:`Distanzhülse ${label(bore)} × Ø${n(d)}`,auto:false,x0:r.x0,x1:r.x1,side,inner:bore,steps:[{x0:r.x0,x1:r.x1,outer:rund(d)}]});}
    else if(r.arm){const hub=+Math.max(outer(bore)+2*ARM_WALL,r.arm.width).toFixed(2);placed.push({id:r.id,part:{...r.part,outer:hub},label:r.label,x0:r.x0,x1:r.x1,bore,side,arm:{...r.arm,hub,...((adapter?seat:bore).kind==='rund'?{screw:true}:{})},...(adapter?{adapter:adapter.id}:{})});}
-   else placed.push({id:r.id,part:r.part,label:r.label,x0:r.x0,x1:r.x1,bore,side,...(adapter?{adapter:adapter.id}:{})});
+   else placed.push({id:r.id,part:r.part,label:r.free?`${r.label} (Losrad)`:r.label,x0:r.x0,x1:r.x1,bore,side,...(r.free?{free:true}:{}),...(adapter?{adapter:adapter.id}:{})});
    C.push(bore);edge=outward;});
   const end=side==='links'?0:L,free=largestPassing(C);if(Math.abs(edge-end)>eps)secs.push({x0:Math.min(edge,end),x1:Math.max(edge,end),role:free?'frei':'bund',...(free?{profile:free}:{})});};
  walk(refs.slice(0,k).reverse(),'links');walk(refs.slice(k),'rechts');
@@ -136,6 +136,10 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
  const rings=doc.works.filter(w=>w.kind==='ring') as Extract<Work,{kind:'ring'}>[],ends=doc.works.filter(w=>w.kind==='gewinde') as Extract<Work,{kind:'gewinde'}>[];
  for(const side of ['links','rechts'] as Side[]){const mine=bodies.filter(b=>b.side===side);if(!mine.length)continue;const o=side==='links'?mine.reduce((a,b)=>b.x0<a.x0?b:a):mine.reduce((a,b)=>b.x1>a.x1?b:a),face=side==='links'?o.x0:o.x1;
   if(!('part' in o&&o.part.clamp)&&!rings.some(r=>Math.abs(r.x-face)<3)&&!ends.some(e=>e.end===side&&Math.abs(face-(side==='links'?0:L))<3))issues.push({level:'hinweis',message:`${o.label} ist nach ${side} nicht gesichert: ${p.sections.some(c=>c.profile.kind==='kreuz'&&(overlaps(c.x0,c.x1,o.x0,o.x1)||Math.abs((side==='links'?c.x1:c.x0)-face)<eps))?'Sicherungsring oder E-Ring (Nut ins Kreuz), LEGO-Buchse':'Sicherungsring, E-Ring oder Stellring'}, Gewinde mit Scheibe, oder das Gehäuse hält es`,ref:o.id});}
+ // Idlers: they turn on a round seat.
+ for(const t of p.placed){if(!t.free)continue;const seat=sleeveOf(t.adapter)?.inner??t.bore;
+  if(t.bore.kind!=='rund')issues.push({level:'fehler',message:`${t.label} soll frei drehen, hat aber die Bohrung ${label(t.bore)}: ein Losrad braucht eine runde Bohrung (gedrucktes Rad nehmen)`,ref:t.id});
+  else issues.push({level:'hinweis',message:`${t.label} dreht frei auf ${label(seat)}: Gleitsitz mit Spiel; seitlich halten es die Nachbarn (Hülse, Bund, Stellring)`,ref:t.id});}
  // Arms: something must turn them.
  for(const t of p.placed){if(!t.arm)continue;const seat=sleeveOf(t.adapter)?.inner??t.bore;
   if(seat.kind==='rund'&&!doc.works.some(w=>(w.kind==='nut'||w.kind==='abflachung')&&overlaps(w.x0,w.x1,t.x0,t.x1)))issues.push({level:'hinweis',message:`${t.label} sitzt auf ${label(seat)}: rund nimmt ihn nur die Madenschraube M3 in seiner Nabe mit. Eine Abflachung auf der Welle dort hält ihn sicher`,ref:t.id});

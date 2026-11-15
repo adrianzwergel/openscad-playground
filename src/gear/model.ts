@@ -9,7 +9,9 @@ export type PlacedShaft={id:string;shaft:string;at:[number,number];z:number;flip
 /** A swing arm (Schwinge): shafts that move together, with plates of their own, about the axis of the shaft `pivot`,
  * from `from` to `to` degrees (counter-clockwise from above, relative to where they are drawn). `bolts`: its bolts set by
  * hand. */
-export type Group={id:string;name:string;pivot:string;shafts:string[];from:number;to:number;bolts?:[number,number][]};
+/** `fixed`: it sits fast on its pivot shaft (a hub with the shaft's profile) and turns with it: a lever, a link of an arm.
+ * Else it hangs on the pivot's bearings and swings freely. The pivot may be a shaft of another swing arm: link on link. */
+export type Group={id:string;name:string;pivot:string;shafts:string[];from:number;to:number;bolts?:[number,number][];fixed?:boolean};
 /** One wheel or bearing on a placed shaft: the placed shaft's id and the item's id in its shaft file. */
 export type ItemRef={on:string;item:string};
 export type Belt={id:string;a:ItemRef;b:ItemRef};
@@ -48,7 +50,7 @@ export function parseGear(raw:unknown):GearDoc{
  const boltList=(v:unknown)=>{if(!Array.isArray(v)||v.length>12)throw Error('Getriebe: zu viele Bolzen');return v.map(b=>{if(!Array.isArray(b)||!num(b[0])||!num(b[1]))throw Error('Getriebe: Bolzen ungültig');return [b[0],b[1]] as [number,number];});};
  const bolts=d.bolts?boltList(d.bolts):undefined;
  if(d.groups!==undefined&&(!Array.isArray(d.groups)||d.groups.length>12))throw Error('Getriebe: Schwingen ungültig');
- const groups=d.groups?.map(g=>{if(!str(g?.id)||typeof g.name!=='string'||g.name.length>80||!str(g.pivot)||!Array.isArray(g.shafts)||g.shafts.length>40||g.shafts.some(x=>!str(x))||!num(g.from,-360,360)||!num(g.to,-360,360)||g.to<g.from)throw Error('Getriebe: Schwinge ungültig');return {id:g.id,name:g.name,pivot:g.pivot,shafts:[...g.shafts],from:g.from,to:g.to,...(g.bolts?{bolts:boltList(g.bolts)}:{})};});
+ const groups=d.groups?.map(g=>{if(!str(g?.id)||typeof g.name!=='string'||g.name.length>80||!str(g.pivot)||!Array.isArray(g.shafts)||g.shafts.length>40||g.shafts.some(x=>!str(x))||!num(g.from,-360,360)||!num(g.to,-360,360)||g.to<g.from||g.fixed!==undefined&&typeof g.fixed!=='boolean')throw Error('Getriebe: Schwinge ungültig');return {...(g.fixed?{fixed:true}:{}),id:g.id,name:g.name,pivot:g.pivot,shafts:[...g.shafts],from:g.from,to:g.to,...(g.bolts?{bolts:boltList(g.bolts)}:{})};});
  if(groups&&new Set(groups.map(g=>g.id)).size!==groups.length)throw Error('Getriebe: Schwingen doppelt');
  const turn=d.turn;if(turn!==undefined&&(!str(turn?.on)||!num(turn.from,-36000,36000)||!num(turn.to,-36000,36000)||turn.to<turn.from))throw Error('Getriebe: Drehbereich ungültig');
  return {shafts,belts,...(layers?{layers}:{}),...(bolts?{bolts}:{}),...(webs?{webs}:{}),...(d.input?{input:d.input}:{}),...(groups?.length?{groups}:{}),...(turn&&shafts.some(s=>s.id===turn.on)?{turn:{on:turn.on,from:turn.from,to:turn.to}}:{}),settings};}

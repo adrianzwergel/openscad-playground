@@ -8,7 +8,8 @@
 import {planShaft} from '../shaft/plan.ts';
 import type {Plan as ShaftPlan} from '../shaft/plan.ts';
 import type {ShaftDoc} from '../shaft/model.ts';
-import {outer} from '../shaft/profile.ts';
+import {outer,label as profileLabel} from '../shaft/profile.ts';
+import type {Profile} from '../shaft/profile.ts';
 import {BELTS} from '../mechanics/motion.ts';
 import {partById} from '../mechanics/parts/catalog.ts';
 import type {Part} from '../mechanics/parts/catalog.ts';
@@ -20,13 +21,20 @@ import type {Prim,Sweep,Capsule} from './sweep.ts';
 const eps=1e-6;
 export type ShaftFile={name:string;doc:ShaftDoc};
 export type Placed={key:string;on:string;item:string;label:string;at:[number,number];z0:number;z1:number};
-export type Wheel=Placed&{teeth:number;module?:number;pulley:boolean;pitch:number;outer:number;lego:boolean};
+export type Wheel=Placed&{teeth:number;module?:number;pulley:boolean;pitch:number;outer:number;lego:boolean;/** Runs free on its shaft: a rotor of its own. */free?:boolean};
 /** A motor whose shaft is in a linked shaft: its flange face (z), its body below (`down`) or above it, the layer it is
  * screwed to, how far its shaft would have to move to lie on a layer, the slot direction when it drives a belt. `pad`:
  * radius of the round flange field in the plate. */
 export type Motor={key:string;on:string;part:Part;label:string;at:[number,number];face:number;down:boolean;depth:number;pad:number;layer?:string;offset?:number;slot?:[number,number];travel:number};
 /** A bearing, or a motor's flange as a node of its layer's plate (`motor`; then D/2 + rim is its flange field). */
-export type Bearing=Placed&{D:number;d:number;B:number;motor?:Motor};
+/** `hub`: no bearing but the hub of a link fixed on this shaft: a bore of the shaft's profile there (turned as the shaft
+ * stands), through the plate. */
+export type Bearing=Placed&{D:number;d:number;B:number;motor?:Motor;hub?:{profile:Profile;turn:number}};
+/** Wall of a hub round its shaft. */
+export const HUB_WALL=4;
+/** The drives and what they turn, each as factors of the drives' turns: shafts, free wheels, the joints (a link against the
+ * body it hangs on); `needs`: how far a drive turns for all joints' ranges; `lines`: said in words. */
+export type Drive={inputs:{id:string;label:string}[];shafts:Record<string,number[]>;wheels:Record<string,number[]>;joints:Record<string,number[]>;needs:Record<string,[number,number]>;lines:string[]};
 /** What a plate must keep clear of: a disc from z0 to z1, or the hull of two discs (a belt, an arm). `body`: the swing arm
  * it moves with ('' the frame). `spin`: it turns about `a` through these angles (an arm; 0 to 360: endlessly). `soft`: only
  * in the way of what moves against it (a motor's body). */
@@ -35,10 +43,10 @@ export type Obstacle={key:string;label:string;z0:number;z1:number;a:[number,numb
  * `spin`: how far it turns (else endlessly), `rate`: degrees per degree of the shaft the range is set at. */
 export type Arm=Placed&{angle:number;length:number;r0:number;r1:number;hole:number;spin?:[number,number];rate?:number;/** In a pose: the angle its range counts from. */zero?:number};
 /** A swing arm as planned: its pivot's place. */
-export type GroupPlan={id:string;name:string;pivot:string;at:[number,number];from:number;to:number;shafts:string[]};
+export type GroupPlan={id:string;name:string;pivot:string;at:[number,number];from:number;to:number;shafts:string[];/** Fast on its pivot shaft. */fixed:boolean;/** The body its pivot shaft belongs to: what it hangs on. */parent:string};
 /** How the plan looks at things from a body: what is in the way there, how far it is from a point or a shape. */
 type Bodies={groups:GroupPlan[];bodyOf(shaft:string):string;seen(body:string):Obstacle[];od(o:Obstacle,body:string,p:[number,number]):number;oa(o:Obstacle,body:string,g:Prim):number;around(o:Obstacle,body:string):{c:[number,number];r:number};name(o:Obstacle,body:string):string;
- /** The way a shaft takes through a plate of this body: none (it stands still there), an arc, or 'x' (two swing arms). */arc(shaft:string,body:string):Sweep|undefined|'x';relative(from:string,to:string):Sweep[]};
+ /** The way a shaft takes through a plate of this body: none (it stands still there), an arc, or 'x' (two swing arms). */arc(shaft:string,body:string):Sweep|undefined|'x';relative(from:string,to:string):Sweep[];chain(body:string):GroupPlan[];/** A shaft's profile at a height, and how it is turned as it stands. */section(shaft:string,z:number):Profile|undefined;turnOf(shaft:string):number};
 export type ShaftInWorld={id:string;label:string;at:[number,number];z0:number;z1:number;plan:ShaftPlan;/** Its round pieces in the world: z0..z1 and radius. */pieces:{z0:number;z1:number;r:number}[]};
 export type Mesh={a:string;b:string;ratio:number};
 /** `tension`: a motor's slots move the centre distance within `range` (lengths at its ends); `fit`: the centre distance
@@ -54,14 +62,14 @@ export type LayerPlan={motor?:string;/** The swing arm it belongs to, '' the fra
  * out to this radius first, so it never falls apart or keeps only a sliver there. `open`: a slot of the hole's width from
  * it out of the plate (`dir`, `length` from the centre), where something on that shaft could not pass the hole when the
  * plate goes on. */holes:Hole[];parts:number};
-export type Hole={on:string;r:number;ring?:number;open?:{dir:[number,number];length:number};/** The shaft moves through the plate along this arc: the hole is a slot along it. */arc?:Sweep};
+export type Hole={on:string;r:number;ring?:number;open?:{dir:[number,number];length:number};/** The shaft moves through the plate along this arc: the hole is a slot along it. */arc?:Sweep;/** In a pose: where the arc starts, moved with the plate. */base?:[number,number]};
 export type Issue={level:'fehler'|'warnung'|'hinweis';message:string;ref?:string};
 /** A bolt through all plates: where, the eye round it, which bearing of each layer its eye is joined to. */
 export type Bolt={/** Through the plates of this body ('' the frame). */body:string;at:[number,number];eye:number;hole:number;auto:boolean;attach:Record<string,string>;/** Set by hand onto a wheel, bearing or shaft. */hit?:boolean};
 /** Printed columns between two layers, one per bolt. */
 export type Columns={from:string;to:string;z0:number;z1:number;body:string};
 export type BomLine={what:string;count:number;note?:string};
-export type GearPlan={arms:Arm[];groups:GroupPlan[];/** Degrees every shaft turns per degree of the shaft the range is set at, where that is known. */turnRate:Record<string,number>;motors:Motor[];shafts:ShaftInWorld[];wheels:Wheel[];bearings:Bearing[];obstacles:Obstacle[];meshes:Mesh[];belts:BeltPlan[];rates:Record<string,number>;layers:LayerPlan[];bolts:Bolt[];columns:Columns[];screw?:{length:number;what:string};bom:BomLine[];issues:Issue[]};
+export type GearPlan={drive:Drive;arms:Arm[];groups:GroupPlan[];/** Degrees every shaft turns per degree of the shaft the range is set at, where that is known. */turnRate:Record<string,number>;motors:Motor[];shafts:ShaftInWorld[];wheels:Wheel[];bearings:Bearing[];obstacles:Obstacle[];meshes:Mesh[];belts:BeltPlan[];rates:Record<string,number>;layers:LayerPlan[];bolts:Bolt[];columns:Columns[];screw?:{length:number;what:string};bom:BomLine[];issues:Issue[]};
 
 const n=(x:number)=>String(+x.toFixed(2)).replace('.',',');
 const mm=(x:number)=>`${n(x)} mm`;
@@ -73,7 +81,10 @@ export function hullDistance(p:[number,number],a:[number,number],ra:number,b:[nu
 const reach=(o:Obstacle)=>o.spin&&o.b?Math.max(o.ra,dist(o.a,o.b)+(o.rb??0)):o.ra;
 /** A shape seen from a body it moves against: swept through the motions between them, one after the other. */
 function sweepPrims(g:Capsule,rel:Sweep[]):Prim[]{if(!rel.length)return [g];if(rel.length===1)return [{...g,sweep:rel[0]}];
- const w=rel[0],far=Math.max(dist(g.a,w.c)+g.ra,dist(g.b,w.c)+g.rb),k=Math.max(1,Math.min(120,Math.ceil((w.to-w.from)*Math.PI/180*far/1.5))),out:Prim[]=[];for(let i=0;i<=k;i++)out.push({...turned(g,w.c,w.from+(w.to-w.from)*i/k),sweep:rel[1]});return out;}
+ // All motions but the last stepped through, the last swept exactly; coarser the more there are.
+ let shapes:Capsule[]=[g];const most=rel.length>2?16:120;
+ for(const w of rel.slice(0,-1)){const next:Capsule[]=[];for(const h of shapes){const far=Math.max(dist(h.a,w.c)+h.ra,dist(h.b,w.c)+h.rb),k=Math.max(1,Math.min(most,Math.ceil((w.to-w.from)*Math.PI/180*far/1.5)));for(let i=0;i<=k;i++)next.push(turned(h,w.c,w.from+(w.to-w.from)*i/k));}shapes=next;}
+ return shapes.map(h=>({...h,sweep:rel.at(-1)!}));}
 
 export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):GearPlan{
  const issues:Issue[]=[],shafts:ShaftInWorld[]=[],wheels:Wheel[]=[],bearings:Bearing[]=[],obstacles:Obstacle[]=[],motors:Motor[]=[],s=doc.settings,arms:Arm[]=[],groups:GroupPlan[]=[];
@@ -81,9 +92,17 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
  const taken=new Set<string>();
  for(const g of doc.groups??[]){const name=g.name||'Schwinge',pv=doc.shafts.find(x=>x.id===g.pivot);if(!pv){issues.push({level:'fehler',message:`${name}: ihre Drehachse fehlt`,ref:`schwinge:${g.id}`});continue;}
   const mine=g.shafts.filter(id=>doc.shafts.some(x=>x.id===id));if(mine.some(id=>taken.has(id)))issues.push({level:'fehler',message:`${name}: eine ihrer Wellen gehört schon zu einer anderen Schwinge`,ref:`schwinge:${g.id}`});
-  groups.push({id:g.id,name,pivot:g.pivot,at:pv.at,from:g.from,to:g.to,shafts:mine.filter(id=>!taken.has(id))});for(const id of mine)taken.add(id);}
- for(const g of groups)for(const o of groups)if(o!==g&&o.shafts.includes(g.pivot))issues.push({level:'fehler',message:`${g.name}: ihre Drehachse sitzt auf ${o.name}; eine Schwinge auf einer Schwinge geht nicht`,ref:`schwinge:${g.id}`});
+  groups.push({id:g.id,name,pivot:g.pivot,at:pv.at,from:g.from,to:g.to,fixed:!!g.fixed,parent:'',shafts:mine.filter(id=>!taken.has(id))});for(const id of mine)taken.add(id);}
  const bodyOf=(id:string)=>groups.find(g=>g.shafts.includes(id))?.id??'',moving=(id:string)=>{const g=groups.find(v=>v.id===id);return !!g&&g.to-g.from>1e-9;};
+ // A swing arm hangs on the body its pivot shaft belongs to: links in a chain, which must end at the frame.
+ for(const g of groups)g.parent=bodyOf(g.pivot)===g.id?'':bodyOf(g.pivot);
+ for(const g of groups){const seen=new Set([g.id]);for(let p=g.parent;p;p=groups.find(v=>v.id===p)!.parent){if(seen.has(p)){issues.push({level:'fehler',message:`${g.name}: ihre Drehachse sitzt auf einem Glied, das an ihr selbst hängt`,ref:`schwinge:${g.id}`});g.parent='';break;}seen.add(p);}}
+ /** A body and the bodies it hangs on, innermost first (the frame is not in it). */
+ const chain=(body:string):GroupPlan[]=>{const out:GroupPlan[]=[];for(let g=groups.find(v=>v.id===body);g;g=groups.find(v=>v.id===g!.parent))out.push(g);return out;};
+ /** How a thing of body `from` moves as seen from body `to`: out of its links up to where the two chains meet, then
+  * backwards into the other's. Each motion about the pivot as drawn. */
+ const relative=(from:string,to:string):Sweep[]=>{if(from===to)return [];const a=chain(from),b=chain(to);while(a.length&&b.length&&a.at(-1)===b.at(-1)){a.pop();b.pop();}
+  return [...a.filter(g=>moving(g.id)).map(g=>({c:g.at,from:g.from,to:g.to})),...b.reverse().filter(g=>moving(g.id)).map(g=>({c:g.at,from:-g.to,to:-g.from}))];};
  for(const p of doc.shafts){const f=files[p.shaft];if(!f){issues.push({level:'fehler',message:`Welle ${p.id}: die Datei im Wellen-Generator fehlt`,ref:p.id});continue;}
   const body=bodyOf(p.id),plan=planShaft(f.doc),L=f.doc.length,span=(x0:number,x1:number):[number,number]=>p.flip?[p.z+L-x1,p.z+L-x0]:[p.z+x0,p.z+x1];
   const pieces=plan.sections.map(c=>{const [z0,z1]=span(c.x0,c.x1);return {z0,z1,r:outer(c.profile)/2};});
@@ -91,7 +110,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
   if(plan.issues.some(i=>i.level==='fehler'))issues.push({level:'warnung',message:`${f.name}: die Welle selbst hat noch Fehler (im Wellen-Generator ansehen)`,ref:p.id});
   for(const t of plan.placed){const [z0,z1]=span(t.x0,t.x1),base={key:itemKey({on:p.id,item:t.id}),on:p.id,item:t.id,label:`${t.part.short} auf ${f.name}`,at:p.at,z0,z1};
    if(t.part.group==='Lager'){bearings.push({...base,D:t.part.outer,d:outer(t.bore),B:t.x1-t.x0});continue;}
-   if(t.part.teeth){const pulley=!!t.part.pulley,pitch=pulley?t.part.teeth/Math.PI:(t.part.module??1)*t.part.teeth/2;wheels.push({...base,teeth:t.part.teeth,...(t.part.module?{module:t.part.module}:{}),pulley,pitch,outer:t.part.outer/2,lego:t.part.group==='LEGO-Zahnräder'});}
+   if(t.part.teeth){const pulley=!!t.part.pulley,pitch=pulley?t.part.teeth/Math.PI:(t.part.module??1)*t.part.teeth/2;wheels.push({...base,teeth:t.part.teeth,...(t.part.module?{module:t.part.module}:{}),pulley,pitch,outer:t.part.outer/2,lego:t.part.group==='LEGO-Zahnräder',...(t.free?{free:true}:{})});}
    if(t.arm){// Along the shaft x becomes z: an arm at 0° (the shaft's +z) points to −x in the plane; flipped, mirrored.
     const deg=(p.turn??0)+(p.flip?180-t.arm.angle:180+t.arm.angle),end:[number,number]=[p.at[0]+t.arm.length*Math.cos(deg*Math.PI/180),p.at[1]+t.arm.length*Math.sin(deg*Math.PI/180)];
     arms.push({...base,angle:deg,length:t.arm.length,r0:t.arm.hub/2,r1:t.arm.width/2,hole:t.arm.hole});obstacles.push({key:base.key,label:base.label,z0,z1,a:p.at,ra:t.arm.hub/2,b:end,rb:t.arm.width/2,on:[p.id],body,spin:{from:0,to:360}});continue;}
@@ -109,11 +128,13 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
   if(a.module===b.module&&Math.abs(c-want)<.05){meshes.push({a:a.key,b:b.key,ratio:-a.teeth/b.teeth});if(a.lego!==b.lego)issues.push({level:'hinweis',message:`${a.label} kämmt mit ${b.label}: LEGO und gedrucktes Rad gemischt, Modul 1 bei beiden, Zahnform prüfen`,ref:b.on});continue;}
   if(a.module===b.module&&Math.abs(c-want)<1)issues.push({level:'warnung',message:`${a.label} und ${b.label} kämmen fast: Abstand ${mm(c)}, Eingriff bei ${mm(want)}`,ref:b.on});
   else if(c<a.outer+b.outer-.01)issues.push({level:'fehler',message:`${a.label} und ${b.label} berühren sich, ohne zu kämmen (Abstand ${mm(c)}${a.module===b.module?`, für den Eingriff ${mm(want)}`:', anderes Modul'})`,ref:b.on});}});
- // Across a swing arm a mesh holds only round its pivot: there the distance stays. Elsewhere it holds as drawn only.
- const holds=(x:string,y:string)=>{const bx=bodyOf(x),by=bodyOf(y);return bx===by||[bx,by].every(id=>!moving(id)||[x,y].includes(groups.find(g=>g.id===id)!.pivot));};
- const swung=(x:string,y:string)=>[bodyOf(x),bodyOf(y)].filter((id,i,l)=>moving(id)&&l.indexOf(id)===i).map(id=>groups.find(g=>g.id===id)!);
+ // Across bodies a mesh holds where they only turn against each other about one of the two shafts: there the distance
+ // stays. Elsewhere it holds as drawn only.
+ const placeOf=(id:string)=>doc.shafts.find(v=>v.id===id)!.at;
+ const holds=(x:string,y:string)=>relative(bodyOf(x),bodyOf(y)).every(w=>dist(w.c,placeOf(x))<1e-6||dist(w.c,placeOf(y))<1e-6);
+ const swung=(x:string,y:string)=>{const a=chain(bodyOf(x)),b=chain(bodyOf(y));while(a.length&&b.length&&a.at(-1)===b.at(-1)){a.pop();b.pop();}return [...a,...b].filter(g=>moving(g.id));};
  /** The centre distance of two shafts over a swing arm's range: the least, the most, and the angle of the least. */
- const centres=(x:string,y:string,g:GroupPlan)=>{const px=doc.shafts.find(v=>v.id===x)!.at,py=doc.shafts.find(v=>v.id===y)!.at,sx=bodyOf(x)===g.id,sy=bodyOf(y)===g.id;let lo=Infinity,hi=-Infinity,at=0;const k=Math.max(1,Math.ceil((g.to-g.from)/.5));
+ const centres=(x:string,y:string,g:GroupPlan)=>{const px=doc.shafts.find(v=>v.id===x)!.at,py=doc.shafts.find(v=>v.id===y)!.at,sx=chain(bodyOf(x)).includes(g),sy=chain(bodyOf(y)).includes(g);let lo=Infinity,hi=-Infinity,at=0;const k=Math.max(1,Math.ceil((g.to-g.from)/.5));
   for(let i=0;i<=k;i++){const deg=g.from+(g.to-g.from)*i/k,c=dist(sx?rot(px,g.at,deg):px,sy?rot(py,g.at,deg):py);if(c<lo){lo=c;at=deg;}hi=Math.max(hi,c);}return {lo,hi,at};};
  for(const m of meshes){const a=wheel(m.a)!,b=wheel(m.b)!;if(holds(a.on,b.on))continue;const gs=swung(a.on,b.on),g=gs[0];
   issues.push({level:'warnung',message:`${a.label} kämmt mit ${b.label} nur in der gezeichneten Stellung: schwenkt ${g.name}, geht der Eingriff auf. Bleiben kann er nur um die Drehachse`,ref:b.on});
@@ -126,11 +147,50 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
   belts.push({id:bt.id,a:a.key,b:b.key,center:c,length,...(stock?{stock}:{})});
   obstacles.push({key:`riemen:${bt.id}`,label:`Riemen ${a.teeth}/${b.teeth}`,z0:Math.max(a.z0,b.z0),z1:Math.min(a.z1,b.z1),a:a.at,ra:a.outer,b:b.at,rb:b.outer,on:[a.on,b.on],body:bodyOf(a.on)===bodyOf(b.on)?bodyOf(a.on):'',belt:true});
 }
- // Speeds: per turn of the input; a loop that disagrees locks.
+ // Speeds. What turns: every shaft, every wheel running free on its shaft, every swing arm. Each turn is a sum of the
+ // drives' turns: a driven shaft turns against the body its motor sits on, a free swing arm against the body it hangs on,
+ // a fixed one with its pivot shaft. A mesh or belt couples two rotors as seen from the body that carries both axes (so
+ // a wheel on a link rolls on the one on its pivot when the link swings). A loop that disagrees locks.
  const rates:Record<string,number>={},input=doc.input??shafts[0]?.id;
- const edges=[...meshes.flatMap(m=>{const a=wheel(m.a)!,b=wheel(m.b)!;return [{a:a.on,b:b.on,k:-a.teeth/b.teeth},{a:b.on,b:a.on,k:-b.teeth/a.teeth}];}),...belts.flatMap(bt=>{const a=wheel(bt.a)!,b=wheel(bt.b)!;return [{a:a.on,b:b.on,k:a.teeth/b.teeth},{a:b.on,b:a.on,k:b.teeth/a.teeth}];})];
- if(input&&shafts.some(x=>x.id===input)){rates[input]=1;const open=[input];let locked=false;while(open.length){const x=open.pop()!;for(const e of edges){if(e.a!==x)continue;const v=rates[x]*e.k;if(rates[e.b]===undefined){rates[e.b]=v;open.push(e.b);}else if(Math.abs(rates[e.b]-v)>1e-9*Math.max(1,Math.abs(v)))locked=true;}}
-  if(locked)issues.push({level:'fehler',message:'Das Getriebe klemmt: ein Kreis aus Rädern und Riemen widerspricht sich'});}
+ const edges=[...meshes.flatMap(m=>{const a=wheel(m.a)!,b=wheel(m.b)!;return a.free||b.free?[]:[{a:a.on,b:b.on,k:-a.teeth/b.teeth},{a:b.on,b:a.on,k:-b.teeth/a.teeth}];}),...belts.flatMap(bt=>{const a=wheel(bt.a)!,b=wheel(bt.b)!;return a.free||b.free?[]:[{a:a.on,b:b.on,k:a.teeth/b.teeth},{a:b.on,b:a.on,k:b.teeth/a.teeth}];})];
+ const rotor=(w:Wheel)=>w.free?`rad:${w.key}`:w.on,carrier=(a:Wheel,b:Wheel)=>chain(bodyOf(a.on)).length>=chain(bodyOf(b.on)).length?bodyOf(a.on):bodyOf(b.on);
+ const couples=[...meshes.map(m=>{const a=wheel(m.a)!,b=wheel(m.b)!;return {a:rotor(a),b:rotor(b),k:-a.teeth/b.teeth,c:carrier(a,b)};}),...belts.map(bt=>{const a=wheel(bt.a)!,b=wheel(bt.b)!;return {a:rotor(a),b:rotor(b),k:a.teeth/b.teeth,c:carrier(a,b)};})];
+ // The drives there may be: the input first, then every motor's shaft, then every swing arm that swings freely.
+ const cands:{id:string;label:string;group?:string}[]=[];
+ if(input&&shafts.some(x=>x.id===input))cands.push({id:input,label:shafts.find(x=>x.id===input)!.label});
+ for(const m of motors)if(!cands.some(c=>c.id===m.on))cands.push({id:m.on,label:shafts.find(x=>x.id===m.on)?.label??m.label});
+ for(const g of groups)if(!g.fixed&&moving(g.id))cands.push({id:`schwinge:${g.id}`,label:`${g.name} von Hand`,group:g.id});
+ const unit=(i:number)=>cands.map((_,k)=>k===i?1:0),plus=(u:number[],v:number[],f=1)=>u.map((x,i)=>x+f*v[i]),alike=(u:number[],v:number[])=>u.every((x,i)=>Math.abs(x-v[i])<=1e-9*Math.max(1,Math.abs(x),Math.abs(v[i])));
+ const turns=new Map<string,number[]>([['körper:',cands.map(()=>0)]]),driving=new Set<number>();let locked=false;
+ const put=(k:string,v:number[])=>{const had=turns.get(k);if(!had){turns.set(k,v);return true;}if(!alike(had,v))locked=true;return false;};
+ const settle=()=>{for(let pass=0,changed=true;changed&&pass<400;pass++){changed=false;
+  for(const g of groups){const key=`körper:${g.id}`,par=turns.get(`körper:${g.parent}`),me=turns.get(key);
+   if(g.fixed){const sh=turns.get(g.pivot);if(sh&&!me)changed=put(key,sh)||changed;else if(me&&!sh)changed=put(g.pivot,me)||changed;else if(sh&&me&&!alike(sh,me))locked=true;}
+   else if(par&&!me){const i=cands.findIndex(x=>x.group===g.id);if(i>=0)driving.add(i);changed=put(key,i>=0?plus(par,unit(i)):par)||changed;}}
+  for(const e of couples){const A=turns.get(e.a),Bv=turns.get(e.b),C=turns.get(`körper:${e.c}`);
+   if(A&&Bv&&C){if(!alike(Bv,plus(C,plus(A,C,-1).map(x=>x*e.k))))locked=true;}
+   else if(A&&C)changed=put(e.b,plus(C,plus(A,C,-1).map(x=>x*e.k)))||changed;
+   else if(Bv&&C)changed=put(e.a,plus(C,plus(Bv,C,-1).map(x=>x/e.k)))||changed;
+   // Both wheels driven, the link between them free to follow: a differential.
+   else if(A&&Bv&&Math.abs(1-e.k)>1e-9)changed=put(`körper:${e.c}`,plus(Bv,A,-e.k).map(x=>x/(1-e.k)))||changed;}}};
+ settle();
+ // A shaft with a drive that nothing else turns yet is a drive of its own, turning against the body its motor sits on.
+ cands.forEach((c,i)=>{if(c.group||turns.has(c.id))return;const body=turns.get(`körper:${bodyOf(c.id)}`)??cands.map(()=>0);driving.add(i);turns.set(c.id,plus(body,unit(i)));settle();});
+ if(locked)issues.push({level:'fehler',message:'Das Getriebe klemmt: ein Kreis aus Rädern und Riemen widerspricht sich'});
+ for(const x of shafts){const v=turns.get(x.id);if(v&&(Math.abs(v[0])>1e-12||x.id===input))rates[x.id]=v[0];}
+ // What the drives do to the joints: every link's turn against the body it hangs on, and how far each drive must turn for the ranges.
+ const used=[...driving].sort((a,b)=>a-b),pick=(v?:number[])=>v?used.map(i=>v[i]):undefined,drive:Drive={inputs:used.map(i=>({id:cands[i].id,label:cands[i].label})),shafts:{},wheels:{},joints:{},needs:{},lines:[]};
+ for(const x of shafts){const v=pick(turns.get(x.id));if(v)drive.shafts[x.id]=v;}for(const w of wheels)if(w.free){const v=pick(turns.get(rotor(w)));if(v)drive.wheels[w.key]=v;}
+ for(const g of groups){const me=turns.get(`körper:${g.id}`),par=turns.get(`körper:${g.parent}`);if(me&&par)drive.joints[g.id]=pick(plus(me,par,-1))!;
+  else if(g.fixed&&moving(g.id))issues.push({level:'warnung',message:`${g.name} sitzt fest auf ${shafts.find(x=>x.id===g.pivot)?.label??'ihrer Welle'}, aber nichts treibt diese Welle: ein Motor oder ein Rad an einem Antrieb fehlt`,ref:`schwinge:${g.id}`});}
+ {const sum=(v:number[])=>{const t=v.map((x,i)=>({x,i})).filter(q=>Math.abs(q.x)>1e-9);return t.length?t.map((q,k)=>`${k?(q.x<0?'− ':'+ '):(q.x<0?'−':'')}${n(Math.abs(q.x))} × ${drive.inputs[q.i].label}`).join(' '):'steht';};
+  if(drive.inputs.length>1||groups.length){for(const w of wheels)if(w.free&&drive.wheels[w.key])drive.lines.push(`${w.label} (Losrad) dreht ${sum(drive.wheels[w.key])}`);
+   for(const g of groups){const v=drive.joints[g.id];if(!v)continue;const many=v.filter(x=>Math.abs(x)>1e-9).length>1;drive.lines.push(`${g.name} schwenkt ${sum(v)}${many?' (gekoppelt: die Antriebe wirken zusammen)':''}`);}}
+  // How far every drive turns for all joints' ranges: the joints as a square system of the drives that move them.
+  const js=groups.filter(g=>g.fixed&&moving(g.id)&&drive.joints[g.id]?.some(x=>Math.abs(x)>1e-9)),ks=drive.inputs.map((_,i)=>i).filter(i=>js.some(g=>Math.abs(drive.joints[g.id][i])>1e-9));
+  if(js.length&&js.length===ks.length){const M=js.map(g=>ks.map(i=>drive.joints[g.id][i])),size=js.length,A=M.map((r,i)=>[...r,...js.map((_,k)=>k===i?1:0)]);let ok=true;
+   for(let c=0;c<size&&ok;c++){let p=c;for(let r=c+1;r<size;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;if(Math.abs(A[p][c])<1e-9){ok=false;break;}[A[c],A[p]]=[A[p],A[c]];const d=A[c][c];A[c]=A[c].map(x=>x/d);for(let r=0;r<size;r++)if(r!==c){const f=A[r][c];A[r]=A[r].map((x,k)=>x-f*A[c][k]);}}
+   if(ok)ks.forEach((i,row)=>{let lo=0,hi=0;js.forEach((g,col)=>{const f=A[row][size+col],a=f*g.from,b=f*g.to;lo+=Math.min(a,b);hi+=Math.max(a,b);});drive.needs[drive.inputs[i].id]=[lo,hi];drive.lines.push(`${drive.inputs[i].label} dreht für alle Bereiche ${n(lo)}° bis ${n(hi)}°`);});}}
  // How far every shaft turns: the range set at one shaft, through the ratios to those it drives without a moving swing
  // arm in between; all others endlessly.
  const turnRate:Record<string,number>={};
@@ -138,7 +198,6 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
  for(const a of arms){const k=turnRate[a.on],o=obstacles.find(x=>x.key===a.key)!;if(k===undefined||!doc.turn){issues.push({level:'hinweis',message:`${a.label} dreht endlos (voller Kreis). Schwenkt er nur: Drehbereich an einer Welle setzen`,ref:a.on});continue;}
   const lo=Math.min(k*doc.turn.from,k*doc.turn.to),hi=Math.max(k*doc.turn.from,k*doc.turn.to);a.rate=k;if(hi-lo<360-1e-9){a.spin=[lo,hi];o.spin={from:lo,to:hi};}}
  // Every body looks at the others' things as what they sweep against it.
- const relative=(from:string,to:string):Sweep[]=>{if(from===to)return [];const out:Sweep[]=[],gf=groups.find(g=>g.id===from),gt=groups.find(g=>g.id===to);if(gf&&moving(gf.id))out.push({c:gf.at,from:gf.from,to:gf.to});if(gt&&moving(gt.id))out.push({c:gt.at,from:-gt.to,to:-gt.from});return out;};
  const views=new Map<string,Prim[]>();
  const view=(o:Obstacle,body:string):Prim[]=>{const key=`${o.key}@${body}`,had=views.get(key);if(had)return had;const base:Capsule={a:o.a,ra:o.ra,b:o.b??o.a,rb:o.rb??o.ra},rel=relative(o.body,body);let out:Prim[];
   if(!o.spin)out=sweepPrims(base,rel);
@@ -147,7 +206,8 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
   else if(rel.length===1&&dist(o.a,rel[0].c)<1e-6)out=[{...base,sweep:{c:o.a,from:o.spin.from+rel[0].from,to:o.spin.to+rel[0].to}}];
   else out=sweepPrims({a:o.a,ra:reach(o),b:o.a,rb:reach(o)},rel);
   views.set(key,out);return out;};
- const B:Bodies={groups,bodyOf,relative,seen:body=>obstacles.filter(o=>!(o.soft&&o.body===body)),od:(o,body,p)=>Math.min(...view(o,body).map(g=>primDistance(p,g))),oa:(o,body,g)=>Math.min(...view(o,body).map(v=>primsApart(v,g))),
+ const B:Bodies={groups,bodyOf,relative,chain,turnOf:id=>doc.shafts.find(v=>v.id===id)?.turn??0,
+  section:(id,z)=>{const p=doc.shafts.find(v=>v.id===id),x=shafts.find(v=>v.id===id);if(!p||!x)return undefined;const at=p.flip?x.z1-z:z-p.z;return x.plan.sections.find(c=>at>=c.x0-eps&&at<=c.x1+eps)?.profile;},seen:body=>obstacles.filter(o=>!(o.soft&&o.body===body)),od:(o,body,p)=>Math.min(...view(o,body).map(g=>primDistance(p,g))),oa:(o,body,g)=>Math.min(...view(o,body).map(v=>primsApart(v,g))),
   around:(o,body)=>{const v=view(o,body);if(v.length===1)return bound(v[0]);const c=v[0].sweep!.c;return {c,r:Math.max(...v.map(g=>Math.max(dist(g.a,c)+g.ra,dist(g.b,c)+g.rb)))};},
   name:(o,body)=>o.label+(relative(o.body,body).length?' beim Schwenken':o.spin?' beim Drehen':''),
   arc:(id,body)=>{const at=doc.shafts.find(v=>v.id===id)!.at,rel=relative(bodyOf(id),body).filter(w=>dist(at,w.c)>1e-6);return rel.length>1?'x':rel[0];}};
@@ -195,7 +255,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
  // ---- What moves must get past everything it moves against, in every height they share. ----
  const said=new Set<string>(),hit=(i:Issue)=>{if(!said.has(i.message)){said.add(i.message);issues.push(i);}};
  const meshed=new Set(meshes.flatMap(m=>[`${m.a}|${m.b}`,`${m.b}|${m.a}`]));
- const things:Obstacle[]=[...obstacles,...bearings.filter(b=>!b.motor).map(b=>({key:`lager:${b.key}`,label:b.label,z0:b.z0,z1:b.z1,a:b.at,ra:b.D/2,on:[b.on],body:bodyOf(b.on)})),
+ const things:Obstacle[]=[...obstacles,...bearings.filter(b=>!b.motor&&!b.hub).map(b=>({key:`lager:${b.key}`,label:b.label,z0:b.z0,z1:b.z1,a:b.at,ra:b.D/2,on:[b.on],body:bodyOf(b.on)})),
   ...shafts.flatMap(x=>x.pieces.map((q,k)=>({key:`stueck:${x.id}/${k}`,label:x.label,z0:q.z0,z1:q.z1,a:x.at,ra:q.r,on:[x.id],body:bodyOf(x.id)})))];
  const own=(o:Obstacle):Prim=>({a:o.a,ra:o.ra,b:o.b??o.a,rb:o.rb??o.ra,...(o.spin?{sweep:{c:o.a,from:o.spin.from,to:o.spin.to}}:{})});
  things.forEach((x,i)=>{for(const y of things.slice(i+1)){if(x.on.some(id=>y.on.includes(id))||overlap(x.z0,x.z1,y.z0,y.z1)<=eps||meshed.has(`${x.key}|${y.key}`))continue;
@@ -229,7 +289,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>):G
  for(const bp of belts)add(`Zahnriemen GT2 6 mm, ${bp.stock?`${bp.stock} mm geschlossen`:`${n(bp.length)} mm`}`);
  for(const x of shafts)add(`${x.label} (Wellen-Generator, Teile dort in der Stückliste)`);
  for(const m of motors)add(m.part.label,1,m.layer?'mit 4 Schrauben M3 am Flansch':'noch an keiner Platte');
- return {arms,groups,turnRate,motors,shafts,wheels,bearings,obstacles,meshes,belts,rates,layers,bolts,columns,...(screw?{screw}:{}),bom,issues};
+ return {drive,arms,groups,turnRate,motors,shafts,wheels,bearings,obstacles,meshes,belts,rates,layers,bolts,columns,...(screw?{screw}:{}),bom,issues};
 }
 
 /** Layers: proposed from the bearings' heights (bearings whose spans touch share one), or the ones set by hand. Then
@@ -240,11 +300,11 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
  type Spec={z0:number;z1:number;list:Bearing[];body:string;given?:Layer;motor?:Motor};
  const specs:Spec[]=[],claimed=new Set<Bearing>();
  /** May a bearing lie in a plate of this body: on one of its shafts, or on its pivot (the swing arm hangs on it there). */
- const fits=(b:Bearing,body:string)=>{const own=B.bodyOf(b.on);return own===body||(body?B.groups.find(g=>g.id===body)?.pivot===b.on:B.groups.some(g=>g.id===own&&g.pivot===b.on));};
+ const fits=(b:Bearing,body:string)=>{const own=B.bodyOf(b.on),g=B.groups.find(v=>v.id===body),mine=B.groups.find(v=>v.id===own);return own===body||!!g&&!g.fixed&&g.pivot===b.on||!!mine&&mine.pivot===b.on&&mine.parent===body;};
  // A swing arm without bearings of its own that carries a motor: the motor's plate, with the pivot's bearing in it.
  const motorSpecs:Spec[]=[];
  for(const g of B.groups){if(bearings.some(b=>B.bodyOf(b.on)===g.id&&b.on!==g.pivot)||given?.some(l=>l.group===g.id))continue;
-  for(const m of motors){if(B.bodyOf(m.on)!==g.id)continue;const t=s.motorPlate,lo=m.down?m.face:m.face-t,hi=lo+t,list=bearings.filter(b=>b.on===g.pivot&&!claimed.has(b)&&overlap(b.z0,b.z1,lo,hi)>eps&&(m.down?b.z0>=m.face-eps:b.z1<=m.face+eps));
+  for(const m of motors){if(B.bodyOf(m.on)!==g.id)continue;const t=s.motorPlate,lo=m.down?m.face:m.face-t,hi=lo+t,list=bearings.filter(b=>!g.fixed&&b.on===g.pivot&&!claimed.has(b)&&overlap(b.z0,b.z1,lo,hi)>eps&&(m.down?b.z0>=m.face-eps:b.z1<=m.face+eps));
    for(const b of list)claimed.add(b);motorSpecs.push({z0:Math.min(lo,...list.map(b=>b.z0)),z1:Math.max(hi,...list.map(b=>b.z1)),list,body:g.id,motor:m});}}
  if(given?.length){const lists:Bearing[][]=given.map(()=>[]),bodyFor=(l:Layer)=>l.group&&B.groups.some(g=>g.id===l.group)?l.group:'';
   // A swing arm's layers take their bearings first: what is left on its pivot holds it in the frame.
@@ -252,11 +312,13 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   given.forEach((l,i)=>specs.push({z0:l.z0,z1:l.z1,list:lists[i],body:bodyFor(l),given:l}));
   for(const b of bearings)if(!claimed.has(b))issues.push({level:'warnung',message:`${b.label} liegt in keiner Schicht und wird nicht gehalten`,ref:b.on});}
  else{given=undefined;const cluster=(from:Bearing[],body:string)=>{const out:Spec[]=[];for(const b of [...from].sort((a,c)=>mid(a)-mid(c))){const g=out.at(-1);if(g&&b.z0<=g.z1+.5){g.z1=Math.max(g.z1,b.z1);g.z0=Math.min(g.z0,b.z0);g.list.push(b);}else out.push({z0:b.z0,z1:b.z1,list:[b],body});}return out;};
-  const swing:Spec[]=[];
-  for(const g of B.groups){const own=bearings.filter(b=>B.bodyOf(b.on)===g.id&&b.on!==g.pivot),cs=cluster(own,g.id);for(const b of own)claimed.add(b);
-   for(const c of cs)for(const b of bearings)if(b.on===g.pivot&&!claimed.has(b)&&b.z0<=c.z1+.5&&b.z1>=c.z0-.5){c.list.push(b);c.z0=Math.min(c.z0,b.z0);c.z1=Math.max(c.z1,b.z1);claimed.add(b);}
+  const swing:Spec[]=[],order=new Map(B.groups.map((g,k)=>[g.id,k]));
+  for(const g of [...B.groups].sort((x,y)=>B.chain(y.id).length-B.chain(x.id).length)){const own=bearings.filter(b=>B.bodyOf(b.on)===g.id&&b.on!==g.pivot&&!claimed.has(b)),cs=cluster(own,g.id);for(const b of own)claimed.add(b);
+   // A link that swings freely hangs on the pivot's bearings in its heights; a fixed one gets a hub there.
+   if(!g.fixed)for(const c of cs)for(const b of bearings)if(b.on===g.pivot&&!claimed.has(b)&&b.z0<=c.z1+.5&&b.z1>=c.z0-.5){c.list.push(b);c.z0=Math.min(c.z0,b.z0);c.z1=Math.max(c.z1,b.z1);claimed.add(b);}
    swing.push(...cs);}
-  specs.push(...cluster(bearings.filter(b=>!claimed.has(b)),''),...swing);}
+  // Links are clustered innermost first (each takes its bearings before the one it hangs on), but listed as set up.
+  specs.push(...cluster(bearings.filter(b=>!claimed.has(b)),''),...swing.sort((x,y)=>order.get(x.body)!-order.get(y.body)!));}
  specs.push(...motorSpecs);
  const meshPairs=new Set(meshes.map(m=>{const a=wheels.find(w=>w.key===m.a)!,b=wheels.find(w=>w.key===m.b)!;return [a.on,b.on].sort().join('|');}));
  const remove=new Set((doc.webs?.remove??[]).map(k=>k.join('|'))),add=(doc.webs?.add??[]);
@@ -270,6 +332,12 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   for(const [a,b] of list.flatMap((a,k)=>list.slice(k+1).map(b=>[a,b] as const)))if(a.on===b.on)issues.push({level:'warnung',message:`${a.label} und ${b.label} liegen auf derselben Welle in ${name}`,ref:a.on});
   // Motors screwed to this layer: the flange on the plate's outer face, the body outside.
   for(const m of motors)if(!m.layer&&B.bodyOf(m.on)===body&&Math.abs((m.down?band[0]:band[1])-m.face)<.5){m.layer=id;const node:Bearing={key:m.key,on:m.on,item:'motor',label:m.label,at:m.at,z0:m.face,z1:m.face,D:2*(m.pad-rim),d:0,B:0,motor:m};list.push(node);bearings.push(node);}
+  // A link fixed on its pivot shaft: a hub with the shaft's profile there instead of a bearing; the plate turns with the shaft.
+  const link=B.groups.find(v=>v.id===body);
+  if(link?.fixed&&!list.some(b=>b.on===link.pivot)){const x=shafts.find(v=>v.id===link.pivot),profile=x&&B.section(link.pivot,(band[0]+band[1])/2);
+   if(!x||!profile||overlap(x.z0,x.z1,band[0],band[1])<band[1]-band[0]-eps)issues.push({level:'warnung',message:`${name}: ${x?.label??'die Drehachse'} reicht nicht durch die Platte von ${link.name}; die Welle dort länger machen oder die Schicht verschieben`,ref:`schwinge:${link.id}`});
+   else{const node:Bearing={key:`nabe:${id}`,on:link.pivot,item:'nabe',label:`Nabe von ${link.name} auf ${x.label}`,at:x.at,z0:band[0],z1:band[1],D:outer(profile)+2*HUB_WALL,d:outer(profile),B:band[1]-band[0],hub:{profile,turn:B.turnOf(link.pivot)}};list.push(node);bearings.push(node);
+    if(profile.kind==='rund')issues.push({level:'hinweis',message:`${name}: ${link.name} sitzt auf rundem ${profileLabel(profile)} von ${x.label}; eine Madenschraube M3 in der Nabe klemmt sie (Kernloch im Teil). Sicherer: dort im Wellen-Editor einen Abschnitt von Hand als D, Kreuz oder Sechskant setzen`,ref:`schwinge:${link.id}`});}}
   // Webs: meshing shafts first (their distance must hold), then the shortest that join everything (Kruskal).
   const parent=new Map(list.map(b=>[b.key,b.key])),find=(k:string):string=>{const p=parent.get(k)!;if(p===k)return k;const r=find(p);parent.set(k,r);return r;},join=(a:string,b:string)=>{const x=find(a),y=find(b);if(x===y)return false;parent.set(x,y);return true;};
   const pairs=list.flatMap((a,k)=>list.slice(k+1).map(b=>({a,b,c:dist(a.at,b.at),forced:meshPairs.has([a.on,b.on].sort().join('|'))}))).sort((x,y)=>Number(y.forced)-Number(x.forced)||x.c-y.c);
@@ -284,7 +352,7 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
   // What the plate hits: rings and webs against wheels, pulleys, sleeves and belts in the band's heights.
   const at=(k:string)=>list.find(b=>b.key===k)!;
   for(const o of seen){if(overlap(o.z0,o.z1,band[0],band[1])<=eps)continue;
-   for(const b of list){if(o.on.includes(b.on)&&!o.belt){if(o.spin){issues.push({level:'fehler',message:`${name}: ${o.label} dreht in der Höhe der Platte um ${b.label}; über oder unter die Schicht setzen`,ref:b.on});continue;}if(o.ra+s.clearance>(b.motor?(b.motor.part.pilot??0)/2:(o.z0+o.z1)/2<(b.z0+b.z1)/2?(lips[0]?b.D/2-s.lipIn:b.D/2):(lips[1]?b.D/2-s.lipIn:b.D/2))+eps&&!(b.motor&&(b.motor.down?o.z0>=band[1]-eps:o.z1<=band[0]+eps)))issues.push({level:'fehler',message:`${name}: ${o.label} sitzt zu nah am Lager ${b.label}, die Platte reicht ${mm(s.lip)} über das Lager (Bord); Abstand oder Distanzhülse nötig`,ref:b.on});continue;}const c=B.od(o,body,b.at);if(c<ring(b)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um ${b.label} trifft ${B.name(o,body)}`,ref:b.on});}}
+   for(const b of list){if(o.on.includes(b.on)&&!o.belt){if(o.spin){issues.push({level:'fehler',message:`${name}: ${o.label} dreht in der Höhe der Platte um ${b.label}; über oder unter die Schicht setzen`,ref:b.on});continue;}if(o.ra+s.clearance>(b.hub?b.d/2:b.motor?(b.motor.part.pilot??0)/2:(o.z0+o.z1)/2<(b.z0+b.z1)/2?(lips[0]?b.D/2-s.lipIn:b.D/2):(lips[1]?b.D/2-s.lipIn:b.D/2))+eps&&!(b.motor&&(b.motor.down?o.z0>=band[1]-eps:o.z1<=band[0]+eps)))issues.push({level:'fehler',message:`${name}: ${o.label} sitzt zu nah am Lager ${b.label}, die Platte reicht ${mm(s.lip)} über das Lager (Bord); Abstand oder Distanzhülse nötig`,ref:b.on});continue;}const c=B.od(o,body,b.at);if(c<ring(b)+s.clearance-eps)issues.push({level:'fehler',message:`${name}: der Ring um ${b.label} trifft ${B.name(o,body)}`,ref:b.on});}}
   // Webs against what is in the band's heights: straight, or as the user chose round or under/over it.
   const inBand=seen.filter(o=>overlap(o.z0,o.z1,band[0],band[1])>eps),route=doc.webs?.route??{};
   for(const w of webs){const a=at(w.a),b=at(w.b),mine=(o:Obstacle)=>o.on.includes(a.on)||o.on.includes(b.on),hits=(segs:{a:[number,number];ra:number;b:[number,number];rb:number}[],z?:[number,number])=>inBand.filter(o=>!mine(o)&&(!z||overlap(o.z0,o.z1,z[0],z[1])>eps)&&segs.some(g=>B.oa(o,body,g)<s.clearance-eps));

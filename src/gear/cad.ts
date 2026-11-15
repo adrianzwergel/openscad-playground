@@ -6,12 +6,12 @@
 // plate keep OpenCascade's 3D booleans (which leak a little) to the pockets.
 import {draw,drawCircle,makeCylinder,makeBox} from 'replicad';
 import type {Drawing,Shape3D} from 'replicad';
-import {buildParts} from '../shaft/cad.ts';
+import {buildParts,profileDrawing} from '../shaft/cad.ts';
 import type {CadPart} from '../shaft/cad.ts';
 import type {GearDoc} from './model.ts';
 import type {GearPlan,LayerPlan,ShaftFile} from './plan.ts';
 import {tangents} from './draw.ts';
-import {rot} from './sweep.ts';
+import {rot,carried,links} from './sweep.ts';
 import type {Sweep,Pose} from './sweep.ts';
 
 export type {Pose} from './sweep.ts';
@@ -45,7 +45,10 @@ function webShape(plan:GearPlan,l:LayerPlan,w:LayerPlan['webs'][number]):Drawing
 function throughHoles(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|undefined{const s=doc.settings;let holes:Drawing|undefined;const hole=(c:P,r:number)=>{const h=disc(c,r);holes=holes?holes.fuse(h):h;};
  // A motor: its pilot and screw holes, as slots along its belt so it can be moved to tension it.
  const slot=(c:P,r:number,m:{slot?:[number,number];travel:number})=>{if(!m.slot||!m.travel){hole(c,r);return;}const t=m.travel/2,a:P=[c[0]-m.slot[0]*t,c[1]-m.slot[1]*t],e:P=[c[0]+m.slot[0]*t,c[1]+m.slot[1]*t],h=hull(a,r,e,r);holes=holes?holes.fuse(h):h;};
- for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;if(b.motor){const m=b.motor;slot(b.at,(m.part.pilot??0)/2+s.hole,m);for(const h of m.part.holes)slot([b.at[0]+h.at[0],b.at[1]+h.at[1]],h.d/2+.2,m);continue;}hole(b.at,b.D/2-s.lipIn);}
+ for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;
+  // A hub: the shaft's profile through the plate, turned as the shaft stands (along the shaft x becomes z: a quarter turn).
+  if(b.hub){const d=profileDrawing(b.hub.profile,s.fit).rotate(b.hub.profile.kind==='rund'?37.3:90+b.hub.turn).translate(b.at[0],b.at[1]);holes=holes?holes.fuse(d):d;continue;}
+  if(b.motor){const m=b.motor;slot(b.at,(m.part.pilot??0)/2+s.hole,m);for(const h of m.part.holes)slot([b.at[0]+h.at[0],b.at[1]+h.at[1]],h.d/2+.2,m);continue;}hole(b.at,b.D/2-s.lipIn);}
  for(const h of l.holes){const c=plan.shafts.find(x=>x.id===h.on)!.at;if(h.arc){const b=band(c,h.r,h.arc);holes=holes?holes.fuse(b):b;continue;}hole(c,h.r);if(h.open){const [dx,dy]=h.open.dir,nx=-dy*h.r,ny=dx*h.r,e:P=[c[0]+dx*h.open.length,c[1]+dy*h.open.length],slot=draw([c[0]+nx,c[1]+ny]).lineTo([e[0]+nx,e[1]+ny]).lineTo([e[0]-nx,e[1]-ny]).lineTo([c[0]-nx,c[1]-ny]).close();holes=holes?holes.fuse(slot):slot;}}
  for(const bo of plan.bolts)if(bo.attach[l.id])hole(bo.at,bo.hole);
  return holes;}
@@ -63,7 +66,11 @@ export function plateOutline(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|unde
 /** Webs only as high as there is room under or over a part: their outline and heights. */
 export function steppedWebs(doc:GearDoc,plan:GearPlan,l:LayerPlan){const holes=throughHoles(doc,plan,l);return l.webs.filter(w=>w.z).map(w=>{const d=webShape(plan,l,w);return {shape:holes?d.cut(holes.clone()):d,z:w.z!};});}
 function plates(keep:Keep,doc:GearDoc,plan:GearPlan,l:LayerPlan,index:number):CadPart[]{
- const out=plateOutline(doc,plan,l);if(!out)return [];const s=doc.settings,[z0,z1]=l.band,bearings=l.bearings.map(k=>plan.bearings.find(b=>b.key===k)!).filter(b=>!b.motor),steps=steppedWebs(doc,plan,l);
+ const out=plateOutline(doc,plan,l);if(!out)return [];const s=doc.settings,[z0,z1]=l.band,bearings=l.bearings.map(k=>plan.bearings.find(b=>b.key===k)!).filter(b=>!b.motor&&!b.hub),steps=steppedWebs(doc,plan,l);
+ // A hub on a round shaft: the tap drill for a set screw M3 from outside, on the side away from the plate's other bearings.
+ const screws=(solid:Shape3D,lo:number,hi:number)=>{const z=(z0+z1)/2;if(z<lo+1.3||z>hi-1.3)return solid;
+  for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;if(!b.hub||b.hub.profile.kind!=='rund')continue;const others=l.bearings.map(q=>plan.bearings.find(x=>x.key===q)!).filter(q=>q!==b),c:P=others.length?[others.reduce((t,q)=>t+q.at[0],0)/others.length,others.reduce((t,q)=>t+q.at[1],0)/others.length]:[b.at[0]-1,b.at[1]],d=Math.hypot(b.at[0]-c[0],b.at[1]-c[1])||1;
+   solid=keep(solid.cut(keep(makeCylinder(1.25,b.D/2+l.rim+1,[b.at[0],b.at[1],z],[(b.at[0]-c[0])/d,(b.at[1]-c[1])/d,0]))) as Shape3D);}return solid;};
  const half=(lo:number,hi:number,lower:boolean)=>{let solid=keep(out.clone().sketchOnPlane('XY',lo).extrude(hi-lo) as Shape3D);
   for(const st of steps){const a=Math.max(lo,st.z[0]),e=Math.min(hi,st.z[1]);if(e-a>1e-6)solid=keep(solid.fuse(keep(st.shape.clone().sketchOnPlane('XY',a).extrude(e-a) as Shape3D)) as Shape3D);}
   for(const b of bearings){const a=lower?Math.max(lo,b.z0):l.split,e=lower?l.split:Math.min(hi,b.z1);if(e-a<=1e-6)continue;solid=keep(solid.cut(keep(makeCylinder(b.D/2+s.fit,e-a+(lower?.01:0)+(lower?0:.01),[b.at[0],b.at[1],lower?a:a-.01],[0,0,1]))) as Shape3D);}
@@ -74,6 +81,7 @@ function plates(keep:Keep,doc:GearDoc,plan:GearPlan,l:LayerPlan,index:number):Ca
  let one=keep(out.clone().sketchOnPlane('XY',z0).extrude(z1-z0) as Shape3D);
  for(const st of steps){const a=Math.max(z0,st.z[0]),e=Math.min(z1,st.z[1]);if(e-a>1e-6)one=keep(one.fuse(keep(st.shape.clone().sketchOnPlane('XY',a).extrude(e-a) as Shape3D)) as Shape3D);}
  for(const be of bearings){const a=l.lips[0]?be.z0:z0-.01,e=l.lips[1]?be.z1:z1+.01;one=keep(one.cut(keep(makeCylinder(be.D/2+s.fit,e-a,[be.at[0],be.at[1],a],[0,0,1]))) as Shape3D);}
+ one=screws(one,z0,z1);
  return [{name:`Schicht ${index+1}`,file:`schicht-${index+1}`,kind:'platte',shape:one,color:'#7a93a6',made:true}];}
 /** A linked shaft's parts, turned upright (x of the shaft generator becomes z) and put where it stands. */
 function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,ShaftFile|undefined>,pose?:Pose):CadPart[]{
@@ -82,9 +90,9 @@ function shaftParts(keep:Keep,plan:GearPlan,doc:GearDoc,files:Record<string,Shaf
   for(const part of buildParts(f.doc,x.plan,keep).parts){let shape=keep(part.shape.rotate(-90,[0,0,0],[0,1,0]) as Shape3D);
    if(placed.flip)shape=keep(keep(shape.rotate(180,[0,0,0],[1,0,0]) as Shape3D).translate([0,0,L]) as Shape3D);
    // Turned about its own axis: as placed, plus how far the pose turns it; then with its swing arm about the pivot.
-   const g=plan.groups.find(v=>v.shafts.includes(x.id)),swing=g?pose?.groups[g.id]??0:0,spin=(placed.turn??0)+(pose?(plan.turnRate[x.id]??0)*pose.turn:0)+swing;
+   const chain=links(plan.groups,plan.groups.find(v=>v.shafts.includes(x.id))?.id??'',pose?.groups??{}),fast=plan.groups.find(v=>v.fixed&&v.pivot===x.id&&!v.shafts.includes(x.id)),spin=(placed.turn??0)+(pose?(plan.turnRate[x.id]??0)*pose.turn:0)+chain.reduce((t,v)=>t+v.angle,0)+(fast?pose?.groups[fast.id]??0:0);
    if(Math.abs(spin)>1e-9)shape=keep(shape.rotate(spin,[0,0,0],[0,0,1]) as Shape3D);
-   const at=g&&swing?rot(placed.at,g.at,swing):placed.at;
+   const at=carried(placed.at,chain);
    shape=keep(shape.translate([at[0],at[1],placed.z]) as Shape3D);
    out.push({...part,shape,name:`${part.name} · ${x.label}`,file:`${slug(x.label)}-${part.file}`});}}
  return out;}
@@ -94,7 +102,7 @@ export function buildGearParts(doc:GearDoc,plan:GearPlan,files:Record<string,Sha
  plan.columns.forEach((c,i)=>{for(const bo of plan.bolts){if(bo.body!==c.body)continue;const tube=drawCircle(bo.eye-.5).cut(drawCircle(bo.hole)).translate(bo.at[0],bo.at[1]);parts.push({name:`Distanzsäule ${c.from} – ${c.to}`,file:`saeule-${i+1}`,kind:'saeule',shape:keep(tube.sketchOnPlane('XY',c.z0).extrude(c.z1-c.z0) as Shape3D),color:'#c58a4a',made:true});}});
  // A swing arm's plates and columns stand where the pose swings them.
  const body=(p:CadPart):string=>p.kind==='platte'?plan.layers[Number(/^schicht-(\d+)/.exec(p.file)![1])-1].body:plan.columns[Number(/^saeule-(\d+)/.exec(p.file)![1])-1].body;
- if(pose)for(const p of parts){const g=plan.groups.find(v=>v.id===body(p)),a=g?pose.groups[g.id]??0:0;if(g&&a)p.shape=keep(p.shape.rotate(a,[g.at[0],g.at[1],0],[0,0,1]) as Shape3D);}
+ if(pose)for(const p of parts)for(const g of links(plan.groups,body(p),pose.groups))if(g.angle)p.shape=keep(p.shape.rotate(g.angle,[g.at[0],g.at[1],0],[0,0,1]) as Shape3D);
  // The motors' bodies come with their shafts' parts.
  parts.push(...shaftParts(keep,plan,doc,files,pose));
  return parts;}

@@ -70,7 +70,7 @@ function draw(){
  editor.renderLibrary($('library'));
  $('layer-tabs').replaceChildren(...p.layers.map((l,i)=>{const b=el('button',{className:'ghost',textContent:`Schicht ${i+1}${l.body?` · ${p.groups.find(g=>g.id===l.body)?.name??'Schwinge'}`:''} · ${n(l.z0)} bis ${n(l.z1)} mm`});b.dataset.layer=String(i);b.setAttribute('aria-pressed',String(i===editor.layer));b.onclick=()=>{editor.layer=i;editor.sel={kind:'layer',index:i};draw();};return b;}));
  editor.renderPose($('pose'));editor.renderTop($('top'));editor.renderLayers($('side'));editor.renderProperties($('properties'));
- $('drives').replaceChildren(...p.meshes.map(m=>{const a=p.wheels.find(w=>w.key===m.a)!,b=p.wheels.find(w=>w.key===m.b)!;return el('li',{},`${a.label} kämmt mit ${b.label} (${a.teeth} : ${b.teeth})`);}),...p.belts.map(bt=>el('li',{},`Riemen ${n(bt.length)} mm${bt.stock?`, Normlänge ${bt.stock} mm`:''}`)),
+ $('drives').replaceChildren(...p.meshes.map(m=>{const a=p.wheels.find(w=>w.key===m.a)!,b=p.wheels.find(w=>w.key===m.b)!;return el('li',{},`${a.label} kämmt mit ${b.label} (${a.teeth} : ${b.teeth})`);}),...p.belts.map(bt=>el('li',{},`Riemen ${n(bt.length)} mm${bt.stock?`, Normlänge ${bt.stock} mm`:''}`)),...p.drive.lines.map(t=>{const li=el('li',{className:'drive-line',textContent:t});return li;}),
   ...open.doc.shafts.filter(s=>p.rates[s.id]!==undefined).map(s=>el('li',{className:'muted'},`${p.shafts.find(x=>x.id===s.id)?.label}: ${n(p.rates[s.id])} U je Umdrehung des Eingangs`)));
  const counts=['fehler','warnung'].map(l=>p.issues.filter(i=>i.level===l).length);$('issues-title').textContent=counts[0]?`Meldungen · ${counts[0]} Fehler`:counts[1]?`Meldungen · ${counts[1]} ${counts[1]===1?'Warnung':'Warnungen'}`:'Meldungen · alles passt';
  renderFiles(p);schedulePreview();

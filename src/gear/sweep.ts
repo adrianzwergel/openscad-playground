@@ -51,3 +51,7 @@ export function arcPoints(at:P,w:Sweep,step=3):P[]{const n=Math.max(1,Math.ceil(
 /** Where the gearbox stands for a look at it: the shaft the range is set at turned by `turn` degrees, each swing arm by its
  * angle. What is saved and made is always the gearbox as drawn. */
 export type Pose={turn:number;groups:Record<string,number>};
+/** A point carried by a chain of links, innermost first: each turns it about its pivot as drawn. */
+export const carried=(p:P,chain:{at:P;angle:number}[]):P=>chain.reduce((q,g)=>g.angle?rot(q,g.at,g.angle):q,p);
+/** A body's links with their angles in a pose, innermost first. */
+export function links(groups:{id:string;at:P;parent:string}[],body:string,angles:Record<string,number>){const out:{at:P;angle:number}[]=[];for(let g=groups.find(v=>v.id===body),k=0;g&&k<50;g=groups.find(v=>v.id===g!.parent),k++)out.push({at:g.at,angle:angles[g.id]??0});return out;}

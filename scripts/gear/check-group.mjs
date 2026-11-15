@@ -38,7 +38,7 @@ assert.deepEqual(parseGear(JSON.parse(JSON.stringify(doc({})))).groups,base.grou
  assert.ok(p.bom.some(x=>/Platte Schicht 3, Schwinge/.test(x.what))&&p.bom.filter(x=>/Distanzsäule/.test(x.what)).length===2);
  // The view and the notes.
  const svg=topView(p,p.layers[1]);assert.match(svg,/class="hole-arc"/);assert.match(svg,/class="swing"/);assert.match(svg,/class="pivot"/);assert.match(topView(p,p.layers[2]),/swing-plate/);
- const posed=posePlan(p,{turn:0,groups:{g1:45}});near(posed.shafts.find(x=>x.id==='b').at[0],30*Math.SQRT1_2,1e-9,'geschwenkte Welle');assert.deepEqual(posed.layers[1].holes[0].arc,{c:[0,0],from:-75,to:0},'der Ausschnitt bleibt in seiner Platte');
+ const posed=posePlan(p,{turn:0,groups:{g1:45}});near(posed.shafts.find(x=>x.id==='b').at[0],30*Math.SQRT1_2,1e-9,'geschwenkte Welle');assert.deepEqual([posed.layers[1].holes[0].arc,posed.layers[1].holes[0].base],[{c:[0,0],from:-30,to:45},[30,0]],'der Ausschnitt bleibt in seiner Platte');near(posed.layers[2].holes[0].base[1],-45*Math.SQRT1_2,1e-9,'der Ausschnitt in der Platte der Schwinge schwenkt mit ihr');
  const notes=gearNotes('Test',doc({}),p);assert.match(notes,/Schwinge: schwenkt -30° bis 45° um Achse z20/);assert.match(notes,/Schicht 2: Ausschnitt im Bogen für Schwingenrad z40, 9 mm breit, 75° lang/);}
 // Swung further: the arc crosses the web from the axle to the post (straight down): the slot gets its ring, and the wheel meets the post.
 {const p=planGear(doc({groups:group({from:-120})}),files),h=p.layers[1].holes[0];assert.equal(h.ring,4.5+3,say(p));assert.ok(p.issues.some(i=>i.level==='fehler'&&/z40 m1 auf Schwingenrad z40 stößt beim Schwenken an Stütze/.test(i.message)),say(p));}
@@ -48,9 +48,11 @@ assert.deepEqual(parseGear(JSON.parse(JSON.stringify(doc({})))).groups,base.grou
 {const side={name:'Seitenrad z20',doc:parseShaft({...newShaft(),length:80,items:[{id:'l1',part:'lager-608',x:2},{id:'g',part:'stirnrad-m1-z20',x:38,bore:rund(8)},{id:'l2',part:'lager-608',x:70}]})},f={...files,side};
  const p=planGear(doc({shafts:[...base.shafts,{id:'c',shaft:'side',at:[60,0],z:0}]}),f);assert.equal(p.meshes.length,2);assert.ok(p.issues.some(i=>i.level==='warnung'&&/z40 m1 auf Schwingenrad z40 kämmt mit z20 m1 auf Seitenrad z20 nur in der gezeichneten Stellung/.test(i.message)),say(p));assert.ok(!p.issues.some(i=>/läuft .* hinein/.test(i.message)));
  const q=planGear(doc({shafts:[...base.shafts,{id:'c',shaft:'side',at:rot([60,0],[30,0],100).map(v=>+v.toFixed(4)),z:0}]}),f);assert.ok(q.issues.some(i=>i.level==='fehler'&&/läuft z20 m1 auf Seitenrad z20 in z40 m1 auf Schwingenrad z40 hinein|läuft z40 m1 auf Schwingenrad z40 in z20 m1 auf Seitenrad z20 hinein/.test(i.message)),say(q));}
-// A shaft on two swing arms, a pivot on a swing arm.
+// A shaft on two swing arms.
 assert.ok(planGear(doc({groups:[...base.groups,{id:'g2',name:'Zweite',pivot:'g',shafts:['b'],from:-5,to:5}]}),files).issues.some(i=>/gehört schon zu einer anderen Schwinge/.test(i.message)));
-assert.ok(planGear(doc({groups:[...base.groups,{id:'g2',name:'Zweite',pivot:'b',shafts:['g'],from:-5,to:5}]}),files).issues.some(i=>/Schwinge auf einer Schwinge geht nicht/.test(i.message)));
+// Link on link is allowed (the pivot on another swing arm); a chain that hangs on itself is not.
+{const p=planGear(doc({groups:[...base.groups,{id:'g2',name:'Zweite',pivot:'b',shafts:['g'],from:-5,to:5}]}),files);assert.equal(p.groups[1].parent,'g1');assert.ok(!p.issues.some(i=>/an ihr selbst hängt/.test(i.message)));}
+assert.ok(planGear(doc({groups:[...base.groups,{id:'g2',name:'Zweite',pivot:'b',shafts:['p'],from:-5,to:5}]}),files).issues.some(i=>/an ihr selbst hängt/.test(i.message)));
 // A swing arm that does not hang on its pivot (the axle's inner bearings gone).
 {const bare={...files,ac:{name:'Achse z20',doc:parseShaft({...files.ac.doc,items:files.ac.doc.items.filter(i=>i.id!=='l2'&&i.id!=='l3')})}},p=planGear(doc({}),bare);assert.ok(p.issues.some(i=>/Schwinge hängt nicht an ihrer Drehachse/.test(i.message)),say(p));}
 // Layers set by hand belong to the frame or to a swing arm.

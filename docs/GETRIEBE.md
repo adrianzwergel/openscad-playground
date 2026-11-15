@@ -48,6 +48,19 @@ Die Hülle zweier Scheiben hat jetzt einen genauen Abstand (`capsuleDistance`) s
 
 Prüfung: `scripts/gear/check-swing.mjs` (Hebel, Drehbereich, Geometrie), `check-group.mjs` (Schwinge, Bogen-Ausschnitt, Volumen, Stellung), `check-moving-browser.mjs`.
 
+## Glieder: Hebel fest, Losrad, Glied an Glied (2026-11-15)
+
+Damit es am Hebel weitergeht, ist er ein Körper im Getriebe wie die Schwinge, nur anders gelagert.
+
+- **Fest oder frei** (`Group.fixed`): ein festes Glied („Hebel“) sitzt mit einer **Nabe im Profil der Welle** auf seiner Drehachse und dreht mit ihr; ein freies („Schwinge“) hängt wie bisher an Lagern. Die Nabe ist ein Knoten der Platte wie ein Lager (`Bearing.hub`, Wand `HUB_WALL`), die Bohrung geht durch die Platte, gedreht wie die Welle steht. Auf rundem Sitz gibt es ein Kernloch für eine Madenschraube M3 und einen Hinweis auf „Abschnitt von Hand“. Reicht die Welle nicht durch die Platte, wird es gemeldet.
+- **Glied an Glied:** die Drehachse darf eine Welle eines anderen Glieds sein (`GroupPlan.parent`); eine Kette, die an sich selbst hängt, ist ein Fehler. Was ein Körper vom anderen sieht, sind alle Bewegungen dazwischen nacheinander (`relative`, `sweepPrims`): die letzte genau, die davor in Schritten. Ein Ausschnitt im Bogen entsteht nur bei einer einzigen Bewegung dazwischen.
+- **Losrad** (Wellen-Generator, `OnItem.free`): ein Rad oder eine Scheibe, die frei auf der Welle läuft, mit runder Bohrung als Gleitsitz. Im Getriebe ist es ein eigener Läufer. So bleiben mehrere Motoren im Gestell: das Losrad auf der Gelenkachse treibt durch das Gelenk hindurch ein Rad auf dem Hebel.
+- **Drehzahlen als Löser** (`drive` im Plan): Läufer sind Wellen, Losräder und Glieder; jeder dreht als Summe der Antriebe. Ein Eingriff oder Riemen koppelt zwei Läufer aus Sicht des Körpers, der beide Achsen trägt, also rollt ein Rad auf dem Hebel am Rad seiner Drehachse ab, wenn der Hebel schwenkt. Antriebe: der Eingang, dann jede Motorwelle, die noch nichts dreht, dann jedes freie Glied („von Hand“). Daraus: je Gelenk, wovon es bewegt wird (gekoppelte Gelenke werden so genannt), und wie weit jeder Motor für alle Bereiche drehen muss (`needs`). Ein fester Hebel ohne Antrieb wird gemeldet. `rates` bleibt der Anteil des ersten Eingangs.
+- **Bedienung:** an der Welle „＋ Hebel fest auf dieser Welle“ oder „＋ Schwinge frei um diese Welle“; im Feld des Glieds „Sitzt auf der Achse: fest/frei“ und „Bewegt von“. Ist das Feld offen, kommt eine Welle aus der Liste per Klick oder Ziehen gleich auf das Glied. Die Liste „Antrieb“ nennt Losräder, Gelenke und Motorwege. Beispiel „Zwei Gelenke, beide Motoren im Gestell“.
+- **Nicht dabei:** die Regler stellen Gelenke, nicht Motoren (die Kopplung steht in der Liste, wird aber nicht vorgeführt); Bereiche gelten je Gelenk unabhängig.
+
+Prüfung: `scripts/gear/check-links.mjs`, `check-links-browser.mjs`.
+
 **Offen:** die Einstellung „Dicke der Stege“ wirkt noch nicht (Stege sind so dick wie ihre Platte); Probedrucke für Taschenspiel und Bord; Schnecke und Kegelräder.
 
 Der Katalog des Wellen-Generators kennt jetzt Zähne und Modul der Räder und Scheiben (`teeth`, `module`, `pulley`).

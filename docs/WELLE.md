@@ -160,3 +160,7 @@ Ein gedrucktes Teil der Gruppe „Hebel“: Nabe, Arm und Auge mit Loch, dreht m
 **Bohrung „wie der Abschnitt“** (Vorgabe, sonst ein eigenes Profil): ein Abschnitt von Hand gilt; sonst das, was durch die Teile weiter innen passt (ein rundes als D gleichen Ø, wenn der Hebel das äußerste Teil ist; liegt außen noch etwas, bleibt es rund); als innerstes Teil seiner Seite das, was den Sitz des nächsten Teils durchlässt (vor einem Lager Ø8 ein D10 mit 1 mm Abflachung, zugleich dessen Schulter); allein auf seiner Seite wie das nächste Teil der Welle. Eine runde Bohrung bekommt das Kernloch für eine Madenschraube M3 in der Nabe, dem Arm gegenüber, und einen Hinweis auf die Abflachung.
 
 Im 3D-Modell ein gemachtes Teil (`hebel-<id>`, STEP und STL), im Längsschnitt Nabe mit Fahne, in den Eigenschaften die Stirnansicht. Prüfung: `scripts/shaft/check-arm.mjs`.
+
+## Losrad (2026-11-15)
+
+Räder und Riemenscheiben haben die Wahl „Dreht frei auf der Welle (Losrad)“ (`OnItem.free`, im Plan `Placed.free`): das Rad läuft mit runder Bohrung als Gleitsitz auf seinem Sitz und dreht nicht mit der Welle. Eine nicht runde Bohrung (LEGO-Kreuz) ist ein Fehler. Auf der Zeitleiste trägt es ⟳. Gebraucht wird es im Getriebe-Generator, um durch ein Gelenk hindurch zu treiben (`docs/GETRIEBE.md`, „Glieder“).
