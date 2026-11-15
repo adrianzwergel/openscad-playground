@@ -13,6 +13,7 @@ import {CadClient} from '../shaft/cad-client.ts';
 import {ShaftPreview} from '../shaft/preview.ts';
 import {gearCsv,gearNotes} from './notes.ts';
 import JSZip from 'jszip';
+import {renameInPlace,confirmByClick} from '../mechanics/inline-edit.ts';
 
 const FORMAT='gear-1',SHAFT='shaft-1';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
@@ -65,7 +66,7 @@ async function flush(){if(saveTimer===undefined||!open)return;clearTimeout(saveT
 function undo(back:boolean){if(!open||open.readOnly)return;const from=back?past:future,to=back?future:past,state=from.pop();if(state===undefined)return;to.push(JSON.stringify(open.doc));open.doc=parseGear(JSON.parse(state));editor.sel=undefined;save();draw();status(back?'Rückgängig':'Wiederholt');}
 
 function draw(){
- document.body.dataset.view=open?'gear':'start';$('gear-name').textContent=open?.name??'';($('undo') as HTMLButtonElement).disabled=!past.length;($('redo') as HTMLButtonElement).disabled=!future.length;if(!open)return;
+ document.body.dataset.view=open?'gear':'start';if(!$('gear-name').querySelector('input'))$('gear-name').textContent=open?.name??'';($('undo') as HTMLButtonElement).disabled=!past.length;($('redo') as HTMLButtonElement).disabled=!future.length;if(!open)return;
  const p=plan=planNow();editor.layer=Math.min(editor.layer,Math.max(0,p.layers.length-1));
  editor.renderLibrary($('library'));
  editor.renderPose($('pose'));editor.renderTop($('top'));editor.renderLayers($('side'));editor.renderProperties($('properties'));
@@ -77,8 +78,9 @@ function draw(){
 $('new-gear').onclick=()=>void create('Neues Getriebe',newGear());
 $('examples').replaceChildren(...gearExamples.map(x=>{const b=el('button',{className:'start-card'},el('strong',{textContent:x.title}),el('small',{textContent:x.text}));b.dataset.example=x.key;b.onclick=()=>void fromExample(x.key);return b;}));
 $('gear-close').onclick=()=>void flush().then(()=>{open=undefined;draw();void list();});
-$('gear-rename').onclick=()=>{if(!open)return;const name=prompt('Neuer Name',open.name)?.trim();if(!name)return;open.name=name;save();draw();void list();};
-$('gear-delete').onclick=()=>{if(!open||!confirm(`Getriebe „${open.name}“ löschen? Die Wellen bleiben im Wellen-Generator.`))return;const id=open.id;clearTimeout(saveTimer);saveTimer=undefined;open=undefined;void store.remove(id).then(()=>{draw();void list();});};
+const rename=()=>{if(!open||open.readOnly)return;const o=open;renameInPlace($('gear-name'),o.name,name=>{o.name=name;save();draw();void list();status(`Umbenannt in „${name}“.`);});};
+$('gear-rename').onclick=rename;$('gear-name').ondblclick=rename;$('gear-name').title='Doppelklick benennt um';
+$('gear-delete').onclick=()=>{if(!open)return;confirmByClick($('gear-delete'),'Wirklich löschen?',()=>{if(!open)return;const id=open.id;clearTimeout(saveTimer);saveTimer=undefined;open=undefined;void store.remove(id).then(()=>{draw();void list();});});};
 $('undo').onclick=()=>undo(true);$('redo').onclick=()=>undo(false);
 addEventListener('keydown',e=>{if(!open)return;const typing=(e.target as HTMLElement).closest('input,select,textarea');
  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!typing){e.preventDefault();undo(!e.shiftKey);}

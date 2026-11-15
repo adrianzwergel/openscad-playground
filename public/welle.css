@@ -73,3 +73,5 @@ body.embedded header a.button,body.embedded #shaft-close,body.embedded #shaft-de
 .silhouette .motor rect{fill:#3a404899;stroke:#9aa7b1;stroke-dasharray:5 3}.silhouette .motor .flange{stroke:#f0d36e;stroke-width:2}
 .silhouette .arm rect{fill:#d98f5c55;stroke:#d98f5c}.clip.arm{background:#5a3a22;border-color:#d98f5c;color:#f4dccb}
 .arm-view{display:block;margin:6px 0;background:#10161c;border:1px solid #2a3640;border-radius:6px}.arm-view .body{fill:#d98f5c55;stroke:#d98f5c}.arm-view .bore{fill:#10161c;stroke:#9aa7b1}.arm-view .zero{stroke:#56656f;stroke-dasharray:3 3}
+.rename-input{font:inherit;font-weight:700;padding:2px 6px;min-width:220px;background:#10161c;color:var(--text,#e4ebef);border:1px solid #72dac1;border-radius:5px}
+#gear-name,#shaft-name{cursor:text}

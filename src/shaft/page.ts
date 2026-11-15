@@ -11,6 +11,7 @@ import {CadClient} from './cad-client.ts';
 import {ShaftPreview} from './preview.ts';
 import {partsCsv,makingNotes} from './notes.ts';
 import JSZip from 'jszip';
+import {renameInPlace,confirmByClick} from '../mechanics/inline-edit.ts';
 
 const FORMAT='shaft-1';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
@@ -62,7 +63,7 @@ async function flush(){if(saveTimer===undefined||!open)return;clearTimeout(saveT
 function undo(back:boolean){if(!open||open.readOnly)return;const from=back?past:future,to=back?future:past,state=from.pop();if(state===undefined)return;to.push(JSON.stringify(open.doc));open.doc=parseShaft(JSON.parse(state));editor.sel=undefined;save();draw();status(back?'Rückgängig':'Wiederholt');}
 
 function draw(){
- document.body.dataset.view=open?'shaft':'start';$('shaft-name').textContent=open?.name??'';
+ document.body.dataset.view=open?'shaft':'start';if(!$('shaft-name').querySelector('input'))$('shaft-name').textContent=open?.name??'';
  ($('undo') as HTMLButtonElement).disabled=!past.length;($('redo') as HTMLButtonElement).disabled=!future.length;
  if(!open)return;plan=planShaft(open.doc);const p=plan;
  if(!$('catalog').childElementCount)editor.renderCatalog($('catalog'));
@@ -76,8 +77,9 @@ function draw(){
 
 $('new-shaft').onclick=()=>void create('Neue Welle',newShaft());
 $('examples').replaceChildren(...shaftExamples.map(x=>{const b=el('button',{className:'start-card'},el('strong',{textContent:x.title}),el('small',{textContent:x.text}));b.dataset.example=x.key;b.onclick=()=>void create(x.title,x.make());return b;}));
-$('shaft-rename').onclick=()=>{if(!open)return;const name=prompt('Neuer Name',open.name)?.trim();if(!name)return;open.name=name;save();draw();void list();};
-$('shaft-delete').onclick=()=>{if(!open||!confirm(`Welle „${open.name}“ löschen?`))return;const id=open.id;clearTimeout(saveTimer);saveTimer=undefined;open=undefined;void store.remove(id).then(()=>{draw();void list();});};
+const rename=()=>{if(!open||open.readOnly)return;const o=open;renameInPlace($('shaft-name'),o.name,name=>{o.name=name;save();draw();void list();status(`Umbenannt in „${name}“.`);});};
+$('shaft-rename').onclick=rename;$('shaft-name').ondblclick=rename;$('shaft-name').title='Doppelklick benennt um';
+$('shaft-delete').onclick=()=>{if(!open)return;confirmByClick($('shaft-delete'),'Wirklich löschen?',()=>{if(!open)return;const id=open.id;clearTimeout(saveTimer);saveTimer=undefined;open=undefined;void store.remove(id).then(()=>{draw();void list();});});};
 $('shaft-close').onclick=()=>void flush().then(()=>{open=undefined;draw();void list();});
 // A shaft as a file: the same JSON as in the browser's storage, with its name.
 $('shaft-export').onclick=()=>{if(!open)return;const base=open.name.replace(/[^\wäöüÄÖÜß-]+/g,'_'),url=URL.createObjectURL(new Blob([JSON.stringify({format:FORMAT,name:open.name,doc:open.doc},null,1)],{type:'application/json'})),a=el('a',{href:url,download:`${base}.welle.json`});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status(`${base}.welle.json gespeichert.`);};

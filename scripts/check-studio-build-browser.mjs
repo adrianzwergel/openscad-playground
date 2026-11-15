@@ -43,7 +43,7 @@ try{let p=await open(browser);
  await p.reload();await p.waitForSelector('[data-plate-stl]');assert.equal(await p.evaluate(()=>document.body.dataset.scene),'build');assert.equal(await p.evaluate(()=>document.body.dataset.phase),'3');await phase(p,1);assert.equal(await p.$$eval('[data-item]',x=>x.length),2);
  assert.equal((await p.$$('.part-card[data-part^="eigen-"]')).length,1);
  // A second project stays apart; switching brings the first one back.
- await newProject(p,true);await p.waitForFunction(()=>document.getElementById('project-name').textContent==='Neues Projekt'&&!document.querySelector('[data-item]'));p.answer='Zweites';await menu(p,'project-rename');await p.waitForFunction(()=>document.getElementById('project-name').textContent==='Zweites');
+ await newProject(p,true);await p.waitForFunction(()=>document.getElementById('project-name').textContent==='Neues Projekt'&&!document.querySelector('[data-item]'));await menu(p,'project-rename');await p.waitForSelector('#project-name input');await p.$eval('#project-name input',(e,v)=>{e.value=v;e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));},'Zweites');await p.waitForFunction(()=>document.getElementById('project-name').textContent==='Zweites');
  await p.waitForSelector('[data-part="nema17-40"]');await dragPart(p,'nema17-40',[0,0]);f=await settled(p,x=>x.name==='Zweites'&&x.doc.builds?.[0]?.items[0]?.side==='bottom');
  // A board without holes comes in a clip; its numbers can be changed, a bad choice is reported.
  await dragPart(p,'d1-mini',[60,0]);f=await settled(p,x=>x.doc.builds[0].items.length===2);assert.equal(f.doc.builds[0].items[1].holder.kind,'clip');await p.waitForSelector('[data-field="Armdicke [mm]"]');
@@ -58,6 +58,6 @@ try{let p=await open(browser);
  // A second tab on the same file looks, but cannot write.
  const q=await open(browser);await q.waitForFunction(()=>document.getElementById('save-state').textContent==='Nur Ansicht');
  // Rename, then delete: the other project opens.
- p.answer='Umbenannt';await p.bringToFront();await menu(p,'project-rename');await settled(p,x=>x.name==='Umbenannt');await q.close();await menu(p,'project-delete');await p.waitForFunction(()=>document.body.dataset.view==='start'&&document.getElementById('project-name').textContent==='Zweites'&&document.querySelectorAll('[data-open-project]').length===1);
+ await p.bringToFront();await menu(p,'project-rename');await p.waitForSelector('#project-name input');await p.$eval('#project-name input',(e,v)=>{e.value=v;e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));},'Umbenannt');await settled(p,x=>x.name==='Umbenannt');await q.close();await menu(p,'project-delete');await p.waitForFunction(()=>/Wirklich/.test(document.getElementById('project-delete').textContent));await p.click('#project-delete');await p.waitForFunction(()=>document.body.dataset.view==='start'&&document.getElementById('project-name').textContent==='Zweites'&&document.querySelectorAll('[data-open-project]').length===1);
  assert.deepEqual(p.errors,[]);console.log(`Studio Aufbau: 2 Teile platziert und verschoben, Platte als STL (${(body.length/1000).toFixed(0)} kB), Neustart übersteht alles, Projekte getrennt.`);
 }finally{await browser.close();await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}

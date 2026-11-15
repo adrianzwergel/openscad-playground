@@ -24,6 +24,7 @@ import {renderStock} from './studio-catalog';
 import {defaultCatalog} from './graph/catalog';
 import {demos} from './demos';
 import {templates} from './kinematics/templates';
+import {renameInPlace,confirmByClick} from './inline-edit.ts';
 
 type Phase=1|2|3;
 type Scene={kind:'mechanism'|'build';id:string;label:string};
@@ -160,7 +161,7 @@ function drawView(){
  renderHeader(s);renderLeft(s);renderRight(s);syncHistory();
 }
 function renderHeader(s:Scene|undefined){
- $('project-name').textContent=project.name;document.title=`${project.name} · Mechanics Studio`;
+ if(!$('project-name').querySelector('input'))$('project-name').textContent=project.name;document.title=`${project.name} · Mechanics Studio`;
  for(const b of document.querySelectorAll<HTMLButtonElement>('#phases [data-phase]')){const p=Number(b.dataset.phase) as Phase,has=!!s&&!startOpen&&phasesOf(s).includes(p);b.disabled=!has;b.setAttribute('aria-pressed',String(has&&p===phase));}
  $('projects').setAttribute('aria-pressed',String(!s||startOpen));
 }
@@ -237,8 +238,9 @@ async function switchProject(id:string){
  const free=await store.claim(id);motion.close();mech.exit();build.exit();history=new StudioHistory();doc=f.doc;project={id,name:f.name,readOnly:!free};sceneKey='';phase=1;await store.setActive(id);restoreView(f.view);drawView();syncHistory();savedState=fileState();saveState.textContent=free?'Gespeichert':'Nur Ansicht';await renderProjects();status.textContent=free?`Projekt ${f.name} geöffnet.`:`${f.name} ist in einem anderen Tab offen: Änderungen hier werden nicht gespeichert.`;
 }
 async function createProject(name:string,content=fresh()){const id=newProjectId();await store.write(id,{format:'studio-project-1',name,updated:new Date().toISOString(),doc:parseStudio(content)});await switchProject(id);}
-$('project-rename').onclick=()=>{($('menu') as HTMLDetailsElement).open=false;const name=prompt('Neuer Name',project.name)?.trim();if(!name||name===project.name)return;project.name=name;savedState='';void saveNow().then(renderProjects);};
-$('project-delete').onclick=()=>{($('menu') as HTMLDetailsElement).open=false;if(!confirm(`Projekt „${project.name}“ endgültig löschen?`))return;void (async()=>{const gone=project.id;savedState=fileState();await store.remove(gone);const rest=(await store.list()).filter(p=>p.id!==gone);if(rest[0])await switchProject(rest[0].id);else await createProject('Mein Projekt');startOpen=true;draw();})();};
+const renameProject=()=>{($('menu') as HTMLDetailsElement).open=false;renameInPlace($('project-name'),project.name,name=>{project.name=name;savedState='';void saveNow().then(()=>{renderProjects();draw();});});};
+$('project-rename').onclick=renameProject;$('project-name').ondblclick=renameProject;
+$('project-delete').onclick=e=>{e.preventDefault();confirmByClick($('project-delete'),'Wirklich endgültig löschen?',()=>{($('menu') as HTMLDetailsElement).open=false;void (async()=>{const gone=project.id;savedState=fileState();await store.remove(gone);const rest=(await store.list()).filter(p=>p.id!==gone);if(rest[0])await switchProject(rest[0].id);else await createProject('Mein Projekt');startOpen=true;draw();})();});};
 $('export').onclick=()=>{($('menu') as HTMLDetailsElement).open=false;try{finishDrag();const url=URL.createObjectURL(new Blob([serializeStudio(doc)],{type:'application/json'})),a=el('a',{href:url,download:`${project.name.replace(/[^\wäöüÄÖÜß-]+/g,'_')}.json`});a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent='Projekt als Datei exportiert.';}catch(e){status.textContent=String(e);}};
 const importFile=$('import-file') as HTMLInputElement;
 $('import').onclick=()=>{($('menu') as HTMLDetailsElement).open=false;finishDrag();importFile.click();};
