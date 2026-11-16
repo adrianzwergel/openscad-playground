@@ -97,20 +97,25 @@ Kette ISO 606 04C (ANSI #25, ¼" = 6,35 mm Teilung, Rolle Ø3,3, Innenbreite 3,1
 - **Ebene der Kette:** Die Zahnkränze müssen höchstens 1 mm neben der Kettenebene liegen (ab 0,5 mm eine Warnung). Die Kette ist über die Bolzen 7,9 mm breit und 6 mm hoch: Ihre geraden Stücke sind Hindernisse für Platten und Stege.
 - **Spanner** (`Belt.via`, Knopf „＋ Spanner …“ an der Kette): Der Spanner kommt in das gerade Stück, in das er hineinreicht. Von außen drückt er die Kette ein, von innen drückt er sie hinaus und wird dann wie ein Kettenrad umschlungen. Reicht er nicht an die Kette, gibt es eine Warnung. „Spanner auf N Glieder stellen“ schiebt ihn quer zur Kette, bis sie straff ist.
 - **Achse des Spanners:** Eine Welle ohne eigene Lager, auf der nur Spanner sitzen, ist eine feste Achse. Sie steht in jeder Platte ihres Körpers, durch die sie ganz hindurchgeht, als Nabe mit ihrem Profil (`achse:`-Knoten), z. B. eine Schraube M8 mit Muttern.
+- **Eine Kette über mehrere Räder (2026-11-17):** In `Belt.via` stehen auch weitere Kettenräder, die die Kette antreibt (Knopf „＋ … in die Kette“), nicht nur Spanner. Die Kette läuft außen um die Hülle der Radmitten, gegen den Uhrzeigersinn; ein Rad innerhalb der Hülle erreicht sie nicht, das ist ein Fehler. Spanner und frei drehende Räder kommen auf die geraden Stücke dieser Schlaufe. Jedes angetriebene Rad dreht im Verhältnis seiner Zähne zum ersten (`BeltPlan.drives`). Über mehr als zwei Räder muss die Kette in einem Körper liegen: dessen Wellen und seine Drehachse (`BeltPlan.body`). Liegen die Räder auf zwei Schwingen, die gegeneinander schwenken, ist das ein Fehler, denn die Länge ändert sich.
 - **Darstellung:**
   - Draufsicht: Ketten gestrichelt grau, Kettenräder mit ihrem Zahnumriss;
   - Seitenansicht: Kettenlinie zwischen den Spuren;
-  - 3D: Kettenräder mit Zahnkranz und Nabe (die Kette selbst nicht);
+  - 3D: Kettenräder mit Zahnkranz und Nabe; die Kette als Band (6 mm hoch, 7,9 mm breit) entlang der geraden Stücke und um jedes Rad. Jedes Stück ist ein eigener Körper, ohne Boolean zusammengesetzt, und schwenkt mit seinem Körper;
   - Stückliste: „Rollenkette 04C (¼"), N Glieder“ und je Kette ein Kettenschloss.
-- **Angebote im Editor:** „＋ Kette zu …“ und „＋ Spanner …“ erscheinen nur für Räder in derselben Kettenebene.
+- **Angebote im Editor:** „＋ Kette zu …“, „＋ … in die Kette“ und „＋ Spanner …“ erscheinen nur für Räder in derselben Kettenebene, die noch an keiner Kette hängen; „… aus der Kette“ nimmt ein Rad wieder heraus.
+- **Platten kaputt (behoben 2026-11-17):** Trifft ein Steg einen Lagerring genau tangential, können die 2D-Booleans von OpenCascade einen Umriss liefern, dessen extrudierte Oberseite kaputt ist. Jeder spätere Schnitt (die Lagertaschen) leert den Körper dann ohne Fehlermeldung; bei den Rocker-Platten fehlte so die ganze Platte im 3D. `plates` in `cad.ts` prüft das jetzt mit einem kleinen Probeschnitt durch die Oberseite in jedem Ring. Schlägt er fehl, wird der Umriss mit Stegen gebaut, die 0,01 bis 0,1 mm schmaler als die Tangenten sind.
 
-**Beispiel „Rocker-Bogie mit Kette 04C, doppelt so groß“ (`rocker-kette`):** das Riemen-Beispiel in doppelter Größe.
+**Beispiel „Rocker-Bogie mit Kette 04C, doppelt so groß“ (`rocker-kette`):** das Riemen-Beispiel in doppelter Größe, schmal: je Körper eine Kette. Die erste Fassung (2026-11-17, vier Ketten 1 : 1 in drei Ebenen) war über die Platten 93,5 mm breit. Der Nutzer fand das „mega breit“ und wollte eine Ebene mit Umlenkrollen und Spanner. Ganz eine Ebene geht nicht: Auf Rocker- und Bogie-Achse sitzen je zwei Ketten, eine Kette über zwei gegeneinander schwenkende Körper würde ihre Länge ändern. Es sind jetzt zwei Ebenen.
 
-- **Arme:** z12 (Bohrung 8) 1 : 1 über Rocker- und Bogie-Achse auf alle drei Räder, je 62 Glieder bei (62 − 12) / 2 · 6,35 = 158,75 mm Achsabstand; alle Achsen 90 mm unter dem Rocker-Drehpunkt.
-- **Motor:** z9 auf z25 (2,78 : 1, Räder 0,36 × Motor), 38 Glieder, gespannt über die Langlöcher. Die Nabe des z25 zeigt nach unten, der Flansch liegt an der unteren Gestellplatte.
-- **Wellen:** Ø8 in Lagern 688 (8 × 16 × 5), unter jedem Kettenrad eine Abflachung; die Radwellen enden als D 8 für gedruckte Naben.
-- **Höhen:** drei Kettenebenen 10,8 mm auseinander (46, 56,8 und 67,6 mm), die Räder Nabe auf Zahnkranz gestapelt. Die Gestellplatten liegen unten, die Bogie-Platten außen um die Rocker-Platten.
-- **Prüfung:** `scripts/gear/check-chain.mjs` (Maße, Katalog, Beispiel, Spanner auf fester Achse, Volumen) und `scripts/gear/check-chain-browser.mjs`.
+- **Motor (Gestell):** z9 auf z25 (2,78 : 1), 38 Glieder, gespannt über die Langlöcher. Der Motor steht auf der oberen Gestellplatte, seine Welle steckt in einer gedruckten Hülse Ø8 (Wand 1,5) mit dem z9.
+- **Rocker:** eine Kette um die z12 auf Rocker-Achse, Hinterrad und Bogie-Achse, 110 Glieder, über einen Kettenspanner z20 von außen auf dem oberen Stück.
+- **Bogie:** eine Kette um die z12 auf Bogie-Achse und beiden Rädern, 108 Glieder, über einen Spanner auf dem Stück zum vorderen Rad.
+- **Arme und Spanner:** Die Arme sind 159,6 mm (Rocker) und 161,4 mm (Bogie) lang. So braucht jede Schlaufe etwa 0,4 Glied vom Spanner bis zur geraden Gliederzahl. Das Beispiel setzt die Spanner dorthin, wo die Kette straff ist.
+- **Räder:** alle 0,36 × Motor; Schwenken dreht sie nicht mit.
+- **Höhen:** Ebene A (12,5 mm) trägt die Motorkette und die Bogie-Kette, die weit auseinander liegen; Ebene B (44,4 mm) die Rocker-Kette. Gestell- und Bogie-Platten liegen in denselben Höhen (−1,5 bis 5 und 22,9 bis 29,4), die Rocker-Platten darüber (30,4 bis 36,9 und 54,8 bis 61,3). Über die Platten sind das 62,8 mm.
+- **Wellen:** Ø8 in Lagern 688, unter jedem Kettenrad eine Abflachung. Die Radwellen enden unten als D 8 für gedruckte Naben; das Hinterrad sitzt dadurch weit unter seinen Lagern.
+- **Prüfung:** `scripts/gear/check-chain.mjs` (Maße, Katalog, Beispiel, Kette über zwei Schwingen, Rad innen, Spanner auf fester Achse, alle Platten mit Flächen, Ketten als Volumen, auch in einer Stellung) und `scripts/gear/check-chain-browser.mjs`.
 
 ## Ansichten (2026-11-15)
 

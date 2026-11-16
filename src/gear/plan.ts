@@ -60,7 +60,8 @@ export type Mesh={a:string;b:string;ratio:number};
  * the stock belt wants. */
 /** `chain`: a roller chain: the links its way needs, the links it has (even), how many it hangs slack by; `path`: its
  * straight spans as drawn; `via`: the tensioners it runs over; `fit.via`: where the first tensioner makes it taut. */
-export type BeltPlan={chain?:{need:number;links:number;slack:number};path?:[[number,number],[number,number]][];via?:string[];/** Its length over a swing arm's range, when one of its pulleys swings. */swing?:{group:string;range:[number,number]};id:string;a:string;b:string;center:number;length:number;stock?:number;tension?:{motor:string;range:[number,number]};fit?:{stock:number;center:number;via?:{on:string;at:[number,number]}}};
+export type BeltPlan={chain?:{need:number;links:number;slack:number};path?:[[number,number],[number,number]][];via?:string[];/** A chain's further sprockets it drives (keys); its wheels in the order it runs round them (centre, pitch radius, +1
+ * wrapped, −1 pressed from outside); its heights; the body it moves with. */drives?:string[];loop?:{at:[number,number];r:number;side:1|-1}[];z?:[number,number];body?:string;/** Its length over a swing arm's range, when one of its pulleys swings. */swing?:{group:string;range:[number,number]};id:string;a:string;b:string;center:number;length:number;stock?:number;tension?:{motor:string;range:[number,number]};fit?:{stock:number;center:number;via?:{on:string;at:[number,number]}}};
 /** A web: straight (the hull of both rings), round a part (`path`: points it goes through, `width` its half width there),
  * or `z`: only that high, under or over a part. `route`: what the user chose; `hits`: what it still runs into. */
 export type WebPlan={a:string;b:string;auto:boolean;forced:boolean;route?:'aussen'|'tiefe';path?:[number,number][];width?:number;z?:[number,number];hits:string[]};
@@ -165,18 +166,25 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
  // Belts: two pulleys at the same height on different shafts.
  const belts:BeltPlan[]=[];
  /** A chain's way over its sprockets and tensioners, the sprockets' and tensioners' places given. */
- const chainWay=(a:Wheel,b:Wheel,via:Wheel[],at:(w:Wheel)=>[number,number]=w=>w.at)=>{const cw=(w:Wheel,side:1|-1):ChainWheel=>({at:at(w),r:w.pitch,teeth:w.teeth,side});return chainRound(cw(a,1),cw(b,1),via.map(v=>cw(v,-1)));};
+ /** A chain's way over its sprockets and tensioners, their places given. Tensioners and free wheels go onto spans. */
+ const chainWay=(a:Wheel,b:Wheel,via:Wheel[],at:(w:Wheel)=>[number,number]=w=>w.at)=>{const cw=(w:Wheel):ChainWheel=>({at:at(w),r:w.pitch,teeth:w.teeth,side:1,...(w.idler||w.free?{free:true}:{})});return chainRound(cw(a),cw(b),via.map(cw));};
+ /** The body a chain moves with: the one all its shafts belong to, or a swing arm whose shafts and pivot carry them all. */
+ const chainBody=(ws:Wheel[])=>{const bs=new Set(ws.map(w=>bodyOf(w.on)));if(bs.size===1)return [...bs][0];const g=groups.find(v=>ws.every(w=>bodyOf(w.on)===v.id||w.on===v.pivot));return g?.id;};
  for(const bt of doc.belts){const a=wheel(itemKey(bt.a)),b=wheel(itemKey(bt.b));
-  // A roller chain: two sprockets, tensioners on the way; level with each other within a millimetre.
-  if(a?.chain&&b?.chain){const via=(bt.via??[]).map(r=>wheel(itemKey(r))).filter((w):w is Wheel=>!!w),label=`Kette ${a.teeth}/${b.teeth}`;
-   if(a.on===b.on||via.some(v=>v.on===a.on||v.on===b.on)){issues.push({level:'fehler',message:`${label}: braucht zwei Kettenräder auf verschiedenen Wellen`,ref:bt.id});continue;}
-   if((bt.via??[]).length!==via.length||via.some(v=>!v.chain))issues.push({level:'fehler',message:`${label}: ein Spanner fehlt oder ist kein Kettenrad`,ref:bt.id});
+  // A roller chain: round its sprockets, over its tensioners; all level within a millimetre.
+  if(a?.chain&&b?.chain){const via=(bt.via??[]).map(r=>wheel(itemKey(r))).filter((w):w is Wheel=>!!w),all=[a,b,...via],label=`Kette ${a.teeth}/${b.teeth}${via.filter(v=>!v.idler&&!v.free).map(v=>'/'+v.teeth).join('')}`;
+   if(new Set(all.map(w=>w.on)).size!==all.length){issues.push({level:'fehler',message:`${label}: jedes Rad der Kette braucht seine eigene Welle`,ref:bt.id});continue;}
+   if((bt.via??[]).length!==via.length||via.some(v=>!v.chain))issues.push({level:'fehler',message:`${label}: ein Rad der Kette fehlt oder ist kein Kettenrad`,ref:bt.id});
    const mid=(w:Wheel)=>(w.z0+w.z1)/2;for(const w of [b,...via]){const off=Math.abs(mid(w)-mid(a));if(off>1)issues.push({level:'fehler',message:`${label}: ${w.label} steht ${mm(off)} neben der Kettenebene von ${a.label}; die Kette läuft schief (höchstens 0,5 mm)`,ref:bt.id});else if(off>.5)issues.push({level:'warnung',message:`${label}: ${w.label} steht ${mm(off)} neben der Kettenebene, die Kette läuft etwas schief`,ref:bt.id});}
    const way=chainWay(a,b,via);if(!way){issues.push({level:'fehler',message:`${label}: die Räder stehen zu dicht, die Kette findet keinen Weg`,ref:bt.id});continue;}
-   for(const i of way.loose)issues.push({level:'warnung',message:`${label}: ${via[i].label} berührt die Kette nicht; näher an eine der geraden Seiten setzen`,ref:bt.id});
-   const links=linksFor(way.links),c=dist(a.at,b.at);belts.push({id:bt.id,a:a.key,b:b.key,center:c,length:way.length,chain:{need:way.links,links,slack:links-way.links},path:way.spans,...(via.length?{via:via.map(v=>v.key)}:{})});
-   const zc=mid(a),zh=CHAIN.width/2,body=[a,b,...via].every(w=>bodyOf(w.on)===bodyOf(a.on))?bodyOf(a.on):'';
-   way.order.forEach((w,i)=>{const q=way.order[(i+1)%way.order.length],[p0,p1]=way.spans[i];obstacles.push({key:`kette:${bt.id}:${i}`,label,z0:zc-zh,z1:zc+zh,a:p0,ra:CHAIN.plate/2,b:p1,rb:CHAIN.plate/2,on:[...new Set([a,b,...via].filter(x=>dist(x.at,w.at)<1e-9||dist(x.at,q.at)<1e-9).map(x=>x.on))],body,belt:true});});
+   for(const k of way.loose)issues.push({level:'warnung',message:`${label}: ${via[k].label} berührt die Kette nicht; näher an eine der geraden Seiten setzen`,ref:bt.id});
+   for(const k of way.inner)issues.push({level:'fehler',message:`${label}: ${via[k].label} liegt innerhalb der Kette, sie läuft nicht darüber; als Spanner nur ein Rad, das frei dreht`,ref:bt.id});
+   // A chain over bodies that swing against each other changes its length: two sprockets only, tensioned by swinging.
+   const body=chainBody(all),drives=via.filter((v,k)=>!v.idler&&!v.free&&!way.inner.includes(k));
+   if(body===undefined&&all.length>2)issues.push({level:'fehler',message:`${label}: ihre Räder sitzen auf Körpern, die gegeneinander schwenken; über mehr als zwei Räder geht das nur in einem Körper (und an seiner Drehachse)`,ref:bt.id});
+   const links=linksFor(way.links),c=dist(a.at,b.at),zc=mid(a),zh=CHAIN.width/2;
+   belts.push({id:bt.id,a:a.key,b:b.key,center:c,length:way.length,chain:{need:way.links,links,slack:links-way.links},path:way.spans,...(via.length?{via:via.filter(v=>v.idler||v.free).map(v=>v.key)}:{}),...(drives.length?{drives:drives.map(v=>v.key)}:{}),loop:way.order.map(w=>({at:w.at,r:w.r,side:w.side})),z:[zc-zh,zc+zh],body:body??''});
+   way.order.forEach((w,i)=>{const q=way.order[(i+1)%way.order.length],[p0,p1]=way.spans[i];obstacles.push({key:`kette:${bt.id}:${i}`,label,z0:zc-zh,z1:zc+zh,a:p0,ra:CHAIN.plate/2,b:p1,rb:CHAIN.plate/2,on:[...new Set(all.filter(x=>dist(x.at,w.at)<1e-9||dist(x.at,q.at)<1e-9).map(x=>x.on))],body:body??'',belt:true});});
    continue;}
   if(!a?.pulley||!b?.pulley||a.on===b.on){issues.push({level:'fehler',message:'Riemen: braucht zwei Riemenscheiben auf verschiedenen Wellen',ref:bt.id});continue;}
   if(overlap(a.z0,a.z1,b.z0,b.z1)<2)issues.push({level:'fehler',message:`Riemen ${a.label} – ${b.label}: die Scheiben stehen nicht auf gleicher Höhe (${mm(a.z0)} und ${mm(b.z0)})`,ref:bt.id});
@@ -189,9 +197,9 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
  // a fixed one with its pivot shaft. A mesh or belt couples two rotors as seen from the body that carries both axes (so
  // a wheel on a link rolls on the one on its pivot when the link swings). A loop that disagrees locks.
  const rates:Record<string,number>={},input=doc.input??shafts[0]?.id;
- const edges=[...meshes.flatMap(m=>{const a=wheel(m.a)!,b=wheel(m.b)!;return a.free||b.free?[]:[{a:a.on,b:b.on,k:-a.teeth/b.teeth},{a:b.on,b:a.on,k:-b.teeth/a.teeth}];}),...belts.flatMap(bt=>{const a=wheel(bt.a)!,b=wheel(bt.b)!;return a.free||b.free?[]:[{a:a.on,b:b.on,k:a.teeth/b.teeth},{a:b.on,b:a.on,k:b.teeth/a.teeth}];})];
+ const edges=[...meshes.flatMap(m=>{const a=wheel(m.a)!,b=wheel(m.b)!;return a.free||b.free?[]:[{a:a.on,b:b.on,k:-a.teeth/b.teeth},{a:b.on,b:a.on,k:-b.teeth/a.teeth}];}),...belts.flatMap(bt=>[bt.b,...bt.drives??[]].flatMap(kb=>{const a=wheel(bt.a)!,b=wheel(kb)!;return a.free||b.free?[]:[{a:a.on,b:b.on,k:a.teeth/b.teeth},{a:b.on,b:a.on,k:b.teeth/a.teeth}];}))];
  const rotor=(w:Wheel)=>w.free?`rad:${w.key}`:w.on,carrier=(a:Wheel,b:Wheel)=>chain(bodyOf(a.on)).length>=chain(bodyOf(b.on)).length?bodyOf(a.on):bodyOf(b.on);
- const couples=[...meshes.map(m=>{const a=wheel(m.a)!,b=wheel(m.b)!;return {a:rotor(a),b:rotor(b),k:-a.teeth/b.teeth,c:carrier(a,b)};}),...belts.map(bt=>{const a=wheel(bt.a)!,b=wheel(bt.b)!;return {a:rotor(a),b:rotor(b),k:a.teeth/b.teeth,c:carrier(a,b)};})];
+ const couples=[...meshes.map(m=>{const a=wheel(m.a)!,b=wheel(m.b)!;return {a:rotor(a),b:rotor(b),k:-a.teeth/b.teeth,c:carrier(a,b)};}),...belts.flatMap(bt=>[bt.b,...bt.drives??[]].map(kb=>{const a=wheel(bt.a)!,b=wheel(kb)!;return {a:rotor(a),b:rotor(b),k:a.teeth/b.teeth,c:carrier(a,b)};}))];
  // The drives there may be: the input first, then every motor's shaft, then every swing arm that swings freely.
  const cands:{id:string;label:string;group?:string}[]=[];
  if(input&&shafts.some(x=>x.id===input))cands.push({id:input,label:shafts.find(x=>x.id===input)!.label});
@@ -261,19 +269,20 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
   if(faces&&Math.abs(faces.z-m.face)<=6){m.offset=+(faces.z-m.face).toFixed(3);issues.push({level:'hinweis',message:`${m.label} hat eine eigene Motorplatte; ${mm(Math.abs(m.offset))} ${m.offset>0?'höher':'tiefer'} läge sein Flansch an ${m.down?'der Unterseite':'der Oberseite'} von Schicht ${faces.i+1} und spart die Platte (Knopf an der Welle)`,ref:m.on});}}
  // Belts against stock lengths: with a motor's slots the centre distance has a range; without, it must fit as it is.
  const lengthAt=(a:Wheel,b:Wheel,c:number)=>2*c+Math.PI*(a.pitch+b.pitch)+(a.pitch-b.pitch)**2/Math.max(c,eps);
- for(const bp of belts){if(!bp.chain)continue;const a=wheel(bp.a)!,b=wheel(bp.b)!,via=(bp.via??[]).map(k=>wheel(k)!),k=bp.chain,label=`Kette ${a.teeth}/${b.teeth}`,m=motors.find(x=>x.layer&&x.slot&&(x.on===a.on||x.on===b.on)),sw=!holds(a.on,b.on)&&swung(a.on,b.on).length===1?swung(a.on,b.on)[0]:undefined;
+ for(const bp of belts){if(!bp.chain)continue;const a=wheel(bp.a)!,b=wheel(bp.b)!,via=[...bp.drives??[],...bp.via??[]].map(k=>wheel(k)!),k=bp.chain,label=`Kette ${[a,b,...(bp.drives??[]).map(k=>wheel(k)!)].map(w=>w.teeth).join('/')}`,m=motors.find(x=>x.layer&&x.slot&&(x.on===a.on||x.on===b.on)),sw=!holds(a.on,b.on)&&swung(a.on,b.on).length===1?swung(a.on,b.on)[0]:undefined;
   const linksAt=(c:number)=>{const u=b.at[0]-a.at[0],v=b.at[1]-a.at[1],l=Math.hypot(u,v)||1;return chainWay(a,b,via,w=>w===b?[a.at[0]+u/l*c,a.at[1]+v/l*c]:w.at)?.links??NaN;};
   // Where it gets taut with its even number of links: the centre distance, or the first tensioner moved across the chain.
   const center=solve(linksAt,k.links,Math.max(a.pitch+b.pitch,bp.center-30),bp.center+40);bp.fit={stock:k.links,center};
   // The first tensioner moved across the straight span it sits at (without tensioners), into the chain.
-  if(via.length){const t=via[0],near=(chainWay(a,b,[])?.spans??[]).map(([p,q])=>{const u=q[0]-p[0],v=q[1]-p[1],l=Math.hypot(u,v)||1;return {d:((t.at[1]-p[1])*u-(t.at[0]-p[0])*v)/l,n:[-v/l,u/l] as [number,number]};}).sort((x,y)=>Math.abs(x.d)-Math.abs(y.d))[0];
+  const tens=via.filter(v=>v.idler||v.free),fixed=via.filter(v=>!v.idler&&!v.free);
+  if(tens.length){const t=tens[0],near=(chainWay(a,b,fixed)?.spans??[]).map(([p,q])=>{const u=q[0]-p[0],v=q[1]-p[1],l=Math.hypot(u,v)||1;return {d:((t.at[1]-p[1])*u-(t.at[0]-p[0])*v)/l,n:[-v/l,u/l] as [number,number]};}).sort((x,y)=>Math.abs(x.d)-Math.abs(y.d))[0];
    if(near){const dir=near.d>0?-1:1,at=(o:number):[number,number]=>[t.at[0]+near.n[0]*dir*o,t.at[1]+near.n[1]*dir*o],f=(o:number)=>chainWay(a,b,via,w=>w===t?at(o):w.at)?.links??NaN,o=solve(f,k.links,Math.abs(near.d)-t.pitch-1,Math.abs(near.d)-.01);if(Number.isFinite(o))bp.fit.via={on:t.on,at:at(o).map(x=>+x.toFixed(3)) as [number,number]};}}
   const t=m?m.travel/2:0,swing=sw?centres(a.on,b.on,sw):undefined,lo=Math.min(linksAt(bp.center-t),swing?linksAt(swing.lo):Infinity),hi=Math.max(linksAt(bp.center+t),swing?linksAt(swing.hi):-Infinity);
   if(m)bp.tension={motor:m.key,range:[lo*CHAIN.pitch,hi*CHAIN.pitch]};if(sw)bp.swing={group:sw.id,range:[lo*CHAIN.pitch,hi*CHAIN.pitch]};
   const slack=k.links-k.need;
   if((m||sw)&&k.links<=hi+.05)issues.push({level:'hinweis',message:`${label}: ${k.links} Glieder, gespannt ${m?'über die Langlöcher des Motors':`durch Schwenken von ${sw!.name}`} (Achsabstand ${mm(center)})`,ref:bp.id});
   else if(slack<=.15)issues.push({level:'hinweis',message:`${label}: ${k.links} Glieder, liegt straff (${n(slack)} Glied Spiel)`,ref:bp.id});
-  else issues.push({level:'warnung',message:`${label}: ${k.links} Glieder hängen ${n(slack)} Glied durch${via.length?bp.fit.via?': Spanner verschieben (Knopf an der Kette)':'':Number.isFinite(center)?`: Achsabstand auf ${mm(center)} stellen oder einen Spanner daran`:''}`,ref:bp.id});}
+  else issues.push({level:'warnung',message:`${label}: ${k.links} Glieder hängen ${n(slack)} Glied durch${via.some(v=>v.idler||v.free)?bp.fit.via?': Spanner verschieben (Knopf an der Kette)':'':fixed.length?': einen Spanner daran':Number.isFinite(center)?`: Achsabstand auf ${mm(center)} stellen oder einen Spanner daran`:''}`,ref:bp.id});}
  for(const bp of belts){if(bp.chain)continue;const a=wheel(bp.a)!,b=wheel(bp.b)!,m=motors.find(x=>x.layer&&x.slot&&(x.on===a.on||x.on===b.on)),t=m?m.travel/2:0,sw=!holds(a.on,b.on)&&swung(a.on,b.on).length===1?swung(a.on,b.on)[0]:undefined;let lo=lengthAt(a,b,bp.center-t),hi=lengthAt(a,b,bp.center+t);
   if(sw){const c=centres(a.on,b.on,sw);lo=Math.min(lo,lengthAt(a,b,c.lo));hi=Math.max(hi,lengthAt(a,b,c.hi));bp.swing={group:sw.id,range:[lo,hi]};}
   if(m)bp.tension={motor:m.key,range:[lo,hi]};const stock=BELTS.find(l=>l>=lo-.5);const label=`Riemen ${a.teeth}/${b.teeth}`;

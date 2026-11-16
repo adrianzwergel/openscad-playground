@@ -4,7 +4,8 @@
 // split to its top; each plate then gets the pocket for its half of every bearing. Columns between layers, and the
 // linked shafts with all their parts, turned upright and put where they stand. 2D booleans and one extrusion per
 // plate keep OpenCascade's 3D booleans (which leak a little) to the pockets.
-import {draw,drawCircle,makeCylinder,makeBox} from 'replicad';
+import {draw,drawCircle,makeCylinder,makeBox,measureVolume,makeCompound} from 'replicad';
+import {CHAIN} from '../shaft/chain.ts';
 import type {Drawing,Shape3D} from 'replicad';
 import {buildParts,profileDrawing,matMul,matMove,matTurn} from '../shaft/cad.ts';
 import {outer} from '../shaft/profile.ts';
@@ -24,13 +25,20 @@ import {slug} from './notes.ts';
 // A circle's seam turned off the axes: on a grid, the seam point of one circle can lie exactly on another outline,
 // and OpenCascade's 2D booleans fail on that coincidence. The shape is the same.
 const disc=(c:P,r:number)=>drawCircle(r).rotate(37.3).translate(c[0],c[1]);
+/** How much narrower than the tangents the quadrilateral of a hull is drawn: 0, unless a plate came out broken (see
+ * `plates`). */
+let shrink=0;
+/** Whether OpenCascade takes a solid as sound: its 2D booleans can leave an outline that extrudes into a broken solid
+ * (webs meeting a ring at a tangent), which every later cut then empties without an error. A small cut in every ring
+ * shows it. */
+const sound=(s:Shape3D,at:P[])=>{try{const v=measureVolume(s);return at.every(c=>{const t=makeCylinder(.3,1,[c[0],c[1],.5],[0,0,1]),r=s.cut(t),w=measureVolume(r);t.delete();r.delete();return w>v*.5;});}catch{return true;}};
 /** Two discs and the quadrilateral between their outer tangents: their hull. */
 function hull(a:P,ra:number,b:P,rb:number):Drawing{const d0=Math.hypot(b[0]-a[0],b[1]-a[1]);
  // One disc inside the other (also touching it from inside, which OpenCascade cannot fuse): the hull is the larger one.
  if(d0<=Math.abs(ra-rb)+1e-6)return ra>=rb?disc(a,ra):disc(b,rb);
  // The quadrilateral first: two discs that just touch (a bolt's eye right outside a ring) meet inside it then, and their
  // near-tangent crossing, which the 2D booleans cannot stand, is no edge any more.
- const t=tangents(a,ra,b,rb);if(!t)return disc(a,ra).fuse(disc(b,rb));return disc(a,ra).fuse(draw(t[0]).lineTo(t[1]).lineTo(t[2]).lineTo(t[3]).close()).fuse(disc(b,rb));}
+ const t=tangents(a,ra-shrink,b,rb-shrink);if(!t)return disc(a,ra).fuse(disc(b,rb));return disc(a,ra).fuse(draw(t[0]).lineTo(t[1]).lineTo(t[2]).lineTo(t[3]).close()).fuse(disc(b,rb));}
 /** A disc swept along an arc about `w.c`: a slot along the arc with round ends, as one outline of four arcs. Right at the
  * centre (or all the way round) it is a disc or a ring. */
 function band(at:P,r:number,w:Sweep):Drawing{const d=Math.hypot(at[0]-w.c[0],at[1]-w.c[1]),width=w.to-w.from;
@@ -77,7 +85,9 @@ export function plateOutline(doc:GearDoc,plan:GearPlan,l:LayerPlan):Drawing|unde
 /** Webs only as high as there is room under or over a part: their outline and heights. */
 export function steppedWebs(doc:GearDoc,plan:GearPlan,l:LayerPlan){const holes=throughHoles(doc,plan,l);return l.webs.filter(w=>w.z).map(w=>{const d=webShape(plan,l,w);return {shape:holes?d.cut(holes.clone()):d,z:w.z!};});}
 function plates(keep:Keep,doc:GearDoc,plan:GearPlan,l:LayerPlan,index:number):CadPart[]{
- const out=plateOutline(doc,plan,l);if(!out)return [];const s=doc.settings,[z0,z1]=l.band,bearings=s.proto?[]:l.bearings.map(k=>plan.bearings.find(b=>b.key===k)!).filter(b=>!b.motor&&!b.hub),steps=steppedWebs(doc,plan,l);
+ // The outline; where it extrudes into a broken solid, again with the webs a hair narrower than the tangents.
+ let out:Drawing|undefined;for(const q of [0,.01,.03,.1]){shrink=q;try{out=plateOutline(doc,plan,l);}finally{shrink=0;}if(!out)return [];const test=out.clone().sketchOnPlane("XY",0).extrude(1) as Shape3D,ok=sound(test,l.bearings.map(k=>{const b=plan.bearings.find(x=>x.key===k)!,r=b.D/2+l.rim/2;return [b.at[0]+r*Math.cos(.7),b.at[1]+r*Math.sin(.7)] as P;}));test.delete();if(ok)break;}
+ if(!out)return [];const s=doc.settings,[z0,z1]=l.band,bearings=s.proto?[]:l.bearings.map(k=>plan.bearings.find(b=>b.key===k)!).filter(b=>!b.motor&&!b.hub),steps=steppedWebs(doc,plan,l);
  // A hub on a round shaft: the tap drill for a set screw M3 from outside, on the side away from the plate's other bearings.
  const screws=(solid:Shape3D,lo:number,hi:number)=>{const z=(z0+z1)/2;if(z<lo+1.3||z>hi-1.3)return solid;
   for(const k of l.bearings){const b=plan.bearings.find(x=>x.key===k)!;if(!b.hub||b.hub.profile.kind!=='rund')continue;const others=l.bearings.map(q=>plan.bearings.find(x=>x.key===q)!).filter(q=>q!==b),c:P=others.length?[others.reduce((t,q)=>t+q.at[0],0)/others.length,others.reduce((t,q)=>t+q.at[1],0)/others.length]:[b.at[0]-1,b.at[1]],d=Math.hypot(b.at[0]-c[0],b.at[1]-c[1])||1;
@@ -122,6 +132,17 @@ export function buildGearParts(doc:GearDoc,plan:GearPlan,files:Record<string,Sha
  for(const sp of plan.springs){if(!sp.part)continue;const [a0,b0]=sp.bolts.map(k=>plan.bolts[k]),a=carried(a0.at,links(plan.groups,a0.body,pose?.groups??{})),b=carried(b0.at,links(plan.groups,b0.body,pose?.groups??{})),c=Math.hypot(b[0]-a[0],b[1]-a[1]);if(c<2*sp.part.D)continue;
   const u=[(b[0]-a[0])/c,(b[1]-a[1])/c],hook=sp.part.D,len=c-2*hook,r=sp.part.D/2,start:[number,number,number]=[a[0]+u[0]*hook,a[1]+u[1]*hook,sp.z],dir:[number,number,number]=[u[0],u[1],0];
   try{parts.push({name:sp.label,file:`feder-${sp.id}`,kind:'kauf',shape:keep(keep(makeCylinder(r,len,start,dir)).cut(keep(makeCylinder(r-sp.part.d,len+.02,[start[0]-u[0]*.01,start[1]-u[1]*.01,sp.z],dir))) as Shape3D),color:'#9aa6b0',made:false,spring:true});}catch{/* too short to show */}}
+ // Chains: a band as high as the plates, as wide as over the pins, along the straight spans and round every wheel; each
+ // piece a solid of its own, put together without a boolean. It moves with its body.
+ for(const bp of plan.belts){if(!bp.chain||!bp.loop||!bp.path||!bp.z)continue;const h=CHAIN.plate/2,[z0,z1]=bp.z,n=bp.loop.length,pieces:Shape3D[]=[];
+  const prism=(pts:P[])=>{let pen=draw(pts[0]);for(const q of pts.slice(1))pen=pen.lineTo(q);return keep(pen.close().sketchOnPlane('XY',z0).extrude(z1-z0) as Shape3D);};
+  try{for(let i=0;i<n;i++){const [p,q]=bp.path[i],u=q[0]-p[0],v=q[1]-p[1],l=Math.hypot(u,v);if(l>.05){const nx=-v/l*h,ny=u/l*h;pieces.push(prism([[p[0]+nx,p[1]+ny],[q[0]+nx,q[1]+ny],[q[0]-nx,q[1]-ny],[p[0]-nx,p[1]-ny]]));}
+    // Round wheel i: from where the span before it ends to where the next one starts.
+    const w=bp.loop[i],e=bp.path[(i-1+n)%n][1],st=bp.path[i][0],a0=Math.atan2(e[1]-w.at[1],e[0]-w.at[0]),a1=Math.atan2(st[1]-w.at[1],st[0]-w.at[0]),two=2*Math.PI;
+    let sweep=w.side>0?((a1-a0)%two+two)%two:-(((a0-a1)%two+two)%two);if(Math.abs(sweep)<.01)continue;const k=Math.max(2,Math.ceil(Math.abs(sweep)/(Math.PI/18))),arc=(r:number)=>Array.from({length:k+1},(_,j)=>{const t=a0+sweep*j/k;return [w.at[0]+r*Math.cos(t),w.at[1]+r*Math.sin(t)] as P;});
+    pieces.push(prism([...arc(w.r+h),...arc(w.r-h).reverse()]));}
+   if(pieces.length){let shape=keep(makeCompound(pieces) as unknown as Shape3D);if(pose)for(const g of links(plan.groups,bp.body??'',pose.groups))if(g.angle)shape=keep(shape.rotate(g.angle,[g.at[0],g.at[1],0],[0,0,1]) as Shape3D);
+    parts.push({name:`Rollenkette 04C, ${bp.chain.links} Glieder`,file:`kette-${bp.id}`,kind:'kauf',shape,color:'#5d666f',made:false,body:bp.body??''});}}catch{/* the chain is only shown */}}
  // The motors' bodies come with their shafts' parts.
  parts.push(...shaftParts(keep,plan,doc,files,pose));
  return parts;}

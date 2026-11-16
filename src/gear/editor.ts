@@ -59,19 +59,22 @@ export class GearEditor{
  private addGroup(pivot:string,fixed:boolean):Group{const d=this.doc;d.groups??=[];let i=1;while(d.groups.some(g=>g.id===`g${i}`))i++;const word=fixed?'Hebel':'Schwinge';let k=1;while(d.groups.some(g=>g.name===`${word} ${k}`))k++;
   const g:Group={id:`g${i}`,name:`${word} ${k}`,pivot,shafts:[],from:fixed?-90:-20,to:fixed?90:20,...(fixed?{fixed:true}:{})};d.groups.push(g);return g;}
  private dropGroup(id:string){const d=this.doc;d.groups=(d.groups??[]).filter(g=>g.id!==id);if(!d.groups.length)delete d.groups;for(const l of d.layers??[])if(l.group===id)delete l.group;delete this.pose.groups[id];}
- /** A sprocket's chains: links, slack, how to make it taut (centre distance or a tensioner), tensioners to add; and
-  * chains to the sprockets on other shafts. */
+ /** A sprocket's chain: links, slack, how to make it taut (centre distance or a tensioner); further sprockets and
+  * tensioners in its plane to take into it, those in it to take out. Without one: chains to the sprockets on other
+  * shafts in its plane. */
  private chainProps(pu:GearPlan['wheels'][number],x:PlacedShaft,others:GearPlan['wheels'],button:(t:string,go:()=>void,cls?:string)=>HTMLButtonElement){const d=this.doc,p=this.host.plan(),key=(r:ItemRef)=>`${r.on}/${r.item}`;
-  const mine=d.belts.filter(b=>key(b.a)===pu.key||key(b.b)===pu.key),idlers=p.wheels.filter(w=>w.idler&&Math.abs((w.z0+w.z1)/2-(pu.z0+pu.z1)/2)<=1&&!d.belts.some(b=>(b.via??[]).some(v=>key(v)===w.key)));
-  return [el('h3',{textContent:`Kette an ${pu.label}`}),...mine.map(b=>{const bp=p.belts.find(v=>v.id===b.id),other=bp?p.wheels.find(v=>v.key===(bp.a===pu.key?bp.b:bp.a)):undefined,fit=bp?.fit,k=bp?.chain;
-   const info=el('span',{textContent:k?`${k.links} Glieder, ${String(+k.slack.toFixed(2)).replace('.',',')} Glied Spiel${b.via?.length?`, über ${b.via.map(v=>p.wheels.find(w=>w.key===key(v))?.label??v.item).join(', ')}`:''}`:'Kette'});info.dataset.chainInfo=b.id;
+  const keys=(b:GearDoc['belts'][number])=>[key(b.a),key(b.b),...(b.via??[]).map(key)],used=new Set(d.belts.flatMap(keys)),level=(w:GearPlan['wheels'][number])=>Math.abs((w.z0+w.z1)/2-(pu.z0+pu.z1)/2)<=1,name=(k:string)=>p.wheels.find(w=>w.key===k)?.label??k;
+  const mine=d.belts.filter(b=>keys(b).includes(pu.key));
+  return [el('h3',{textContent:`Kette an ${pu.label}`}),...mine.map(b=>{const bp=p.belts.find(v=>v.id===b.id),ks=keys(b),other=bp&&bp.a===pu.key||bp?.b===pu.key?p.wheels.find(v=>v.key===(bp!.a===pu.key?bp!.b:bp!.a)):undefined,fit=bp?.fit,k=bp?.chain;
+   const info=el('span',{textContent:k?`${k.links} Glieder, ${String(+k.slack.toFixed(2)).replace('.',',')} Glied Spiel, über ${ks.filter(v=>v!==pu.key).map(name).join(', ')}`:'Kette'});info.dataset.chainInfo=b.id;
    const out:(HTMLElement|string)[]=[el('div',{className:'prop-row'},info,button('entfernen',()=>{d.belts=d.belts.filter(v=>v!==b);},'ghost'))];
    if(fit?.via){const sh=d.shafts.find(v=>v.id===fit.via!.on);if(sh&&Math.hypot(sh.at[0]-fit.via.at[0],sh.at[1]-fit.via.at[1])>.01){const bt=button(`Spanner auf ${fit.stock} Glieder stellen`,()=>{sh.at=[...fit.via!.at];},'ghost');bt.dataset.chainFit='via';out.push(bt);}}
-   else if(fit&&other&&Number.isFinite(fit.center)&&Math.abs(bp!.center-fit.center)>.01&&!bp!.tension&&!bp!.swing){const bt=button(`Auf ${fit.stock} Glieder stellen (${String(+fit.center.toFixed(2)).replace('.',',')} mm)`,()=>{const dx=x.at[0]-other.at[0],dy=x.at[1]-other.at[1],l=Math.hypot(dx,dy)||1;x.at=[+(other.at[0]+dx/l*fit.center).toFixed(4),+(other.at[1]+dy/l*fit.center).toFixed(4)];},'ghost');bt.dataset.chainFit='center';out.push(bt);}
-   for(const w of idlers){const bt=button(`＋ Spanner ${w.label}`,()=>{(b.via??=[]).push({on:w.on,item:w.item});},'ghost');bt.dataset.chainVia=w.key;out.push(bt);}
-   for(const v of b.via??[]){const bt=button(`Spanner ${p.wheels.find(w=>w.key===key(v))?.label??v.item} ab`,()=>{b.via=b.via!.filter(u=>u!==v);if(!b.via.length)delete b.via;},'ghost');out.push(bt);}
+   else if(fit&&other&&!b.via?.length&&Number.isFinite(fit.center)&&Math.abs(bp!.center-fit.center)>.01&&!bp!.tension&&!bp!.swing){const bt=button(`Auf ${fit.stock} Glieder stellen (${String(+fit.center.toFixed(2)).replace('.',',')} mm)`,()=>{const dx=x.at[0]-other.at[0],dy=x.at[1]-other.at[1],l=Math.hypot(dx,dy)||1;x.at=[+(other.at[0]+dx/l*fit.center).toFixed(4),+(other.at[1]+dy/l*fit.center).toFixed(4)];},'ghost');bt.dataset.chainFit='center';out.push(bt);}
+   // Into the chain: sprockets it then drives too, tensioners it runs over.
+   for(const w of p.wheels.filter(w=>w.chain&&level(w)&&!used.has(w.key)&&!ks.some(k=>k.split('/')[0]===w.on))){const bt=button(w.idler?`＋ Spanner ${w.label}`:`＋ ${w.label} in die Kette`,()=>{(b.via??=[]).push({on:w.on,item:w.item});},'ghost');bt.dataset.chainVia=w.key;out.push(bt);}
+   for(const v of b.via??[]){const bt=button(`${name(key(v))} aus der Kette`,()=>{b.via=b.via!.filter(u=>u!==v);if(!b.via.length)delete b.via;},'ghost');bt.dataset.chainOut=key(v);out.push(bt);}
    return el('div',{className:'prop-col'},...out);}),
-   ...others.filter(o=>Math.abs((o.z0+o.z1)/2-(pu.z0+pu.z1)/2)<=1&&!d.belts.some(b=>[key(b.a),key(b.b)].sort().join()===[pu.key,o.key].sort().join())).map(o=>{const b=button(`＋ Kette zu ${o.label}`,()=>{let i=1;while(d.belts.some(v=>v.id===`k${i}`))i++;d.belts.push({id:`k${i}`,a:{on:pu.on,item:pu.item},b:{on:o.on,item:o.item}});},'ghost');b.dataset.chain=o.key;return b;})];}
+   ...(mine.length?[]:others.filter(o=>level(o)&&!used.has(o.key)).map(o=>{const b=button(`＋ Kette zu ${o.label}`,()=>{let i=1;while(d.belts.some(v=>v.id===`k${i}`))i++;d.belts.push({id:`k${i}`,a:{on:pu.on,item:pu.item},b:{on:o.on,item:o.item}});},'ghost');b.dataset.chain=o.key;return b;}))];}
  /** Takes a shaft out of the gearbox with all that hangs on it: belts, the input, the range, swing arms about it. */
  private dropShaft(id:string){const d=this.doc;d.shafts=d.shafts.filter(v=>v.id!==id);d.belts=d.belts.filter(b=>b.a.on!==id&&b.b.on!==id);for(const b of d.belts)if(b.via){b.via=b.via.filter(v=>v.on!==id);if(!b.via.length)delete b.via;}if(d.input===id)delete d.input;if(d.turn?.on===id)delete d.turn;
   for(const g of [...(d.groups??[])]){if(g.pivot===id)this.dropGroup(g.id);else g.shafts=g.shafts.filter(v=>v!==id);}}
