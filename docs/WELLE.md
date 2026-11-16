@@ -180,3 +180,7 @@ rutschen), Feder zu eng, Vorspannung auf Block, ohne Vorspannung. Für das Getri
 Ein Teil mit runder Bohrung sitzt auf einem gleich großen D (Hinweis „sitzt auf dem D5“), etwa ein Lager 685 neben
 der Kupplung. Stückliste: zwei Reibscheiben, Federteller, Feder, Rad. 3D: Scheiben und Teller als Druckteile, Feder als
 Rohr. Prüfung: `scripts/shaft/check-clutch.mjs`, `scripts/shaft/check-clutch-browser.mjs`. Beispiel „Rutschkupplung zwischen zwei 685“ (`kupplung`): z40 m1 lose, Feder 9,5 × 16 mit 3 mm Vorspannung, etwa 3,2 N·cm.
+
+## Kettenräder 04C (2026-11-17)
+
+Gruppe „Kettenräder“: die Räder von sourcing map für Kette 04C, z9 bis z17, z19, z24 und z25, Bohrung 5, 6 oder 8, mit Nabe auf einer Seite und zwei Madenschrauben (`clamp`), dazu der Kettenspanner z20 mit eigenem Lager (Bohrung 8, dreht immer frei, kein Gleitsitz-Hinweis). Am Teil wählt man, wohin die Nabe zeigt (`OnItem.hub`). Die Zähne folgen ISO 606, die Nabe ist geschätzt. Auf runder Welle meldet der Plan einen Hinweis, dass eine Abflachung die Madenschrauben sicherer hält; sitzt das Rad auf einem Adapter, braucht der Adapter ein D. Im 3D-Modell erscheint der Zahnkranz aus dem Umriss (Rollensitz und Flanken) mit der gedrehten Nabe. Maße und Kette: `src/shaft/chain.ts`, siehe GETRIEBE.md „Rollenkette 04C“.

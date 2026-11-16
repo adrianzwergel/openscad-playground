@@ -15,6 +15,8 @@ import type {ShaftDoc} from '../shaft/model.ts';
 import {outer,label as profileLabel} from '../shaft/profile.ts';
 import type {Profile} from '../shaft/profile.ts';
 import {BELTS} from '../mechanics/motion.ts';
+import {CHAIN,pitchDiameter,toothBand,chainRound,linksFor,solve} from '../shaft/chain.ts';
+import type {ChainWheel} from '../shaft/chain.ts';
 import {partById} from '../mechanics/parts/catalog.ts';
 import type {Part} from '../mechanics/parts/catalog.ts';
 import type {GearDoc,PlacedShaft,Layer} from './model.ts';
@@ -25,7 +27,8 @@ import type {Prim,Sweep,Capsule} from './sweep.ts';
 const eps=1e-6;
 export type ShaftFile={name:string;doc:ShaftDoc};
 export type Placed={key:string;on:string;item:string;label:string;at:[number,number];z0:number;z1:number};
-export type Wheel=Placed&{teeth:number;module?:number;pulley:boolean;pitch:number;outer:number;lego:boolean;/** Runs free on its shaft: a rotor of its own. */free?:boolean};
+/** `chain`: a sprocket for chain 04C (z0..z1 its teeth), `idler` a tensioner. */
+export type Wheel=Placed&{chain?:boolean;idler?:boolean;teeth:number;module?:number;pulley:boolean;pitch:number;outer:number;lego:boolean;/** Runs free on its shaft: a rotor of its own. */free?:boolean};
 /** A motor whose shaft is in a linked shaft: its flange face (z), its body below (`down`) or above it, the layer it is
  * screwed to, how far its shaft would have to move to lie on a layer, the slot direction when it drives a belt. `pad`:
  * radius of the round flange field in the plate. */
@@ -55,7 +58,9 @@ export type ShaftInWorld={id:string;label:string;at:[number,number];z0:number;z1
 export type Mesh={a:string;b:string;ratio:number};
 /** `tension`: a motor's slots move the centre distance within `range` (lengths at its ends); `fit`: the centre distance
  * the stock belt wants. */
-export type BeltPlan={/** Its length over a swing arm's range, when one of its pulleys swings. */swing?:{group:string;range:[number,number]};id:string;a:string;b:string;center:number;length:number;stock?:number;tension?:{motor:string;range:[number,number]};fit?:{stock:number;center:number}};
+/** `chain`: a roller chain: the links its way needs, the links it has (even), how many it hangs slack by; `path`: its
+ * straight spans as drawn; `via`: the tensioners it runs over; `fit.via`: where the first tensioner makes it taut. */
+export type BeltPlan={chain?:{need:number;links:number;slack:number};path?:[[number,number],[number,number]][];via?:string[];/** Its length over a swing arm's range, when one of its pulleys swings. */swing?:{group:string;range:[number,number]};id:string;a:string;b:string;center:number;length:number;stock?:number;tension?:{motor:string;range:[number,number]};fit?:{stock:number;center:number;via?:{on:string;at:[number,number]}}};
 /** A web: straight (the hull of both rings), round a part (`path`: points it goes through, `width` its half width there),
  * or `z`: only that high, under or over a part. `route`: what the user chose; `hits`: what it still runs into. */
 export type WebPlan={a:string;b:string;auto:boolean;forced:boolean;route?:'aussen'|'tiefe';path?:[number,number][];width?:number;z?:[number,number];hits:string[]};
@@ -122,6 +127,11 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
   if(plan.issues.some(i=>i.level==='fehler'))issues.push({level:'warnung',message:`${f.name}: die Welle selbst hat noch Fehler (im Wellen-Generator ansehen)`,ref:p.id});
   for(const t of plan.placed){const [z0,z1]=span(t.x0,t.x1),base={key:itemKey({on:p.id,item:t.id}),on:p.id,item:t.id,label:`${t.part.short} auf ${f.name}`,at:p.at,z0,z1};
    if(t.part.group==='Lager'){bearings.push({...base,D:t.part.outer,d:outer(t.bore),B:t.x1-t.x0});continue;}
+   // A sprocket: on the chain with its teeth only; its hub beside them in the way of plates.
+   if(t.part.sprocket&&t.part.teeth){const sp=t.part.sprocket,w=t.x1-t.x0,[a,b]=toothBand({width:w,hub:!sp.idler},w,t.hub),[ta,tb]=span(t.x0+a,t.x0+b);
+    wheels.push({...base,z0:ta,z1:tb,teeth:t.part.teeth,pulley:false,chain:true,...(sp.idler?{idler:true}:{}),pitch:pitchDiameter(t.part.teeth)/2,outer:t.part.outer/2,lego:false,...(t.free?{free:true}:{})});
+    obstacles.push({key:base.key,label:base.label,z0:ta,z1:tb,a:p.at,ra:t.part.outer/2,on:[p.id],body});
+    const [h0,h1]=sp.idler?[z0,z1]:t.hub==='links'?span(t.x0,t.x0+a):span(t.x0+b,t.x1);if(h1-h0>eps)obstacles.push({key:`${base.key}/nabe`,label:`Nabe von ${base.label}`,z0:h0,z1:h1,a:p.at,ra:sp.hub/2,on:[p.id],body});continue;}
    if(t.part.teeth){const pulley=!!t.part.pulley,pitch=pulley?t.part.teeth/Math.PI:(t.part.module??1)*t.part.teeth/2;wheels.push({...base,teeth:t.part.teeth,...(t.part.module?{module:t.part.module}:{}),pulley,pitch,outer:t.part.outer/2,lego:t.part.group==='LEGO-Zahnräder',...(t.free?{free:true}:{})});}
    if(t.arm){// Along the shaft x becomes z: an arm at 0° (the shaft's +z) points to −x in the plane; flipped, mirrored.
     const deg=(p.turn??0)+(p.flip?180-t.arm.angle:180+t.arm.angle),end:[number,number]=[p.at[0]+t.arm.length*Math.cos(deg*Math.PI/180),p.at[1]+t.arm.length*Math.sin(deg*Math.PI/180)];
@@ -137,7 +147,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
  const wheel=(k:string)=>wheels.find(w=>w.key===k);
  // Meshing: two wheels of the same module on different shafts, facing each other, at the sum of their pitch radii.
  const meshes:Mesh[]=[];
- wheels.forEach((a,i)=>{for(const b of wheels.slice(i+1)){if(a.on===b.on||a.pulley||b.pulley)continue;const face=overlap(a.z0,a.z1,b.z0,b.z1);if(face<=.3)continue;const c=dist(a.at,b.at),want=a.pitch+b.pitch;
+ wheels.forEach((a,i)=>{for(const b of wheels.slice(i+1)){if(a.on===b.on||a.pulley||b.pulley||a.chain||b.chain)continue;const face=overlap(a.z0,a.z1,b.z0,b.z1);if(face<=.3)continue;const c=dist(a.at,b.at),want=a.pitch+b.pitch;
   if(a.module===b.module&&Math.abs(c-want)<.05){meshes.push({a:a.key,b:b.key,ratio:-a.teeth/b.teeth});if(a.lego!==b.lego)issues.push({level:'hinweis',message:`${a.label} kämmt mit ${b.label}: LEGO und gedrucktes Rad gemischt, Modul 1 bei beiden, Zahnform prüfen`,ref:b.on});continue;}
   if(a.module===b.module&&Math.abs(c-want)<1)issues.push({level:'warnung',message:`${a.label} und ${b.label} kämmen fast: Abstand ${mm(c)}, Eingriff bei ${mm(want)}`,ref:b.on});
   else if(c<a.outer+b.outer-.01)issues.push({level:'fehler',message:`${a.label} und ${b.label} berühren sich, ohne zu kämmen (Abstand ${mm(c)}${a.module===b.module?`, für den Eingriff ${mm(want)}`:', anderes Modul'})`,ref:b.on});}});
@@ -154,7 +164,21 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
   if(gs.length===1){const c=centres(a.on,b.on,g);if(c.lo<a.pitch+b.pitch-.05)issues.push({level:'fehler',message:`${g.name}: bei ${n(c.at)}° läuft ${a.label} in ${b.label} hinein (Achsabstand ${mm(c.lo)}, Eingriff bei ${mm(a.pitch+b.pitch)}): Bereich auf dieser Seite begrenzen`,ref:`schwinge:${g.id}`});}}
  // Belts: two pulleys at the same height on different shafts.
  const belts:BeltPlan[]=[];
- for(const bt of doc.belts){const a=wheel(itemKey(bt.a)),b=wheel(itemKey(bt.b));if(!a?.pulley||!b?.pulley||a.on===b.on){issues.push({level:'fehler',message:'Riemen: braucht zwei Riemenscheiben auf verschiedenen Wellen',ref:bt.id});continue;}
+ /** A chain's way over its sprockets and tensioners, the sprockets' and tensioners' places given. */
+ const chainWay=(a:Wheel,b:Wheel,via:Wheel[],at:(w:Wheel)=>[number,number]=w=>w.at)=>{const cw=(w:Wheel,side:1|-1):ChainWheel=>({at:at(w),r:w.pitch,teeth:w.teeth,side});return chainRound(cw(a,1),cw(b,1),via.map(v=>cw(v,-1)));};
+ for(const bt of doc.belts){const a=wheel(itemKey(bt.a)),b=wheel(itemKey(bt.b));
+  // A roller chain: two sprockets, tensioners on the way; level with each other within a millimetre.
+  if(a?.chain&&b?.chain){const via=(bt.via??[]).map(r=>wheel(itemKey(r))).filter((w):w is Wheel=>!!w),label=`Kette ${a.teeth}/${b.teeth}`;
+   if(a.on===b.on||via.some(v=>v.on===a.on||v.on===b.on)){issues.push({level:'fehler',message:`${label}: braucht zwei Kettenräder auf verschiedenen Wellen`,ref:bt.id});continue;}
+   if((bt.via??[]).length!==via.length||via.some(v=>!v.chain))issues.push({level:'fehler',message:`${label}: ein Spanner fehlt oder ist kein Kettenrad`,ref:bt.id});
+   const mid=(w:Wheel)=>(w.z0+w.z1)/2;for(const w of [b,...via]){const off=Math.abs(mid(w)-mid(a));if(off>1)issues.push({level:'fehler',message:`${label}: ${w.label} steht ${mm(off)} neben der Kettenebene von ${a.label}; die Kette läuft schief (höchstens 0,5 mm)`,ref:bt.id});else if(off>.5)issues.push({level:'warnung',message:`${label}: ${w.label} steht ${mm(off)} neben der Kettenebene, die Kette läuft etwas schief`,ref:bt.id});}
+   const way=chainWay(a,b,via);if(!way){issues.push({level:'fehler',message:`${label}: die Räder stehen zu dicht, die Kette findet keinen Weg`,ref:bt.id});continue;}
+   for(const i of way.loose)issues.push({level:'warnung',message:`${label}: ${via[i].label} berührt die Kette nicht; näher an eine der geraden Seiten setzen`,ref:bt.id});
+   const links=linksFor(way.links),c=dist(a.at,b.at);belts.push({id:bt.id,a:a.key,b:b.key,center:c,length:way.length,chain:{need:way.links,links,slack:links-way.links},path:way.spans,...(via.length?{via:via.map(v=>v.key)}:{})});
+   const zc=mid(a),zh=CHAIN.width/2,body=[a,b,...via].every(w=>bodyOf(w.on)===bodyOf(a.on))?bodyOf(a.on):'';
+   way.order.forEach((w,i)=>{const q=way.order[(i+1)%way.order.length],[p0,p1]=way.spans[i];obstacles.push({key:`kette:${bt.id}:${i}`,label,z0:zc-zh,z1:zc+zh,a:p0,ra:CHAIN.plate/2,b:p1,rb:CHAIN.plate/2,on:[...new Set([a,b,...via].filter(x=>dist(x.at,w.at)<1e-9||dist(x.at,q.at)<1e-9).map(x=>x.on))],body,belt:true});});
+   continue;}
+  if(!a?.pulley||!b?.pulley||a.on===b.on){issues.push({level:'fehler',message:'Riemen: braucht zwei Riemenscheiben auf verschiedenen Wellen',ref:bt.id});continue;}
   if(overlap(a.z0,a.z1,b.z0,b.z1)<2)issues.push({level:'fehler',message:`Riemen ${a.label} – ${b.label}: die Scheiben stehen nicht auf gleicher Höhe (${mm(a.z0)} und ${mm(b.z0)})`,ref:bt.id});
   const c=dist(a.at,b.at),length=2*c+Math.PI*(a.pitch+b.pitch)+(a.pitch-b.pitch)**2/Math.max(c,eps),stock=BELTS.find(l=>l>=length-.5);
   belts.push({id:bt.id,a:a.key,b:b.key,center:c,length,...(stock?{stock}:{})});
@@ -229,7 +253,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
  motors.forEach((a,i)=>{for(const b of motors.slice(i+1)){const za:[number,number]=a.down?[a.face-a.depth,a.face]:[a.face,a.face+a.depth],zb:[number,number]=b.down?[b.face-b.depth,b.face]:[b.face,b.face+b.depth],w=(a.part.size[0]+b.part.size[0])/2,dx=Math.abs(a.at[0]-b.at[0]),dy=Math.abs(a.at[1]-b.at[1]);
   if(overlap(za[0],za[1],zb[0],zb[1])>eps&&dx<w-eps&&dy<w-eps)issues.push({level:'fehler',message:`${a.label} und ${b.label} überschneiden sich: die Motoren sind ${mm(w)} breit und stehen nur ${mm(Math.max(dx,dy))} auseinander`,ref:b.on});}});
  // Shafts must be held.
- for(const x of shafts){if(motors.some(m=>m.on===x.id))continue;const k=bearings.filter(b=>b.on===x.id).length;if(!k)issues.push({level:'warnung',message:`${x.label}: kein Lager, nichts hält die Welle`,ref:x.id});else if(k===1)issues.push({level:'hinweis',message:`${x.label}: nur ein Lager, die Welle kann kippen`,ref:x.id});}
+ for(const x of shafts){if(motors.some(m=>m.on===x.id))continue;const k=bearings.filter(b=>b.on===x.id).length;if(!k&&wheels.some(w=>w.on===x.id&&w.idler)){issues.push({level:'hinweis',message:`${x.label}: Achse eines Spanners, sie steht fest in den Platten ihres Körpers (Schraube M8 mit Muttern oder ein Stift); das Rad dreht auf seinem Lager`,ref:x.id});continue;}if(!k)issues.push({level:'warnung',message:`${x.label}: kein Lager, nichts hält die Welle`,ref:x.id});else if(k===1)issues.push({level:'hinweis',message:`${x.label}: nur ein Lager, die Welle kann kippen`,ref:x.id});}
  // A motor driving a belt: its slots point along the belt (not on a swing arm that tensions the belt by swinging).
  for(const m of motors){const bt=belts.find(b=>wheel(b.a)!.on===m.on||wheel(b.b)!.on===m.on);if(!bt||!holds(wheel(bt.a)!.on,wheel(bt.b)!.on))continue;const other=wheel(wheel(bt.a)!.on===m.on?bt.b:bt.a)!,d=dist(m.at,other.at)||1;m.slot=[(other.at[0]-m.at[0])/d,(other.at[1]-m.at[1])/d];m.travel=s.slot;}
  const layers=planLayers(doc,shafts,bearings,meshes,wheels,B,issues,motors);
@@ -237,7 +261,20 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
   if(faces&&Math.abs(faces.z-m.face)<=6){m.offset=+(faces.z-m.face).toFixed(3);issues.push({level:'hinweis',message:`${m.label} hat eine eigene Motorplatte; ${mm(Math.abs(m.offset))} ${m.offset>0?'höher':'tiefer'} läge sein Flansch an ${m.down?'der Unterseite':'der Oberseite'} von Schicht ${faces.i+1} und spart die Platte (Knopf an der Welle)`,ref:m.on});}}
  // Belts against stock lengths: with a motor's slots the centre distance has a range; without, it must fit as it is.
  const lengthAt=(a:Wheel,b:Wheel,c:number)=>2*c+Math.PI*(a.pitch+b.pitch)+(a.pitch-b.pitch)**2/Math.max(c,eps);
- for(const bp of belts){const a=wheel(bp.a)!,b=wheel(bp.b)!,m=motors.find(x=>x.layer&&x.slot&&(x.on===a.on||x.on===b.on)),t=m?m.travel/2:0,sw=!holds(a.on,b.on)&&swung(a.on,b.on).length===1?swung(a.on,b.on)[0]:undefined;let lo=lengthAt(a,b,bp.center-t),hi=lengthAt(a,b,bp.center+t);
+ for(const bp of belts){if(!bp.chain)continue;const a=wheel(bp.a)!,b=wheel(bp.b)!,via=(bp.via??[]).map(k=>wheel(k)!),k=bp.chain,label=`Kette ${a.teeth}/${b.teeth}`,m=motors.find(x=>x.layer&&x.slot&&(x.on===a.on||x.on===b.on)),sw=!holds(a.on,b.on)&&swung(a.on,b.on).length===1?swung(a.on,b.on)[0]:undefined;
+  const linksAt=(c:number)=>{const u=b.at[0]-a.at[0],v=b.at[1]-a.at[1],l=Math.hypot(u,v)||1;return chainWay(a,b,via,w=>w===b?[a.at[0]+u/l*c,a.at[1]+v/l*c]:w.at)?.links??NaN;};
+  // Where it gets taut with its even number of links: the centre distance, or the first tensioner moved across the chain.
+  const center=solve(linksAt,k.links,Math.max(a.pitch+b.pitch,bp.center-30),bp.center+40);bp.fit={stock:k.links,center};
+  // The first tensioner moved across the straight span it sits at (without tensioners), into the chain.
+  if(via.length){const t=via[0],near=(chainWay(a,b,[])?.spans??[]).map(([p,q])=>{const u=q[0]-p[0],v=q[1]-p[1],l=Math.hypot(u,v)||1;return {d:((t.at[1]-p[1])*u-(t.at[0]-p[0])*v)/l,n:[-v/l,u/l] as [number,number]};}).sort((x,y)=>Math.abs(x.d)-Math.abs(y.d))[0];
+   if(near){const dir=near.d>0?-1:1,at=(o:number):[number,number]=>[t.at[0]+near.n[0]*dir*o,t.at[1]+near.n[1]*dir*o],f=(o:number)=>chainWay(a,b,via,w=>w===t?at(o):w.at)?.links??NaN,o=solve(f,k.links,Math.abs(near.d)-t.pitch-1,Math.abs(near.d)-.01);if(Number.isFinite(o))bp.fit.via={on:t.on,at:at(o).map(x=>+x.toFixed(3)) as [number,number]};}}
+  const t=m?m.travel/2:0,swing=sw?centres(a.on,b.on,sw):undefined,lo=Math.min(linksAt(bp.center-t),swing?linksAt(swing.lo):Infinity),hi=Math.max(linksAt(bp.center+t),swing?linksAt(swing.hi):-Infinity);
+  if(m)bp.tension={motor:m.key,range:[lo*CHAIN.pitch,hi*CHAIN.pitch]};if(sw)bp.swing={group:sw.id,range:[lo*CHAIN.pitch,hi*CHAIN.pitch]};
+  const slack=k.links-k.need;
+  if((m||sw)&&k.links<=hi+.05)issues.push({level:'hinweis',message:`${label}: ${k.links} Glieder, gespannt ${m?'über die Langlöcher des Motors':`durch Schwenken von ${sw!.name}`} (Achsabstand ${mm(center)})`,ref:bp.id});
+  else if(slack<=.15)issues.push({level:'hinweis',message:`${label}: ${k.links} Glieder, liegt straff (${n(slack)} Glied Spiel)`,ref:bp.id});
+  else issues.push({level:'warnung',message:`${label}: ${k.links} Glieder hängen ${n(slack)} Glied durch${via.length?bp.fit.via?': Spanner verschieben (Knopf an der Kette)':'':Number.isFinite(center)?`: Achsabstand auf ${mm(center)} stellen oder einen Spanner daran`:''}`,ref:bp.id});}
+ for(const bp of belts){if(bp.chain)continue;const a=wheel(bp.a)!,b=wheel(bp.b)!,m=motors.find(x=>x.layer&&x.slot&&(x.on===a.on||x.on===b.on)),t=m?m.travel/2:0,sw=!holds(a.on,b.on)&&swung(a.on,b.on).length===1?swung(a.on,b.on)[0]:undefined;let lo=lengthAt(a,b,bp.center-t),hi=lengthAt(a,b,bp.center+t);
   if(sw){const c=centres(a.on,b.on,sw);lo=Math.min(lo,lengthAt(a,b,c.lo));hi=Math.max(hi,lengthAt(a,b,c.hi));bp.swing={group:sw.id,range:[lo,hi]};}
   if(m)bp.tension={motor:m.key,range:[lo,hi]};const stock=BELTS.find(l=>l>=lo-.5);const label=`Riemen ${a.teeth}/${b.teeth}`;
   if(!stock){issues.push({level:'warnung',message:`${label}: ${mm(bp.length)}, länger als die Normlängen im Katalog`,ref:bp.id});continue;}
@@ -308,7 +345,7 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
   for(const x of split)add(`Distanzsäule ${n(x.z-x.gap/2-c.z0)} mm + ${n(c.z1-x.z-x.gap/2)} mm (gedruckt)`,1,`zwischen ${c.from} und ${c.to}, geteilt für den Haken einer Feder`);});
  for(const x of sp.springs)if(x.part)add(x.part.label,1,x.part.source);
  for(const st of sets)if(st.screw&&st.count){add(st.screw.what,st.count);add(`Mutter M${n(s.bolt)} DIN 934`,st.count);add(`Scheibe M${n(s.bolt)} DIN 125`,2*st.count);}
- for(const bp of belts)add(`Zahnriemen GT2 6 mm, ${bp.stock?`${bp.stock} mm geschlossen`:`${n(bp.length)} mm`}`);
+ for(const bp of belts)if(bp.chain){add(`Rollenkette 04C (¼"), ${bp.chain.links} Glieder`,1,'auf Länge gekürzt');add('Kettenschloss 04C');}else add(`Zahnriemen GT2 6 mm, ${bp.stock?`${bp.stock} mm geschlossen`:`${n(bp.length)} mm`}`);
  for(const x of shafts)add(`${x.label} (Wellen-Generator, Teile dort in der Stückliste)`);
  for(const m of motors)add(m.part.label,1,m.layer?'mit 4 Schrauben M3 am Flansch':'noch an keiner Platte');
  return {drive,arms,groups,turnRate,motors,shafts,wheels,bearings,obstacles,meshes,belts,rates,layers,bolts,columns,...(screw?{screw}:{}),bom,issues,springs:sp.springs,splits:sp.splits};
@@ -319,6 +356,8 @@ export function planGear(doc:GearDoc,files:Record<string,ShaftFile|undefined>,ca
  * changes), holes for shafts passing through, and what the plates hit. */
 function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:Mesh[],wheels:Wheel[],B:Bodies,issues:Issue[],motors:Motor[]):LayerPlan[]{
  const s=doc.settings,mid=(b:Bearing)=>(b.z0+b.z1)/2;let given:Layer[]|undefined=doc.layers;
+ /** A fixed axle: no bearing of its own, only tensioners on it. */
+ const isAxle=(id:string)=>wheels.some(w=>w.on===id&&w.idler)&&wheels.every(w=>w.on!==id||w.idler)&&!bearings.some(b=>b.on===id&&!b.hub&&!b.motor);
  type Spec={z0:number;z1:number;list:Bearing[];body:string;given?:Layer;motor?:Motor};
  const specs:Spec[]=[],claimed=new Set<Bearing>();
  /** May a bearing lie in a plate of this body: on one of its shafts, or on its pivot (the swing arm hangs on it there). */
@@ -360,6 +399,9 @@ function planLayers(doc:GearDoc,shafts:ShaftInWorld[],bearings:Bearing[],meshes:
    if(!x||!profile||overlap(x.z0,x.z1,band[0],band[1])<band[1]-band[0]-eps)issues.push({level:'warnung',message:`${name}: ${x?.label??'die Drehachse'} reicht nicht durch die Platte von ${link.name}; die Welle dort länger machen oder die Schicht verschieben`,ref:`schwinge:${link.id}`});
    else{const node:Bearing={key:`nabe:${id}`,on:link.pivot,item:'nabe',label:`Nabe von ${link.name} auf ${x.label}`,at:x.at,z0:band[0],z1:band[1],D:outer(profile)+2*HUB_WALL,d:outer(profile),B:band[1]-band[0],hub:{profile,turn:B.turnOf(link.pivot)}};list.push(node);bearings.push(node);
     if(profile.kind==='rund')issues.push({level:'hinweis',message:`${name}: ${link.name} sitzt auf rundem ${profileLabel(profile)} von ${x.label}; eine Madenschraube M3 in der Nabe klemmt sie (Kernloch im Teil). Sicherer: dort im Wellen-Editor einen Abschnitt von Hand als D, Kreuz oder Sechskant setzen`,ref:`schwinge:${link.id}`});}}
+  // A tensioner's axle: it turns on its own bearing, the axle stands still, held in the plates of its body it passes.
+  for(const x of shafts){if(B.bodyOf(x.id)!==body||!isAxle(x.id)||list.some(b=>b.on===x.id))continue;const profile=B.section(x.id,(band[0]+band[1])/2);if(!profile||overlap(x.z0,x.z1,band[0],band[1])<band[1]-band[0]-eps)continue;
+   const node:Bearing={key:`achse:${id}:${x.id}`,on:x.id,item:'achse',label:`Achse ${x.label}`,at:x.at,z0:band[0],z1:band[1],D:outer(profile)+2*HUB_WALL,d:outer(profile),B:band[1]-band[0],hub:{profile,turn:B.turnOf(x.id)}};list.push(node);bearings.push(node);}
   // Webs: meshing shafts first (their distance must hold), then the shortest that join everything (Kruskal).
   const parent=new Map(list.map(b=>[b.key,b.key])),find=(k:string):string=>{const p=parent.get(k)!;if(p===k)return k;const r=find(p);parent.set(k,r);return r;},join=(a:string,b:string)=>{const x=find(a),y=find(b);if(x===y)return false;parent.set(x,y);return true;};
   const pairs=list.flatMap((a,k)=>list.slice(k+1).map(b=>({a,b,c:dist(a.at,b.at),forced:meshPairs.has([a.on,b.on].sort().join('|'))}))).sort((x,y)=>Number(y.forced)-Number(x.forced)||x.c-y.c);

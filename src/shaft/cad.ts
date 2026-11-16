@@ -5,6 +5,7 @@
 // Fits: what is made is nominal except, when printed, `play` per side: bores grow by it, non-round pieces (cross, D,
 // hexagon) shrink by it, round seats stay nominal (a bearing wants them tight). At the CNC everything is nominal; the fit
 // belongs to the machinist.
+import {sprocketOutline,toothBand} from './chain.ts';
 import {draw,drawCircle,drawRectangle,drawRoundedRectangle,drawPolysides,makeCylinder,makeBox,localGC,exportSTEP} from 'replicad';
 import type {Drawing,Shape3D} from 'replicad';
 import type {Plan,Sleeve} from './plan.ts';
@@ -95,6 +96,12 @@ export function partSolid(keep:Keep,t:Plan['placed'][number]):Shape3D{
  if(t.part.group==='Lager'){const a=r+(R-r)*.32,b=r+(R-r)*.68,c=Math.min(w*.2,1.2);return turn([[x0,r],[x1,r],[x1,a],[x1-c,a],[x1-c,b],[x1,b],[x1,R],[x0,R],[x0,b],[x0+c,b],[x0+c,a],[x0,a]]);}
  if(t.part.pulley&&t.part.teeth){const seat=t.part.teeth/Math.PI-.25,f=1,belt=Math.min(w,6.5+2*f),flange=Math.min(R,seat+1.5),hub=Math.min(R,Math.max(r+3,6.5));if(seat<r+.6)return ring();
   return turn(belt<w-.5?[[x0,r],[x1,r],[x1,hub],[x0+belt,hub],[x0+belt,flange],[x0+belt-f,flange],[x0+belt-f,seat],[x0+f,seat],[x0+f,flange],[x0,flange]]:[[x0,r],[x1,r],[x1,flange],[x1-f,flange],[x1-f,seat],[x0+f,seat],[x0+f,flange],[x0,flange]]);}
+ // A sprocket: its teeth extruded over their band, the hub (or a tensioner's bearing housing) turned beside them.
+ if(t.part.sprocket&&t.part.teeth){const sp=t.part.sprocket,[a,b]=toothBand({width:w,hub:!sp.idler},w,t.hub),h=sp.hub/2;
+  const pts=sprocketOutline(t.part.teeth,3);let pen=draw(pts[0]);for(const q of pts.slice(1))pen=pen.lineTo(q);
+  let s=keep(pen.close().cut(drawCircle(r)).sketchOnPlane('YZ',x0+a).extrude(b-a) as Shape3D);
+  const hub=sp.idler?turn([[x0,r],[x1,r],[x1,h],[x0,h]]):t.hub==='links'?turn([[x0,r],[x0+a,r],[x0+a,h],[x0,h]]):turn([[x0+b,r],[x1,r],[x1,h],[x0+b,h]]);
+  try{s=keep(s.fuse(hub) as Shape3D);}catch{/* teeth alone */}return s;}
  if(t.part.teeth){const m=t.part.module??1;if(m*(t.part.teeth/2-1.25)<r+.4)return ring();
   try{const pts=involuteOutline({module:m,teeth:t.part.teeth,samples:t.part.teeth>30?1:2});let pen=draw(pts[0]);for(const q of pts.slice(1))pen=pen.lineTo(q);return keep(pen.close().cut(profileDrawing(t.bore).rotate(t.bore.kind==='rund'?37.3:0)).sketchOnPlane('YZ',x0).extrude(w) as Shape3D);}catch{return ring();}}
  return ring();}
@@ -122,7 +129,7 @@ export function buildParts(doc:ShaftDoc,plan:Plan,keep?:Keep):{parts:CadPart[];f
   for(const [k,[a,b],D,name] of [[1,l.at.discA,l.discD,'Reibscheibe'],[2,l.at.discB,l.discD,'Reibscheibe'],[3,l.at.plate,l.spring.D+1,'Federteller']] as [number,[number,number],number,string][])
    parts.push({name:`${name} (Rutschkupplung)`,file:`kupplung-${t.id}-${k}`,kind:'huelse',shape:safe(name,()=>ring(D,t.x0+a,t.x0+b)),color:'#b98fd6',made:true});
   const [s0,s1]=l.at.spring;parts.push({name:l.spring.label,file:`feder-${t.id}`,kind:'kauf',shape:safe(l.spring.label,()=>keep!(keep!(drawCircle(l.spring.D/2).cut(drawCircle(l.spring.D/2-l.spring.d)).sketchOnPlane('YZ',t.x0+s0).extrude(s1-s0) as Shape3D))),color:'#c9d1d8',made:false});}
- for(const t of plan.placed)if(t.clutch)continue;else if(t.arm)parts.push({name:t.label,file:`hebel-${t.id}`,kind:'hebel',shape:safe(t.label,()=>armSolid(keep!,doc,t)),color:'#d98f5c',made:true});else parts.push({...(t.part.group==='Lager'?{bearing:true}:{}),...(t.part.group==='LEGO-Zahnräder'?{asset:{url:`${LDRAW}${t.part.id.replace(/^lego-/,'')}.stl`,matrix:matMul(matMove([(t.x0+t.x1)/2,0,0]),matTurn(90,[0,0,0],[0,1,0]))}}:{}),name:t.label,file:t.id,kind:'kauf',shape:safe(t.label,()=>partSolid(keep!,t)),color:t.part.group==='Lager'?'#aeb9c4':t.part.pulley?'#d9c06a':t.part.group==='LEGO-Zahnräder'?'#c9ced3':t.part.teeth?'#6fc6a6':'#9fb0bd',made:false});
+ for(const t of plan.placed)if(t.clutch)continue;else if(t.arm)parts.push({name:t.label,file:`hebel-${t.id}`,kind:'hebel',shape:safe(t.label,()=>armSolid(keep!,doc,t)),color:'#d98f5c',made:true});else parts.push({...(t.part.group==='Lager'?{bearing:true}:{}),...(t.part.group==='LEGO-Zahnräder'?{asset:{url:`${LDRAW}${t.part.id.replace(/^lego-/,'')}.stl`,matrix:matMul(matMove([(t.x0+t.x1)/2,0,0]),matTurn(90,[0,0,0],[0,1,0]))}}:{}),name:t.label,file:t.id,kind:'kauf',shape:safe(t.label,()=>partSolid(keep!,t)),color:t.part.group==='Lager'?'#aeb9c4':t.part.pulley?'#d9c06a':t.part.sprocket?'#4f565e':t.part.group==='LEGO-Zahnräder'?'#c9ced3':t.part.teeth?'#6fc6a6':'#9fb0bd',made:false});
  // A motor: its body with rounded edges and the centring boss on its flange.
  for(const m of plan.motors??[]){const w=m.part.size[0],left=m.end==='links';let shape=keep(drawRoundedRectangle(w,w,Math.min(4,w/8)).sketchOnPlane('YZ',m.x0).extrude(m.x1-m.x0) as Shape3D);
   if(m.part.pilot)try{shape=keep(shape.fuse(keep(makeCylinder(m.part.pilot/2,2,[m.face,0,0],[left?1:-1,0,0]))) as Shape3D);}catch{/* the body alone */}

@@ -14,7 +14,8 @@ export type PlacedShaft={id:string;shaft:string;at:[number,number];z:number;flip
 export type Group={id:string;name:string;pivot:string;shafts:string[];from:number;to:number;bolts?:[number,number][];fixed?:boolean};
 /** One wheel or bearing on a placed shaft: the placed shaft's id and the item's id in its shaft file. */
 export type ItemRef={on:string;item:string};
-export type Belt={id:string;a:ItemRef;b:ItemRef};
+/** Between two pulleys a toothed belt, between two sprockets a roller chain 04C; `via`: tensioners on a chain's way. */
+export type Belt={id:string;a:ItemRef;b:ItemRef;via?:ItemRef[]};
 /** A layer set by hand: from z0 to z1; what the plan proposed is replaced by these once there is one. */
 /** `group`: a plate of that swing arm, else of the frame. */
 export type Layer={id:string;z0:number;z1:number;rim?:number;thickness?:number;group?:string};
@@ -46,7 +47,7 @@ export function parseGear(raw:unknown):GearDoc{
  const d=raw as GearDoc;if(!d||typeof d!=='object'||!Array.isArray(d.shafts)||!Array.isArray(d.belts)||d.shafts.length>40||d.belts.length>40)throw Error('Getriebe ungültig');
  const shafts=d.shafts.map(s=>{if(!str(s?.id)||!str(s.shaft)||!Array.isArray(s.at)||!num(s.at[0])||!num(s.at[1])||!num(s.z)||s.flip!==undefined&&typeof s.flip!=='boolean')throw Error('Getriebe: Welle ungültig');if(s.turn!==undefined&&!num(s.turn,-3600,3600))throw Error('Getriebe: Welle ungültig');return {id:s.id,shaft:s.shaft,at:[s.at[0],s.at[1]] as [number,number],z:s.z,...(s.flip?{flip:true}:{}),...(s.turn?{turn:s.turn}:{})};});
  if(new Set(shafts.map(s=>s.id)).size!==shafts.length)throw Error('Getriebe: Wellen doppelt');
- const belts=d.belts.map(b=>{if(!str(b?.id))throw Error('Getriebe: Riemen ungültig');return {id:b.id,a:ref(b.a),b:ref(b.b)};});
+ const belts=d.belts.map(b=>{if(!str(b?.id))throw Error('Getriebe: Riemen ungültig');if(b.via!==undefined&&(!Array.isArray(b.via)||b.via.length>4))throw Error('Getriebe: Kette ungültig');return {id:b.id,a:ref(b.a),b:ref(b.b),...(b.via?.length?{via:b.via.map(ref)}:{})};});
  const layers=d.layers?.map(l=>{if(!str(l?.id)||!num(l.z0)||!num(l.z1)||!(l.z1>l.z0)||l.rim!==undefined&&!num(l.rim,0,100)||l.thickness!==undefined&&!num(l.thickness,.2,100))throw Error('Getriebe: Schicht ungültig');if(l.group!==undefined&&!str(l.group))throw Error('Getriebe: Schicht ungültig');return {id:l.id,z0:l.z0,z1:l.z1,...(l.rim!==undefined?{rim:l.rim}:{}),...(l.thickness!==undefined?{thickness:l.thickness}:{}),...(l.group?{group:l.group}:{})};});
  const keys=(v:unknown):WebKey[]=>{if(!Array.isArray(v)||v.length>200||v.some(k=>!Array.isArray(k)||!str(k[0])||!str(k[1])))throw Error('Getriebe: Stege ungültig');return v.map(k=>webKey(k[0],k[1]));};
  const route=d.webs?.route;if(route!==undefined&&(typeof route!=='object'||Object.entries(route).some(([k,v])=>!str(k)||v!=='aussen'&&v!=='tiefe')))throw Error('Getriebe: Steg-Führung ungültig');

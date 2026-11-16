@@ -4,15 +4,16 @@ import {bearingCatalog} from '../mechanics/kinematics/bearings.ts';
 import {legoParts} from '../mechanics/graph/lego-parts.ts';
 import {parts} from '../mechanics/parts/catalog.ts';
 import {rund} from './profile.ts';
+import {SPROCKET_TEETH,SPROCKET_BORES,tipDiameter,hubOf,CHAIN} from './chain.ts';
 import type {Profile} from './profile.ts';
 
 /** Sits on the shaft: its bore, how wide it is along the shaft, its outer Ø. `stop`: the largest shoulder that touches
  * only what turns with the shaft (a bearing's inner ring). `own`: bore and width can be set per piece. */
-export type OnPart={id:string;label:string;/** For narrow clips. */short:string;group:string;bore:Profile;width:number;outer:number;stop?:number;source:string;checked:boolean;note?:string;own?:boolean;/** A spacer: its bore follows the piece it sits on. */spacer?:boolean;/** Holds itself where it is (clamps or is screwed): needs no shoulder, holds what is inside of it. */clamp?:boolean;/** What comes with it into the parts list. */extra?:string;/** A slip clutch (clutch.ts). */clutch?:boolean;/** A wheel: teeth and module (LEGO: module 1); a GT2 pulley: teeth, `pulley`. For the gearbox generator. */teeth?:number;module?:number;pulley?:boolean;/** A printed arm (lever): not round, it turns with the shaft and sweeps an area. Its measures are the item's. */arm?:boolean};
+export type OnPart={id:string;label:string;/** For narrow clips. */short:string;group:string;bore:Profile;width:number;outer:number;stop?:number;source:string;checked:boolean;note?:string;own?:boolean;/** A spacer: its bore follows the piece it sits on. */spacer?:boolean;/** Holds itself where it is (clamps or is screwed): needs no shoulder, holds what is inside of it. */clamp?:boolean;/** What comes with it into the parts list. */extra?:string;/** A slip clutch (clutch.ts). */clutch?:boolean;/** A sprocket for chain 04C (chain.ts): its hub beside the teeth (Ø, length), or `idler`: a tensioner with a bearing inside, teeth in the middle, always turning freely. */sprocket?:{hub:number;hubLength:number;idler?:boolean};/** A wheel: teeth and module (LEGO: module 1); a GT2 pulley: teeth, `pulley`. For the gearbox generator. */teeth?:number;module?:number;pulley?:boolean;/** A printed arm (lever): not round, it turns with the shaft and sweeps an area. Its measures are the item's. */arm?:boolean};
 /** Goes into the shaft from one end. `length`: how long it is (a motor's shaft), the most it can go in. */
 export type InPart={id:string;label:string;group:string;profile:Profile;length?:number;source:string;checked:boolean;note?:string};
 
-export const onGroups=['Lager','LEGO-Zahnräder','Stirnräder','Riemenscheiben','Hebel','Rutschkupplung','Sicherung','Hülsen'];
+export const onGroups=['Lager','LEGO-Zahnräder','Stirnräder','Riemenscheiben','Kettenräder','Hebel','Rutschkupplung','Sicherung','Hülsen'];
 export const inGroups=['Motoren','LEGO','Wellen'];
 
 const bearings:OnPart[]=bearingCatalog.filter(b=>b.kind==='ball').map(b=>({id:`lager-${b.id}`,label:b.label,short:b.id,group:'Lager',bore:rund(b.d),width:b.B,outer:b.D,stop:b.d+.4*(b.D-b.d),source:'Lagerkatalog des Studios',checked:true}));
@@ -34,7 +35,11 @@ export const armPart:OnPart={id:'hebel',short:'Hebel',label:'Hebel (gedruckt)',g
 export const defaultArm={length:30,width:8,angle:0,hole:3};
 /** Without a hub, only as wide as the belt and its flanges: several fit side by side on one shaft. */
 const slimPulley=(teeth:number):OnPart=>({...pulley(teeth),id:`gt2-z${teeth}-schmal`,label:`GT2-Scheibe z${teeth} schmal`,width:9,note:'6 mm Riemen, ohne Nabe: auf einer Abflachung oder geklebt.'});
-export const onParts:OnPart[]=[...bearings,...lego,...[[12,1],[20,1],[30,1],[40,1],[15,2],[20,2]].map(([z,m])=>spur(z,m)),...[16,20,40].map(pulley),slimPulley(20),armPart,clutchPart,...bushes,...collars,spacerPart];
+// Sprockets for chain 04C as sourcing map sells them: type B (hub on one side), two set screws. Hub estimated.
+const sprocket=(z:number,bore:number):OnPart=>{const h=hubOf(z,bore);return {id:`04c-z${z}-b${bore}`,short:`04C z${z}`,teeth:z,label:`Kettenrad 04C z${z}, Bohrung ${bore} (sourcing map)`,group:'Kettenräder',bore:rund(bore),width:+(CHAIN.tooth+h.length).toFixed(2),outer:+tipDiameter(z).toFixed(2),clamp:true,extra:'2 Madenschrauben (dabei)',sprocket:{hub:h.D,hubLength:h.length},source:'sourcing map, Zähne nach ISO 606',checked:false,note:`¼" Teilung, Typ B mit Nabe auf einer Seite, zwei Madenschrauben. Zähne nach ISO 606; Nabe Ø${String(h.D).replace('.',',')} × ${h.length} mm geschätzt, bitte nachmessen. Madenschrauben am besten auf eine Abflachung.`};};
+/** The tensioner: a sprocket z20 with a bearing inside on a bore of 8, 13 mm wide, teeth in the middle. */
+export const chainIdler:OnPart={id:'04c-spanner-z20',short:'Spanner z20',teeth:20,label:'Kettenspanner 04C z20 mit Lager, Bohrung 8 (sourcing map)',group:'Kettenräder',bore:rund(8),width:13,outer:+tipDiameter(20).toFixed(2),sprocket:{hub:22,hubLength:5.1,idler:true},source:'sourcing map, Zähne nach ISO 606',checked:false,note:'Spannrad mit Kugellager innen: dreht frei auf einer festen Achse Ø8 (Schraube M8 oder Stift). Zähne mittig; Nabe Ø22 geschätzt, bitte nachmessen.'};
+export const onParts:OnPart[]=[...bearings,...lego,...[[12,1],[20,1],[30,1],[40,1],[15,2],[20,2]].map(([z,m])=>spur(z,m)),...[16,20,40].map(pulley),slimPulley(20),...SPROCKET_TEETH.flatMap(z=>SPROCKET_BORES.map(b=>sprocket(z,b))),chainIdler,armPart,clutchPart,...bushes,...collars,spacerPart];
 
 // NEMA motors have a D shaft; the depth of the flat is the usual one, the catalog only knows the Ø.
 const motors:InPart[]=parts.filter(p=>p.shaft).map(p=>({id:`motor-${p.id}`,label:`${p.label.replace(/ Schrittmotor/,'')}: Welle ${String(p.shaft!.d).replace('.',',')} mm`,group:'Motoren',profile:{kind:'d',d:p.shaft!.d,flat:.5} as Profile,length:p.shaft!.length,source:p.source,checked:false,note:'Abflachung 0,5 mm wie üblich, bitte am Motor nachmessen.'}));

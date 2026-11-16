@@ -24,7 +24,7 @@ export type Role='sitz'|'frei'|'bund'|'eigen';
 export type Section={x0:number;x1:number;profile:Profile;role:Role};
 /** A part on the shaft as planned: its seat, its bore, the end it goes on from. */
 /** `arm`: an arm's measures and its hub's Ø (the part's `outer` is that hub). */
-export type Placed={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;side:Side;adapter?:string;/** What it sits on where that is not its bore: a round bore straight on the LEGO cross. */seat?:Profile;/** A wheel turning freely on the shaft. */free?:boolean;arm?:ArmSpec&{hub:number;/** A round bore: a set screw M3 in the hub, opposite the arm, holds it. */screw?:boolean};
+export type Placed={id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;side:Side;adapter?:string;/** What it sits on where that is not its bore: a round bore straight on the LEGO cross. */seat?:Profile;/** A wheel turning freely on the shaft. */free?:boolean;/** A sprocket: the end its hub points to. */hub?:Side;arm?:ArmSpec&{hub:number;/** A round bore: a set screw M3 in the hub, opposite the arm, holds it. */screw?:boolean};
  /** A slip clutch: its choices, its pieces and its slip torque (N·mm). */clutch?:{spec:ClutchSpec;layout:ClutchLayout;T:number;F:number};/** A piece inside a unit (the wheel of a slip clutch): the unit's id. */inside?:string};
 /** Wall of an arm's hub round its bore. */
 export const ARM_WALL=3;
@@ -41,7 +41,7 @@ export type Machining={work:Work;drill?:number;depth?:number;screw?:string;key?:
 export type ShaftMotor={id:string;part:Part;label:string;end:Side;face:number;x0:number;x1:number};
 export type Plan={motors?:ShaftMotor[];length:number;sections:Section[];placed:Placed[];sleeves:Sleeve[];inserts:Insert[];machining:Machining[];issues:Issue[];bom:BomLine[];split:number};
 
-type Ref={clutch?:{spec:ClutchSpec;layout:ClutchLayout};id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;spacer:boolean;clamp:boolean;side?:Side;/** An arm: its measures; `follow`: its bore takes the profile of where it sits. */arm?:ArmSpec;follow?:boolean;free?:boolean};
+type Ref={clutch?:{spec:ClutchSpec;layout:ClutchLayout};id:string;part:OnPart;label:string;x0:number;x1:number;bore:Profile;spacer:boolean;clamp:boolean;side?:Side;/** An arm: its measures; `follow`: its bore takes the profile of where it sits. */arm?:ArmSpec;follow?:boolean;free?:boolean;hub?:Side};
 const n=(x:number)=>String(+x.toFixed(2)).replace('.',',');
 const mm=(x:number)=>`${n(x)} mm`;
 const overlaps=(a0:number,a1:number,b0:number,b1:number)=>a0<b1-eps&&b0<a1-eps;
@@ -55,7 +55,7 @@ export function planShaft(doc:ShaftDoc,catalog:SpringCatalog=springCatalog()):Pl
   if(part.clutch){const spec=it.clutch??defaultClutch,layout=clutchLayout(spec,onPart,catalog);if(!layout){issues.push({level:'fehler',message:`Rutschkupplung: Rad ${spec.wheel} oder Feder ${spec.spring} gibt es nicht`,ref:it.id});continue;}
    refs.push({id:it.id,part:{...part,width:layout.width,outer:Math.max(layout.discD,layout.wheel.outer,layout.spring.D)},label:'Rutschkupplung',x0:it.x,x1:it.x+layout.width,bore:it.bore??(layout.wheel.bore.kind==='rund'?{kind:'d',d:layout.wheel.bore.d,flat:+Math.max(.5,layout.wheel.bore.d/10).toFixed(2)}:layout.wheel.bore),spacer:false,clamp:false,...(it.side?{side:it.side}:{}),clutch:{spec,layout}});continue;}
   const width=part.own&&it.width?it.width:part.width,bore=part.own&&it.bore?it.bore:part.bore;
-  refs.push({id:it.id,part,label:part.spacer?'Distanzhülse':part.label.split(' (')[0],x0:it.x,x1:it.x+width,bore,spacer:!!part.spacer,clamp:!!part.clamp,...(it.side?{side:it.side}:{}),...(part.arm?{arm:it.arm??{...defaultArm},follow:!it.bore}:{}),...(it.free&&part.teeth?{free:true}:{})});}
+  refs.push({id:it.id,part,label:part.spacer?'Distanzhülse':part.label.split(' (')[0],x0:it.x,x1:it.x+width,bore,spacer:!!part.spacer,clamp:!!part.clamp,...(it.side?{side:it.side}:{}),...(part.arm?{arm:it.arm??{...defaultArm},follow:!it.bore}:{}),...((it.free||part.sprocket?.idler)&&part.teeth?{free:true}:{}),...(part.sprocket&&!part.sprocket.idler?{hub:it.hub??'rechts'}:{})});}
  refs.sort((a,b)=>a.x0-b.x0);
  for(const r of refs)if(r.x0<-eps||r.x1>L+eps)issues.push({level:'fehler',message:`${r.label} ragt über das Wellenende (${mm(r.x0)} bis ${mm(r.x1)}, Welle ${mm(L)})`,ref:r.id});
  for(let i=1;i<refs.length;i++)if(refs[i].x0<refs[i-1].x1-eps)issues.push({level:'fehler',message:`${refs[i-1].label} und ${refs[i].label} überlappen um ${mm(refs[i-1].x1-refs[i].x0)}`,ref:refs[i].id});
@@ -119,7 +119,7 @@ function build(doc:ShaftDoc,refs:Ref[],k:number,inserts:Insert[],given:Issue[]):
     placed.push({id:r.id,part:r.part,label:`Rutschkupplung mit ${l.wheel.short}`,x0:r.x0,x1:r.x1,bore,side,clutch:{...r.clutch,T:sl.T,F:sl.F},...(adapter?{adapter:adapter.id}:{})});
     // The wheel inside: it runs on the unit's seat; for the gearbox a wheel like any other.
     placed.push({id:`${r.id}-rad`,part:{...l.wheel,width:l.w},label:`${l.wheel.label.split(' (')[0]} (Rutschkupplung)`,x0:r.x0+l.at.wheel[0],x1:r.x0+l.at.wheel[1],bore:l.wheel.bore,side,seat:seatOf,inside:r.id});}
-   else placed.push({id:r.id,part:r.part,label:r.free?`${r.label} (Losrad)`:r.label,x0:r.x0,x1:r.x1,bore,side,...(r.free?{free:true}:{}),...(adapter?{adapter:adapter.id}:{}),...(onCross||onFlat?{seat}:{})});
+   else placed.push({id:r.id,part:r.part,label:r.free?`${r.label} (Losrad)`:r.label,x0:r.x0,x1:r.x1,bore,side,...(r.free?{free:true}:{}),...(r.hub?{hub:r.hub}:{}),...(adapter?{adapter:adapter.id}:{}),...(onCross||onFlat?{seat}:{})});
    C.push(bore);edge=outward;});
   const end=side==='links'?0:L,free=largestPassing(C);if(Math.abs(edge-end)>eps)secs.push({x0:Math.min(edge,end),x1:Math.max(edge,end),role:free?'frei':'bund',...(free?{profile:free}:{})});};
  walk(refs.slice(0,k).reverse(),'links');walk(refs.slice(k),'rechts');
@@ -170,7 +170,12 @@ function finish(doc:ShaftDoc,p:Plan):Plan{
  // Idlers: they turn on a round seat.
  for(const t of p.placed){if(!t.free)continue;const seat=sleeveOf(t.adapter)?.inner??t.bore;
   if(t.bore.kind!=='rund')issues.push({level:'fehler',message:`${t.label} soll frei drehen, hat aber die Bohrung ${label(t.bore)}: ein Losrad braucht eine runde Bohrung (gedrucktes Rad nehmen)`,ref:t.id});
+  else if(t.part.sprocket?.idler)issues.push({level:'hinweis',message:`${t.label} dreht auf seinem eigenen Lager: die Achse ${label(seat)} steht still, Stellringe oder Hülsen halten es seitlich`,ref:t.id});
   else issues.push({level:'hinweis',message:`${t.label} dreht frei auf ${label(seat)}: Gleitsitz mit Spiel; seitlich halten es die Nachbarn (Hülse, Bund, Stellring)`,ref:t.id});}
+ // Sprockets: their set screws hold them; on a round seat a flat under them holds better.
+ for(const t of p.placed){if(!t.part.sprocket||t.part.sprocket.idler)continue;const seat=sleeveOf(t.adapter)?.inner??t.seat??t.bore;
+  if(t.adapter)issues.push({level:'hinweis',message:`${t.label}: die Madenschrauben drücken auf den Adapter ${label(seat)} → ${label(t.bore)}; der Adapter braucht dort ein Profil (D), das ihn auf der Welle mitnimmt`,ref:t.id});
+  else if(seat.kind==='rund'&&!doc.works.some(w=>w.kind==='abflachung'&&overlaps(w.x0,w.x1,t.x0,t.x1)))issues.push({level:'hinweis',message:`${t.label} sitzt auf rundem ${label(seat)}: die zwei Madenschrauben halten es; eine Abflachung unter einer davon hält sicherer`,ref:t.id});}
  // Arms: something must turn them.
  for(const t of p.placed){if(!t.arm)continue;const seat=sleeveOf(t.adapter)?.inner??t.bore;
   if(seat.kind==='rund'&&!doc.works.some(w=>(w.kind==='nut'||w.kind==='abflachung')&&overlaps(w.x0,w.x1,t.x0,t.x1)))issues.push({level:'hinweis',message:`${t.label} sitzt auf ${label(seat)}: rund nimmt ihn nur die Madenschraube M3 in seiner Nabe mit. Eine Abflachung auf der Welle dort hält ihn sicher`,ref:t.id});

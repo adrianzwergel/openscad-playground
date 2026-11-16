@@ -10,7 +10,7 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 .topview .pocket{fill:#10161c;stroke:#6fa4c6;stroke-dasharray:3 2}.topview .hole{fill:#10161c;stroke:#56656f}
 .topview .tip{fill:#6fc6a622;stroke:#6fc6a6}.topview .pitch{fill:none;stroke:#6fc6a6;stroke-dasharray:4 3;opacity:.7}
 .topview .pulley .tip{fill:#e0c56c22;stroke:#e0c56c}.topview .pulley .pitch{stroke:#e0c56c}
-.topview .belt{stroke:#e0c56c;stroke-width:2;fill:none}.topview .mesh{stroke:#72dac1;stroke-dasharray:2 3}
+.topview .belt{stroke:#e0c56c;stroke-width:2;fill:none}.topview .belt.chain{stroke:#9aa4ae;stroke-width:3;stroke-dasharray:3 1.2}.topview .sprocket .teeth{fill:none;stroke:#8d969f}.topview .mesh{stroke:#72dac1;stroke-dasharray:2 3}
 .topview .axle{fill:#9aa7b1;stroke:#1b2329}.topview text{fill:#cdd8df;font-size:12px}.topview .empty{fill:#8fa1ad}
 .topview .away{opacity:.3}
 #library{background:var(--panel);border-right:1px solid var(--line)}#library .small{font-size:12px}
@@ -56,7 +56,7 @@ body[data-view=gear] #generator{grid-template-columns:270px minmax(0,1fr) 330px}
 #layer-tabs button[data-tone]::before{content:'';display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--dot)}
 .sideview .grab{fill:#ffffff08;stroke:#ffffff1c;rx:4;cursor:grab}.sideview .row:hover .grab{fill:#ffffff14;stroke:#ffffff44}.sideview .row.selected .grab{stroke:#f0d36e;fill:#f0d36e14}.sideview .row.dragging .grab{cursor:grabbing;fill:#72dac11f;stroke:#72dac1}
 .sideview .row{cursor:grab}.sideview .row rect.bearing,.sideview .row rect.wheel,.sideview .row rect.pulley,.sideview .row rect.arm,.sideview .row .axle{pointer-events:none}
-.sideview .link{stroke:#72dac1;stroke-width:1.5;fill:#72dac1;pointer-events:none}.sideview .link.belt{stroke:#e0c56c;fill:#e0c56c;stroke-dasharray:4 3}
+.sideview .link{stroke:#72dac1;stroke-width:1.5;fill:#72dac1;pointer-events:none}.sideview .link.belt{stroke:#e0c56c;fill:#e0c56c;stroke-dasharray:4 3}.sideview .link.belt.chain{stroke:#9aa4ae;fill:#9aa4ae;stroke-dasharray:2 2}
 .sideview line.zmark{stroke:#56656f}.sideview text.zmark{fill:#8fa1ad;font-size:10px;text-anchor:middle}
 .topview .teeth{fill:#6fc6a618;stroke:#6fc6a6;stroke-width:1}.topview .wheel .tip{stroke-opacity:.35}.topview .pulley .tip{stroke-opacity:1;stroke-dasharray:3 3;stroke-width:2}
 .topview .bearing-sym .race{fill:none;stroke:#aeb9c4;stroke-width:1.2}.topview .bearing-sym .ball{fill:#aeb9c4;stroke:none}.topview .motor-body{fill:#31363d66;stroke:#9aa7b1;stroke-dasharray:6 4}

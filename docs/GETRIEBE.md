@@ -83,6 +83,35 @@ Motor oben im Gestell, Riemen GT2 über Rocker-Achse und Bogie-Achse auf alle dr
 
 Prüfung: `scripts/gear/check-rocker.mjs`, `scripts/gear/check-rocker-browser.mjs`. Offen: Ausgleich links/rechts, Anschläge, Rad-Teil mit Reifen, geschlossene Wände, kürzere Normriemen im Katalog.
 
+## Rollenkette 04C (2026-11-17)
+
+Kette ISO 606 04C (ANSI #25, ¼" = 6,35 mm Teilung, Rolle Ø3,3, Innenbreite 3,18) mit den Kettenrädern, die sourcing map verkauft (`src/shaft/chain.ts`).
+
+- **Katalog (Wellen-Generator, Gruppe „Kettenräder“):** z9 bis z17, z19, z24 und z25, jeweils mit Bohrung 5, 6 oder 8. Das sind 36 Typ-B-Räder mit Nabe auf einer Seite und zwei Madenschrauben (`clamp`: halten sich selbst). Dazu der Kettenspanner z20 mit Lager innen (Bohrung 8, 13 mm breit, Zähne mittig, dreht immer frei).
+- **Maße der Räder:** Die Zähne folgen ISO 606: Teilkreis p / sin(180°/z), Fußkreis Teilkreis − Rolle, Kopfkreis Teilkreis + p·(1 − 1,6/z) − Rolle (das Mindestmaß der Norm; z25 gibt 53,3 mm, ein Händler nennt 53,5). Die Nabe ist nicht genormt und deshalb geschätzt (Ø aus Fußkreis und Bohrung, 8 mm lang), `checked: false`, bitte nachmessen.
+- **Nabenrichtung:** „Nabe zeigt nach“ links oder rechts (`OnItem.hub`). Im Getriebe zählt nur der Zahnkranz als Kettenebene, die Nabe ist ein eigenes Hindernis. Auf runder Welle meldet der Plan einen Hinweis: eine Abflachung unter den Madenschrauben hält sicherer.
+- **Kette im Getriebe:** Ein „Riemen“ zwischen zwei Kettenrädern ist eine Kette (`Belt` bleibt das Dokument). Die Länge rechnet in Gliedern: über jedem Rad so viele Glieder, wie es Zähne umschlingt, auf den geraden Stücken die Länge geteilt durch die Teilung. Geschlossen wird auf die nächste gerade Gliederzahl. Je nach Lage gibt es einen dieser Fälle:
+  - *straff:* höchstens 0,15 Glied Spiel, ein Hinweis;
+  - *gespannt:* über die Langlöcher des Motors oder durch Schwenken einer Schwinge;
+  - *hängt durch:* eine Warnung mit dem Achsabstand für die Gliederzahl, Knopf „Auf N Glieder stellen“.
+- **Ebene der Kette:** Die Zahnkränze müssen höchstens 1 mm neben der Kettenebene liegen (ab 0,5 mm eine Warnung). Die Kette ist über die Bolzen 7,9 mm breit und 6 mm hoch: Ihre geraden Stücke sind Hindernisse für Platten und Stege.
+- **Spanner** (`Belt.via`, Knopf „＋ Spanner …“ an der Kette): Der Spanner kommt in das gerade Stück, in das er hineinreicht. Von außen drückt er die Kette ein, von innen drückt er sie hinaus und wird dann wie ein Kettenrad umschlungen. Reicht er nicht an die Kette, gibt es eine Warnung. „Spanner auf N Glieder stellen“ schiebt ihn quer zur Kette, bis sie straff ist.
+- **Achse des Spanners:** Eine Welle ohne eigene Lager, auf der nur Spanner sitzen, ist eine feste Achse. Sie steht in jeder Platte ihres Körpers, durch die sie ganz hindurchgeht, als Nabe mit ihrem Profil (`achse:`-Knoten), z. B. eine Schraube M8 mit Muttern.
+- **Darstellung:**
+  - Draufsicht: Ketten gestrichelt grau, Kettenräder mit ihrem Zahnumriss;
+  - Seitenansicht: Kettenlinie zwischen den Spuren;
+  - 3D: Kettenräder mit Zahnkranz und Nabe (die Kette selbst nicht);
+  - Stückliste: „Rollenkette 04C (¼"), N Glieder“ und je Kette ein Kettenschloss.
+- **Angebote im Editor:** „＋ Kette zu …“ und „＋ Spanner …“ erscheinen nur für Räder in derselben Kettenebene.
+
+**Beispiel „Rocker-Bogie mit Kette 04C, doppelt so groß“ (`rocker-kette`):** das Riemen-Beispiel in doppelter Größe.
+
+- **Arme:** z12 (Bohrung 8) 1 : 1 über Rocker- und Bogie-Achse auf alle drei Räder, je 62 Glieder bei (62 − 12) / 2 · 6,35 = 158,75 mm Achsabstand; alle Achsen 90 mm unter dem Rocker-Drehpunkt.
+- **Motor:** z9 auf z25 (2,78 : 1, Räder 0,36 × Motor), 38 Glieder, gespannt über die Langlöcher. Die Nabe des z25 zeigt nach unten, der Flansch liegt an der unteren Gestellplatte.
+- **Wellen:** Ø8 in Lagern 688 (8 × 16 × 5), unter jedem Kettenrad eine Abflachung; die Radwellen enden als D 8 für gedruckte Naben.
+- **Höhen:** drei Kettenebenen 10,8 mm auseinander (46, 56,8 und 67,6 mm), die Räder Nabe auf Zahnkranz gestapelt. Die Gestellplatten liegen unten, die Bogie-Platten außen um die Rocker-Platten.
+- **Prüfung:** `scripts/gear/check-chain.mjs` (Maße, Katalog, Beispiel, Spanner auf fester Achse, Volumen) und `scripts/gear/check-chain-browser.mjs`.
+
 ## Ansichten (2026-11-15)
 
 - **Draufsicht:** alle Platten; die aktive deckend, die anderen durchsichtig darunter, jeder Körper in seiner Farbe (Gestell, dann jedes Glied; die Reiter tragen denselben Punkt). Ein Klick auf eine durchsichtige Platte macht sie aktiv.

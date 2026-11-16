@@ -4,6 +4,7 @@ import {newShaft} from '../shaft/model.ts';
 import type {ShaftDoc} from '../shaft/model.ts';
 import {rund} from '../shaft/profile.ts';
 import {newGear} from './model.ts';
+import {chainRound,pitchDiameter,solve} from '../shaft/chain.ts';
 import type {GearDoc} from './model.ts';
 
 type Example={key:string;title:string;text:string;shafts:{key:string;name:string;doc:ShaftDoc}[];make:(ids:Record<string,string>)=>GearDoc};
@@ -85,6 +86,32 @@ export const gearExamples:Example[]=[
      {id:'j2',shaft:ids.j,at:pol(B,32,180+drop),z:0},{id:'w2',shaft:ids.w,at:pol(B,64,180+drop),z:0},{id:'j3',shaft:ids.j,at:pol(B,32,-drop),z:0},{id:'w3',shaft:ids.w,at:pol(B,64,-drop),z:0}],
     groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['h','w1','v','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['j2','w2','j3','w3'],from:-10,to:20}]};}};})(),
 ];
+/** The rocker-bogie of the belt example at twice its size, with roller chain 04C and the sprockets sourcing map sells:
+ * z12 (bore 8) 1 : 1 along every arm, 62 links at 158,75 mm; the motor's z9 drives a z25 on the rocker's axle (2,78 : 1),
+ * the motor's slots tension that chain. Shafts Ø8 in 688 bearings (8 × 16 × 5). Chains in three planes 10,8 mm apart:
+ * the sprockets stacked hub on teeth. The frame's plates lowest, the bogie's outside the rocker's. The wheel shafts end
+ * in a D 8 for printed hubs. */
+{const L=(id:string,z:number,at:number)=>({id,part:'lager-688',x:+(z-at).toFixed(3)}),K=(id:string,teeth:number,z:number,at:number)=>({id,part:`04c-z${teeth}-b8`,x:+(z-at).toFixed(3)}),D8={kind:'d' as const,d:8,flat:.8};
+ const pol=(c:[number,number],r:number,deg:number):[number,number]=>[+(c[0]+r*Math.cos(deg*Math.PI/180)).toFixed(3),+(c[1]+r*Math.sin(deg*Math.PI/180)).toFixed(3)];
+ // 62 links round two z12: (62 − 12) / 2 pitches apart. All three axles 90 mm below the rocker's pivot.
+ const A=(62-12)/2*6.35,P:[number,number]=[0,0],drop=90,B=pol(P,A,-5),rear=180+Math.asin(drop/A)*180/Math.PI,bogie=Math.asin((drop+B[1])/A)*180/Math.PI;
+ // The motor above the axle: 38 links round z9 and z25.
+ const way=(c:number)=>chainRound({at:[0,0],r:pitchDiameter(25)/2,teeth:25,side:1},{at:[0,c],r:pitchDiameter(9)/2,teeth:9,side:1},[])!.links,M=+solve(way,38,40,90).toFixed(3);
+ // Heights: the chain planes at 46, 56,8 and 67,6 mm; the motor's at 20,4 (the z25's hub down, the motor's flange under the frame's lower plate).
+ const t=44.6,k1=t,k2=t+10.8,k3=t+21.6;
+ // A flat under every sprocket's set screws.
+ const flats=(d:ShaftDoc):ShaftDoc=>({...d,works:[...d.works,...d.items.filter(i=>i.part.startsWith('04c-')).map(i=>({id:`f-${i.id}`,kind:'abflachung' as const,x0:i.x,x1:+(i.x+10.8).toFixed(3),depth:.5}))]});
+ gearExamples.push({key:'rocker-kette',title:'Rocker-Bogie mit Kette 04C, doppelt so groß',text:'Das Riemen-Beispiel in doppelter Größe mit Rollenkette 04C und Kettenrädern von sourcing map: z12 (Bohrung 8) 1 : 1 über Rocker- und Bogie-Achse auf alle drei Räder, je 62 Glieder; der Motor treibt mit z9 ein z25 (2,78 : 1), seine Langlöcher spannen diese Kette. Wellen Ø8 in Lagern 688, Radwellen enden als D 8 für gedruckte Naben. Naben der Kettenräder geschätzt: bitte nachmessen.',
+  shafts:([{key:'m',name:'Motor z9',doc:{...shaft([K('r',9,19,9)],24),inserts:[{id:'m',part:'motor-nema17-40',end:'links' as const,depth:9.5}],works:[{id:'s',kind:'madenschraube' as const,x:5,m:3}],sections:[{x0:0,x1:10,profile:{kind:'rund' as const,d:11}}]}},
+   {key:'p',name:'Rocker-Achse',doc:shaft([L('l1',0,0),{...K('m',25,11,0),hub:'links' as const},L('l2',27,0),L('l3',36,0),K('a',12,k1,0),K('b',12,k2,0),L('l4',78,0)],83)},
+   {key:'w1',name:'Rad hinten',doc:{...shaft([L('l1',36,36),K('r',12,k1,36),L('l2',78,36)],87),sections:[{x0:47,x1:87,profile:D8}]}},
+   {key:'b',name:'Bogie-Achse',doc:shaft([L('l1',27,27),L('l2',36,27),K('c',12,k1,27),K('r',12,k2,27),K('d',12,k3,27),L('l3',78,27),L('l4',85.5,27)],63.5)},
+   {key:'w2',name:'Bogie-Rad hinten',doc:{...shaft([L('l1',27,27),K('r',12,k1,27),L('l2',85.5,27)],103),sections:[{x0:63.5,x1:103,profile:D8}]}},
+   {key:'w3',name:'Bogie-Rad vorn',doc:{...shaft([L('l1',27,27),K('r',12,k3,27),L('l2',85.5,27)],103),sections:[{x0:63.5,x1:103,profile:D8}]}}] as {key:string;name:string;doc:ShaftDoc}[]).map(x=>({...x,doc:flats(x.doc)})),
+  make:(ids:Record<string,string>):GearDoc=>{const g=newGear();return {...g,input:'m',
+   shafts:[{id:'m',shaft:ids.m,at:[0,M],z:9},{id:'p',shaft:ids.p,at:P,z:0},{id:'w1',shaft:ids.w1,at:pol(P,A,rear),z:36},{id:'b',shaft:ids.b,at:B,z:27},{id:'w2',shaft:ids.w2,at:pol(B,A,180+bogie),z:27},{id:'w3',shaft:ids.w3,at:pol(B,A,-bogie),z:27}],
+   belts:([['m','r','p','m'],['p','a','w1','r'],['p','b','b','r'],['b','c','w2','r'],['b','d','w3','r']] as const).map(([a,i,b,j],k)=>({id:`k${k+1}`,a:{on:a,item:i},b:{on:b,item:j}})),
+   groups:[{id:'g1',name:'Rocker',pivot:'p',shafts:['w1','b'],from:-15,to:15},{id:'g2',name:'Bogie',pivot:'b',shafts:['w2','w3'],from:-12,to:12}]};}});}
 /** The LEGO rocker with a tension spring from the frame onto the rocker: it pulls the rocker back towards where it is
  * drawn. The bolts of frame and rocker are set (where the plan put them), so the spring keeps its two bolts. */
 {const lego=gearExamples.find(e=>e.key==='rocker-lego')!;
